@@ -12,6 +12,15 @@
  * @property {boolean} [blocked]
  */
 
+function toScore(value) {
+  if (typeof value === 'string') {
+    const n = Number(value.trim().replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
  * @param {import('../config/funeralHealthQuestions').HealthQuestion[]} questions
  * @param {Record<string, unknown>} answers
@@ -34,13 +43,13 @@ function computeHealthScore(questions, answers) {
 
     if (q.type === 'boolean') {
       if (answer === true) {
-        points = Number(q.scoreIfTrue) || 0;
+        points = toScore(q.scoreIfTrue);
         if (q.blockIfTrue) {
           blocked = true;
           blockReason = q.blockReason || `Respuesta afirmativa en: ${q.label}`;
         }
       } else if (answer === false) {
-        points = Number(q.scoreIfFalse) || 0;
+        points = toScore(q.scoreIfFalse);
         if (q.blockIfFalse) {
           blocked = true;
           blockReason = q.blockReason || `Respuesta en: ${q.label}`;
@@ -49,11 +58,11 @@ function computeHealthScore(questions, answers) {
     } else if (q.type === 'select') {
       const val = String(answer ?? '');
       const map = q.optionScores && typeof q.optionScores === 'object' ? q.optionScores : {};
-      points = Number(map[val]) || 0;
+      points = toScore(map[val]);
     } else if (q.type === 'text') {
       const filled = String(answer ?? '').trim().length > 0;
       if (filled) {
-        points = Number(q.scoreIfFilled) || 0;
+        points = toScore(q.scoreIfFilled);
       }
     }
 

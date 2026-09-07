@@ -7,6 +7,7 @@ import {
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
 import { publicAsset } from '../lib/app-base';
+import { formatHealthScoreNumber, formatHealthScoreSigned } from '../lib/formatHealthScore';
 
 const NEXUS_URL = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
 const PANEL = readConfigPanelContext();
@@ -431,7 +432,7 @@ function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine
           </h3>
         </div>
         <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(total)}`}>
-          {total} pts
+          {formatHealthScoreNumber(total)} pts
         </span>
       </div>
       <ul className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
@@ -447,7 +448,9 @@ function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine
                 <p className="font-semibold text-slate-800 leading-snug">{line.label}</p>
                 <p className="text-[10px] text-slate-500">Resp: {formatAnswer(line.answer)}</p>
               </div>
-              <span className="font-bold text-indigo-700 shrink-0 tabular-nums">+{line.points}</span>
+              <span className="font-bold text-indigo-700 shrink-0 tabular-nums">
+                {formatHealthScoreSigned(Number(line.points))}%
+              </span>
             </li>
           ))
         )}
@@ -508,7 +511,9 @@ function CompactSummaryCard({
           </div>
           <div className="flex gap-2 shrink-0">
             <div className={`rounded-lg border px-3 py-1.5 text-center min-w-[64px] ${scoreTone(selected.scoreTotal)}`}>
-              <p className="text-base font-black tabular-nums leading-none">{selected.scoreTotal}</p>
+              <p className="text-base font-black tabular-nums leading-none">
+                {formatHealthScoreNumber(Number(selected.scoreTotal))}
+              </p>
               <p className="text-[8px] uppercase font-bold mt-0.5 tracking-wider">Score</p>
             </div>
             {primaLabel && (
@@ -952,7 +957,7 @@ export function EmisionRevisionPanel() {
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <p className="text-[10px] text-slate-400">{formatDate(s.reviewedAt || s.createdAt)}</p>
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(s.scoreTotal)}`}>
-                            {s.scoreTotal} pts
+                            {formatHealthScoreNumber(Number(s.scoreTotal))} pts
                           </span>
                         </div>
                       </span>

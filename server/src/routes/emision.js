@@ -14,6 +14,7 @@
 const express = require('express');
 const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
+const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 
 const router = express.Router();
 
@@ -222,6 +223,12 @@ router.post('/policies/emit', async (req, res) => {
       plan,
       frecuencia: frecuencia || state?.rcv?.frecuencia,
       ndias: ndias ?? state?.rcv?.ndias,
+    });
+    await archiveExpedienteAfterEmit({
+      state: mergedState,
+      emission: result,
+      empresaNombre: req.empresa?.nombre,
+      authToken: req.nexusToken,
     });
     return res.status(201).json({
       success: true, message: 'Poliza emitida exitosamente.',

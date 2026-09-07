@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { formatHealthScoreSigned, parseHealthScore } from '../lib/formatHealthScore';
 import {
   Plus, Trash2, CornerDownRight, ChevronDown, ChevronRight, GitBranch,
   RotateCcw, ChevronUp, Percent, Power,
@@ -163,16 +164,35 @@ export function enrichHealthQuestionScores(list: HealthQuestionDraft[]): HealthQ
   });
 }
 
+function appliesToPlan(q: HealthQuestionDraft, cplan: string): boolean {
+  const plans = (q.plans || []).map((p) => String(p).trim()).filter(Boolean);
+  if (plans.length === 0) return true;
+  return plans.includes('*') || plans.includes(cplan);
+}
+
+function clientViewForPlan(questions: HealthQuestionDraft[], cplan: string) {
+  const onPlan = questions.filter((q) => q.enabled !== false && appliesToPlan(q, cplan));
+  return {
+    now: onPlan.filter((q) => !q.showIf?.field),
+    drawers: onPlan.filter((q) => Boolean(q.showIf?.field)),
+    otherPlans: questions.filter((q) => q.enabled !== false && !appliesToPlan(q, cplan)),
+  };
+}
+
 function scoreSummary(q: HealthQuestionDraft): string {
   const bits: string[] = [];
   if (q.type === 'boolean') {
-    if (q.scoreIfTrue) bits.push(`Sí +${q.scoreIfTrue}%`);
-    if (q.scoreIfFalse) bits.push(`No +${q.scoreIfFalse}%`);
+    if (q.scoreIfTrue) bits.push(`Sí ${formatHealthScoreSigned(q.scoreIfTrue, '%')}`);
+    if (q.scoreIfFalse) bits.push(`No ${formatHealthScoreSigned(q.scoreIfFalse, '%')}`);
   } else if (q.type === 'text' && q.scoreIfFilled) {
-    bits.push(`texto +${q.scoreIfFilled}%`);
+    bits.push(`texto ${formatHealthScoreSigned(q.scoreIfFilled, '%')}`);
   } else if (q.type === 'select' && q.optionScores) {
-    const scored = Object.entries(q.optionScores).filter(([, n]) => Number(n) > 0);
-    if (scored.length) bits.push(scored.map(([k, n]) => `${k} +${n}%`).join(' · '));
+    const scored = Object.entries(q.optionScores).filter(
+      ([, n]) => Number.isFinite(Number(n)) && Number(n) !== 0,
+    );
+    if (scored.length) {
+      bits.push(scored.map(([k, n]) => `${k} ${formatHealthScoreSigned(Number(n), '%')}`).join(' · '));
+    }
   }
   if (q.blockIfTrue || q.blockIfFalse) bits.push('bloquea');
   return bits.join(' · ') || 'sin %';
@@ -215,12 +235,18 @@ export function FuneralHealthQuestionsEditor({
   plansError = false,
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [previewPlan, setPreviewPlan] = useState('');
 
   const planOptions = useMemo(
     () => (planOptionsProp?.length ? planOptionsProp : FALLBACK_FUNERAL_PLAN_OPTIONS),
     [planOptionsProp],
   );
   const allPlanCodes = useMemo(() => planOptions.map((p) => p.code), [planOptions]);
+  const previewCode = previewPlan || (allPlanCodes.includes('8') ? '8' : allPlanCodes[0] || '');
+  const clientPreview = useMemo(
+    () => (previewCode ? clientViewForPlan(questions, previewCode) : null),
+    [questions, previewCode],
+  );
 
   const update = (idx: number, patch: Partial<HealthQuestionDraft>) => {
     onChange(questions.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
@@ -364,6 +390,41 @@ export function FuneralHealthQuestionsEditor({
           </button>
         </div>
       </div>
+      {clientPreview && previewCode && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2.5 text-[12px] text-indigo-950 leading-snug space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="font-black uppercase tracking-wider text-[10px] text-indigo-600">
+              Así lo ve el cliente
+            </label>
+            <select
+              className="text-xs font-semibold border border-indigo-200 rounded-md px-2 py-1 bg-white"
+              value={previewCode}
+              onChange={(e) => setPreviewPlan(e.target.value)}
+            >
+              {planOptions.map((p) => (
+                <option key={p.code} value={p.code}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <p>
+            Ahora: <strong>{clientPreview.now.length}</strong> pregunta
+            {clientPreview.now.length === 1 ? '' : 's'}
+            {clientPreview.drawers.length > 0
+              ? ` · ${clientPreview.drawers.length} cajón${clientPreview.drawers.length === 1 ? '' : 'es'} al responder Sí`
+              : ''}
+            {clientPreview.otherPlans.length > 0
+              ? ` · ${clientPreview.otherPlans.length} no aplica${clientPreview.otherPlans.length === 1 ? '' : 'n'} a este plan`
+              : ''}
+            . El panel lista {questions.length}; el cliente nunca las ve todas de golpe.
+          </p>
+          {clientPreview.otherPlans.length > 0 && (
+            <p className="text-[11px] text-indigo-800">
+              No salen en este plan:{' '}
+              {clientPreview.otherPlans.map((q) => q.label || q.id).join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
       <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 leading-relaxed space-y-0.5">
         <p>
           <strong className="font-semibold text-slate-700">Interruptor:</strong> On = el cliente la ve.
@@ -738,12 +799,12 @@ export function FuneralHealthQuestionsEditor({
                           <div className="relative">
                             <input
                               type="number"
-                              min={0}
+                              step="any"
                               className={`${inp} pr-8`}
                               value={q.scoreIfTrue ?? ''}
                               onChange={(e) =>
                                 update(idx, {
-                                  scoreIfTrue: e.target.value === '' ? undefined : Number(e.target.value),
+                                  scoreIfTrue: parseHealthScore(e.target.value),
                                 })
                               }
                               placeholder="0"
@@ -756,12 +817,12 @@ export function FuneralHealthQuestionsEditor({
                           <div className="relative">
                             <input
                               type="number"
-                              min={0}
+                              step="any"
                               className={`${inp} pr-8`}
                               value={q.scoreIfFalse ?? ''}
                               onChange={(e) =>
                                 update(idx, {
-                                  scoreIfFalse: e.target.value === '' ? undefined : Number(e.target.value),
+                                  scoreIfFalse: parseHealthScore(e.target.value),
                                 })
                               }
                               placeholder="0"
@@ -777,12 +838,12 @@ export function FuneralHealthQuestionsEditor({
                         <div className="relative max-w-[10rem]">
                           <input
                             type="number"
-                            min={0}
+                            step="any"
                             className={`${inp} pr-8`}
                             value={q.scoreIfFilled ?? ''}
                             onChange={(e) =>
                               update(idx, {
-                                scoreIfFilled: e.target.value === '' ? undefined : Number(e.target.value),
+                                scoreIfFilled: parseHealthScore(e.target.value),
                               })
                             }
                             placeholder="0"
@@ -827,14 +888,15 @@ export function FuneralHealthQuestionsEditor({
                             <div className="relative">
                               <input
                                 type="number"
-                                min={0}
+                                step="any"
                                 className={`${inp} pr-6`}
                                 value={q.optionScores?.[opt.value] ?? ''}
                                 placeholder="0"
                                 onChange={(e) => {
                                   const optionScores = { ...(q.optionScores ?? {}) };
-                                  if (e.target.value === '') delete optionScores[opt.value];
-                                  else optionScores[opt.value] = Number(e.target.value);
+                                  const parsed = parseHealthScore(e.target.value);
+                                  if (parsed === undefined) delete optionScores[opt.value];
+                                  else optionScores[opt.value] = parsed;
                                   update(idx, { optionScores });
                                 }}
                               />
