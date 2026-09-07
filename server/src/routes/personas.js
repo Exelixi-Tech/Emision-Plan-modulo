@@ -18,6 +18,7 @@ const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterP
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
+const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -259,6 +260,13 @@ router.post('/emision', async (req, res) => {
     );
 
     const emitted = await personasClient.createEmissionPerson(payload);
+
+    await archiveExpedienteAfterEmit({
+      state,
+      emission: emitted,
+      empresaNombre: req.empresa?.nombre,
+      authToken: req.nexusToken,
+    });
 
     const emitMetadata = { ...metadata };
     const url_ingreso_caja = await resolveIngresoCajaAfterPayment(state, {

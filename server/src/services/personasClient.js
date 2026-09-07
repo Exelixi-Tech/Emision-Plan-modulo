@@ -185,6 +185,8 @@ async function createEmissionPerson(payload) {
       cnrecibo: r.cnrecibo,
       urlpoliza: r.urlpoliza,
       ncuota: r.ncuota,
+      fanopol: r.fanopol,
+      fmespol: r.fmespol,
       message: r.message,
       raw: response.data,
     };
