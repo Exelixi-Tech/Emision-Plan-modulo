@@ -264,6 +264,18 @@ function replacePanelToken(next: string) {
   }
 }
 
+function jwtScope(token: string): string {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return '';
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(json) as { scope?: string };
+    return String(payload.scope ?? '');
+  } catch {
+    return '';
+  }
+}
+
 async function postRefresh(path: string, current: string): Promise<string | null> {
   const res = await fetch(`${NEXUS_URL}${path}`, {
     method: 'POST',
@@ -279,9 +291,16 @@ async function refreshRevisionToken(): Promise<boolean> {
   const current = readPanelToken();
   if (!current) return false;
   try {
-    const next =
-      (await postRefresh('/api/funeral-submissions/refresh-token', current)) ||
-      (await postRefresh('/api/config/refresh-token', current));
+    const scope = jwtScope(current);
+    const paths =
+      scope === 'config-panel'
+        ? ['/api/config/refresh-token', '/api/funeral-submissions/refresh-token']
+        : ['/api/funeral-submissions/refresh-token'];
+    let next: string | null = null;
+    for (const path of paths) {
+      next = await postRefresh(path, current);
+      if (next) break;
+    }
     if (!next) return false;
     replacePanelToken(next);
     return true;
