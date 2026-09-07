@@ -12,6 +12,39 @@ const { isFunerarioCplan } = require('../lib/funerarioPlan');
 
 const router = express.Router();
 
+function toClientQuestion(q) {
+  if (!q || typeof q !== 'object') return q;
+  return {
+    id: q.id,
+    type: q.type,
+    label: q.label,
+    description: q.description,
+    required: q.required,
+    showIf: q.showIf,
+    options: q.options,
+  };
+}
+
+function empresaIdFromRequest(req) {
+  const header = req.headers.authorization || req.headers['x-nexus-token'] || '';
+  const token = String(header).replace(/^Bearer\s+/i, '').trim();
+  if (token && token.split('.').length >= 2) {
+    try {
+      const seg = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const json = Buffer.from(seg, 'base64').toString('utf8');
+      const payload = JSON.parse(json);
+      const n = Number(payload?.empresaId);
+      if (Number.isInteger(n) && n > 0) return n;
+    } catch { /* ignore */ }
+  }
+  return (
+    Number(req.empresa?.id) ||
+    Number(req.query?.empresaId) ||
+    Number(process.env.EMPRESA_ID) ||
+    1
+  );
+}
+
 function rejectNonFunerarioPlan(res, cplan) {
   return res.status(400).json({
     success: false,
@@ -33,14 +66,7 @@ router.get('/health-questions', async (req, res) => {
     return rejectNonFunerarioPlan(res, cplan);
   }
   try {
-    const empresaId =
-      Number(
-        req.empresa?.id ??
-          req.query.empresaId ??
-          process.env.EMPRESA_ID ??
-          process.env.VITE_EMPRESA_ID ??
-          1,
-      ) || 1;
+    const empresaId = empresaIdFromRequest(req) || 1;
     const metadata = {
       ...(req.nexusMetadata && typeof req.nexusMetadata === 'object' ? req.nexusMetadata : {}),
       ...(req.query.canal ? { canal: String(req.query.canal) } : {}),
@@ -60,7 +86,7 @@ router.get('/health-questions', async (req, res) => {
     res.json({
       success: true,
       cplan,
-      questions,
+      questions: questions.filter((q) => q && q.enabled !== false).map(toClientQuestion),
       source,
       count: questions.length,
       catalogCount,

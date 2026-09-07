@@ -67,17 +67,46 @@ function normalizeEstadoCivil(v) {
   return s || null; // S|C|D|V… La Mundial valida Char(1)
 }
 
-/** Edad (años cumplidos) desde una fecha. null si no se puede calcular. */
+/**
+ * Edad en años cumplidos (calendario local).
+ * No usa `new Date('YYYY-MM-DD')` (UTC): en VE eso atrasa un día y puede
+ * marcar 81 el mismo día del cumpleaños 80.
+ */
 function edadDesdeFecha(fecha) {
   const iso = normalizeDate(fecha);
   if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const day = Number(m[3]);
+  if (mo < 1 || mo > 12 || day < 1 || day > 31) return null;
   const hoy = new Date();
-  let edad = hoy.getFullYear() - d.getFullYear();
-  const m = hoy.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && hoy.getDate() < d.getDate())) edad--;
+  const hy = hoy.getFullYear();
+  const hm = hoy.getMonth() + 1;
+  const hd = hoy.getDate();
+  let edad = hy - y;
+  if (hm < mo || (hm === mo && hd < day)) edad--;
   return edad >= 0 ? edad : null;
+}
+
+/** Prefiere fecha de nacimiento; ignora nedad 0 / basura del cliente. */
+function resolveNedadAsegurado(a) {
+  const fromFecha = edadDesdeFecha(a?.fechaNac ?? a?.fnac ?? a?.fecha_nacimiento);
+  if (fromFecha != null) return fromFecha;
+  if (a?.nedad_asegurado == null || a.nedad_asegurado === '') return null;
+  const n = Number(a.nedad_asegurado);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Canal alterno La Mundial: vacío → null; entero positivo válido. */
+function parseCanalAltOptional(value) {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
 }
 
 function todayYmd() {
@@ -104,10 +133,7 @@ function buildAseguradosForQuote(funeral = {}) {
     // Primer asegurado = titular (parentesco 1) si no trae parentesco explícito.
     cparen: Number(a.cparen ?? a.parentesco ?? (idx === 0 ? 1 : 0)) || 0,
     xrif_asegurado: onlyDigits(a.xrif_asegurado ?? a.identificacion),
-    nedad_asegurado:
-      a.nedad_asegurado != null
-        ? Number(a.nedad_asegurado)
-        : edadDesdeFecha(a.fechaNac ?? a.fnac ?? a.fecha_nacimiento),
+    nedad_asegurado: resolveNedadAsegurado(a),
   }));
 }
 
@@ -131,8 +157,12 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
 
   const cramo = metadata.cramo ? parseInt(metadata.cramo, 10) : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
   const productor = metadata.cproductor ? parseInt(metadata.cproductor, 10) : (parseInt(process.env.LAMUNDIAL_PRODUCTOR, 10) || 80080);
-  const ctipocanal = metadata.ctipocanal ? parseInt(metadata.ctipocanal, 10) : undefined;
+  const ctipocanal = metadata.ctipocanal !== undefined && String(metadata.ctipocanal).trim() !== ''
+    ? metadata.ctipocanal
+    : undefined;
   const cusuario = metadata.cusuario ? parseInt(metadata.cusuario, 10) : undefined;
+  const ccanalalt = parseCanalAltOptional(metadata.ccanalalt_in ?? metadata.ccanalalt);
+  const cscanalalt = parseCanalAltOptional(metadata.cscanalalt_in ?? metadata.cscanalalt);
   const plan = overrides.plan || state.selectedPlan?.cplan || '';
   const frecuencia = overrides.frecuencia || funeral.frecuencia || 'M';
   const fecha_emision = overrides.fechaEmision || todayYmd();
@@ -191,10 +221,12 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     dec_diagnos_enferm: funeral.diagnosticoEnfermedad === true ? 1 : 0,
     dec_descrip_enferm: cleanString(funeral.descripcionEnfermedad) || '',
 
-    // ── Canal ──────────────────────────────────────────────────────────────────
+    // ── Canal (mismo contrato SSO que RCV) ────────────────────────────────────
     productor,
     ...(cusuario !== undefined ? { cusuario } : {}),
     ...(ctipocanal !== undefined ? { ctipocanal } : {}),
+    ccanalalt,
+    cscanalalt,
 
     // ── Asegurados (para el trigger de Sis2000) ─────────────────────────────────
     asegurados: asegurados.map((a, idx) => ({
@@ -277,6 +309,8 @@ module.exports = {
   buildAseguradosForQuote,
   buildEmissionPersonRequest,
   buildValidateEmissionPersonRequest,
+  edadDesdeFecha,
+  resolveNedadAsegurado,
   _internal: {
     onlyDigits,
     digitsToNumber,
@@ -284,6 +318,7 @@ module.exports = {
     normalizeTipoCedula,
     normalizeSexo,
     edadDesdeFecha,
+    resolveNedadAsegurado,
     todayYmd,
     genInternalPolicyId,
   },

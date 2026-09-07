@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, CornerDownRight, ChevronDown, ChevronRight, GitBranch,
-  RotateCcw, ChevronUp, Percent,
+  RotateCcw, ChevronUp, Percent, Power,
 } from 'lucide-react';
 
 export type HealthQuestionType = 'boolean' | 'text' | 'select';
@@ -12,6 +12,8 @@ export interface HealthQuestionDraft {
   label: string;
   description?: string;
   required?: boolean;
+  /** false = no se muestra al cliente ni en scoring (parametrizador). */
+  enabled?: boolean;
   plans: string[];
   showIf?: { field: string; equals: boolean | string };
   options?: { value: string; label: string }[];
@@ -176,17 +178,6 @@ function scoreSummary(q: HealthQuestionDraft): string {
   return bits.join(' · ') || 'sin %';
 }
 
-function slugId(label: string): string {
-  const base = label
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-    .slice(0, 40);
-  return base || `pregunta_${Date.now().toString(36)}`;
-}
-
 function plansSummary(
   plans: string[],
   planOptions: PlanOption[],
@@ -255,6 +246,7 @@ export function FuneralHealthQuestionsEditor({
         type: 'boolean',
         label: 'Nueva pregunta',
         required: true,
+        enabled: true,
         plans: [...allPlanCodes],
         scoreIfTrue: 10,
       },
@@ -291,19 +283,34 @@ export function FuneralHealthQuestionsEditor({
       return;
     }
     const id = `detalle_${parent.id}_${Date.now().toString(36).slice(-4)}`;
+    const equals =
+      parent.type === 'select' && parent.options?.[0]
+        ? parent.options[0].value
+        : true;
     const child: HealthQuestionDraft = {
       id,
       type: 'text',
       label: `Detalle de: ${parent.label}`,
       required: true,
+      enabled: true,
       plans: [...parent.plans],
-      showIf: { field: parent.id, equals: true },
+      showIf: { field: parent.id, equals },
       scoreIfFilled: 5,
     };
     const next = [...questions];
     next.splice(parentIdx + 1, 0, child);
     onChange(next);
     setOpenId(id);
+  };
+
+  const removeFollowUp = (parentIdx: number) => {
+    const parentId = questions[parentIdx]?.id;
+    if (!parentId) return;
+    const next = questions.filter(
+      (q, i) => !(i !== parentIdx && q.showIf?.field === parentId && q.type === 'text'),
+    );
+    onChange(next);
+    setOpenId(questions[parentIdx]?.id ?? null);
   };
 
   const remove = (idx: number) => {
@@ -333,8 +340,9 @@ export function FuneralHealthQuestionsEditor({
             Preguntas · {questions.length}
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-            Agrega, quita o edita. El <strong className="font-semibold text-slate-600">%</strong> es el
-            puntaje que suma al técnico. Tras guardar, el cliente ve estas mismas preguntas.
+            Pulsa una fila para editarla. El <strong className="font-semibold text-slate-600">%</strong> lo
+            ve solo el técnico. Tras <strong className="font-semibold text-slate-600">Guardar</strong>, el
+            cliente ve las preguntas <em>visibles</em> de este canal.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -342,7 +350,7 @@ export function FuneralHealthQuestionsEditor({
             type="button"
             onClick={restoreDefaults}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-50 transition-colors"
-            title="Volver a las preguntas y % de fábrica"
+            title="Sustituye el cuestionario actual por las preguntas de fábrica. Hay que Guardar para aplicar."
           >
             <RotateCcw size={13} /> Defaults
           </button>
@@ -350,15 +358,31 @@ export function FuneralHealthQuestionsEditor({
             type="button"
             onClick={addQuestion}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors"
+            title="Agrega una pregunta al final. Recuerda Guardar."
           >
             <Plus size={14} /> Nueva
           </button>
         </div>
       </div>
+      <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 leading-relaxed space-y-0.5">
+        <p>
+          <strong className="font-semibold text-slate-700">Interruptor:</strong> On = el cliente la ve.
+          Off = queda en este panel pero no sale en el flujo. El historial de casos ya enviados no cambia.
+        </p>
+        <p>
+          <strong className="font-semibold text-slate-700">Cajón de detalle:</strong> no es un tipo
+          aparte. Abre la pregunta Sí/No o Lista → <em>Agregar cajón de texto</em>. El cliente solo
+          lo ve si responde Sí (o la opción que indiques).
+        </p>
+        <p>
+          <strong className="font-semibold text-slate-700">Papelera:</strong> la quita del catálogo.
+          No borra respuestas de solicitudes anteriores.
+        </p>
+      </div>
 
       {questions.length === 0 && (
         <div className="text-center py-8 text-slate-500 text-sm rounded-xl border border-dashed border-slate-200 bg-slate-50">
-          No hay preguntas. Agrega una o restaura defaults.
+          No hay preguntas. Pulsa Nueva o Defaults. Luego Guardar.
         </div>
       )}
 
@@ -366,13 +390,18 @@ export function FuneralHealthQuestionsEditor({
         {questions.map((q, idx) => {
           const open = openId === q.id;
           const isChild = Boolean(q.showIf?.field);
+          const isActive = q.enabled !== false;
           return (
-            <li key={`${q.id}-${idx}`} className={isChild ? 'bg-violet-50/30' : ''}>
+            <li
+              key={`${q.id}-${idx}`}
+              className={`${isChild ? 'bg-violet-50/30' : ''} ${!isActive ? 'opacity-55' : ''}`}
+            >
               <div className="flex items-stretch gap-1">
                 <button
                   type="button"
                   onClick={() => setOpenId(open ? null : q.id)}
                   className="flex-1 min-w-0 flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-slate-50/80 transition-colors"
+                  title={open ? 'Cerrar edición' : 'Abrir para editar texto, planes, % y condición'}
                 >
                   <span className="text-slate-400 shrink-0">
                     {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -398,17 +427,27 @@ export function FuneralHealthQuestionsEditor({
                       )}
                       {q.label || '(sin texto)'}
                     </span>
-                    <span className="block text-[10px] text-slate-400 font-mono truncate">
-                      {q.id}
-                      {' · '}
-                      planes {plansSummary(q.plans, planOptions)}
-                      {q.showIf?.field
-                        ? ` · si ${q.showIf.field}=${String(q.showIf.equals)}`
-                        : ''}
-                      {q.required ? ' · obligatoria' : ''}
+                    <span className="block text-[10px] text-slate-400 truncate">
+                      {allPlanCodes.length > 0 && q.plans.length < allPlanCodes.length
+                        ? `Solo ${plansSummary(q.plans, planOptions)}`
+                        : `Planes ${plansSummary(q.plans, planOptions)}`}
+                      {q.showIf?.field ? ' · cajón (solo si responde otra)' : ''}
+                      {q.required ? ' · obligatoria' : ' · opcional'}
+                      {!isActive ? ' · oculta al cliente' : ''}
                     </span>
                   </span>
-                  <span className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-indigo-100 bg-indigo-50 text-indigo-700">
+                  {!isActive && (
+                    <span
+                      className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-100 text-slate-500"
+                      title="El cliente no la ve. Activa el interruptor para mostrarla de nuevo."
+                    >
+                      <Power size={10} className="inline -mt-0.5" /> Oculta
+                    </span>
+                  )}
+                  <span
+                    className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-indigo-100 bg-indigo-50 text-indigo-700"
+                    title="Puntaje que suma en mesa técnica. El cliente no lo ve."
+                  >
                     <Percent size={10} />
                     {scoreSummary(q)}
                   </span>
@@ -419,7 +458,7 @@ export function FuneralHealthQuestionsEditor({
                     onClick={() => move(idx, -1)}
                     disabled={idx === 0}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
-                    title="Subir"
+                    title="Subir en el orden que ve el cliente"
                   >
                     <ChevronUp size={14} />
                   </button>
@@ -428,16 +467,48 @@ export function FuneralHealthQuestionsEditor({
                     onClick={() => move(idx, 1)}
                     disabled={idx === questions.length - 1}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
-                    title="Bajar"
+                    title="Bajar en el orden que ve el cliente"
                   >
                     <ChevronDown size={14} />
                   </button>
                 </div>
+                <span className="self-center flex flex-col items-center justify-center px-1 min-w-[3.4rem]">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isActive}
+                    aria-label={
+                      isActive
+                        ? 'Ocultar al cliente. La pregunta sigue en este panel y en el historial.'
+                        : 'Mostrar de nuevo al cliente'
+                    }
+                    onClick={() => update(idx, { enabled: !isActive })}
+                    className={`relative shrink-0 w-9 h-5 rounded-full transition-colors ${
+                      isActive ? 'bg-indigo-500' : 'bg-slate-300'
+                    }`}
+                    title={
+                      isActive
+                        ? 'Visible al cliente. Clic para ocultarla (no se borra; el historial no cambia).'
+                        : 'Oculta al cliente. Clic para volver a mostrarla en el flujo.'
+                    }
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                        isActive ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-[8px] font-black uppercase tracking-wide mt-0.5 ${
+                    isActive ? 'text-indigo-600' : 'text-slate-400'
+                  }`}>
+                    {isActive ? 'Visible' : 'Oculta'}
+                  </span>
+                </span>
                 <button
                   type="button"
                   onClick={() => remove(idx)}
                   className="px-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                  title="Eliminar"
+                  title="Eliminar del catálogo. Las solicitudes ya enviadas conservan la respuesta."
                 >
                   <Trash2 size={15} />
                 </button>
@@ -445,22 +516,26 @@ export function FuneralHealthQuestionsEditor({
 
               {open && (
                 <div className="px-3 pb-3 pt-0 space-y-2.5 border-t border-slate-100 bg-slate-50/50">
+                  {q.showIf?.field && (
+                    <p className="mt-2.5 text-[12px] font-semibold text-violet-900 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 leading-snug">
+                      Esto no aparece solo. El cliente primero ve «
+                      {questions.find((p) => p.id === q.showIf?.field)?.label || 'la pregunta ligada'}
+                      ». Este cajón solo se abre si responde{' '}
+                      {q.showIf.equals === true
+                        ? 'Sí'
+                        : q.showIf.equals === false
+                          ? 'No'
+                          : String(q.showIf.equals)}
+                      .
+                    </p>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-2.5">
                     <div className="sm:col-span-4">
-                      <label className={lbl}>ID</label>
-                      <input
-                        className={`${inp} font-mono text-xs`}
-                        value={q.id}
-                        onChange={(e) =>
-                          update(idx, { id: e.target.value.trim() || slugId(q.label) })
-                        }
-                      />
-                    </div>
-                    <div className="sm:col-span-3">
-                      <label className={lbl}>Tipo</label>
+                      <label className={lbl}>Tipo de respuesta</label>
                       <select
                         className={inp}
                         value={q.type}
+                        title="Cómo contesta el cliente: sí/no, texto o una lista"
                         onChange={(e) => {
                           const type = e.target.value as HealthQuestionType;
                           const patch: Partial<HealthQuestionDraft> = { type };
@@ -479,11 +554,14 @@ export function FuneralHealthQuestionsEditor({
                       >
                         <option value="boolean">Sí / No</option>
                         <option value="text">Texto libre</option>
-                        <option value="select">Selección</option>
+                        <option value="select">Lista de opciones</option>
                       </select>
                     </div>
-                    <div className="sm:col-span-5 flex items-end gap-3 pb-0.5">
-                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                    <div className="sm:col-span-8 flex items-end gap-3 pb-0.5">
+                      <label
+                        className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600"
+                        title="Si está marcada, el cliente no puede continuar sin responder"
+                      >
                         <input
                           type="checkbox"
                           checked={!!q.required}
@@ -492,47 +570,171 @@ export function FuneralHealthQuestionsEditor({
                         />
                         Obligatoria
                       </label>
-                      {q.type === 'boolean' && (
-                        <button
-                          type="button"
-                          onClick={() => addFollowUp(idx)}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-700 hover:text-violet-900"
-                        >
-                          <CornerDownRight size={12} />
-                          Detalle al Sí
-                        </button>
-                      )}
                     </div>
                   </div>
 
                   <div>
-                    <label className={lbl}>Texto de la pregunta</label>
+                    <label className={lbl}>Texto que lee el cliente</label>
                     <input
                       className={inp}
                       value={q.label}
                       onChange={(e) => update(idx, { label: e.target.value })}
+                      placeholder="Ej. ¿Fuma o ha fumado en los últimos 12 meses?"
                     />
                   </div>
 
                   <div>
-                    <label className={lbl}>Ayuda (opcional)</label>
+                    <label className={lbl}>Ayuda bajo la pregunta (opcional)</label>
                     <input
                       className={inp}
                       value={q.description ?? ''}
                       onChange={(e) => update(idx, { description: e.target.value })}
-                      placeholder="Texto secundario bajo la pregunta"
+                      placeholder="Aclaración corta. El técnico no la usa para puntuar."
                     />
+                  </div>
+
+                  {(q.type === 'boolean' || q.type === 'select') && !isChild && (
+                    <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-violet-700">
+                        Cajón de detalle
+                      </p>
+                      <p className="text-[11px] text-slate-600 mt-0.5 mb-2 leading-relaxed">
+                        {questions.some((x, i) => i !== idx && x.showIf?.field === q.id && x.type === 'text')
+                          ? 'Ya hay un cajón. Puedes ir a editarlo, ocultarlo (interruptor) o quitarlo. No está fijo en esta pregunta.'
+                          : `No es un tipo más. Crea un recuadro de texto que el cliente solo ve si${
+                              q.type === 'boolean' ? ' responde Sí' : ' elige una opción'
+                            }.`}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => addFollowUp(idx)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition-colors"
+                        >
+                          <CornerDownRight size={14} />
+                          {questions.some((x, i) => i !== idx && x.showIf?.field === q.id && x.type === 'text')
+                            ? 'Ir al cajón de texto'
+                            : q.type === 'boolean'
+                              ? 'Agregar cajón de texto si responde Sí'
+                              : 'Agregar cajón de texto al elegir una opción'}
+                        </button>
+                        {questions.some((x, i) => i !== idx && x.showIf?.field === q.id && x.type === 'text') && (
+                          <button
+                            type="button"
+                            onClick={() => removeFollowUp(idx)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 bg-white text-rose-600 text-xs font-bold hover:bg-rose-50 transition-colors"
+                            title="Quita el recuadro de detalle. La pregunta Sí/No se queda."
+                          >
+                            <Trash2 size={13} />
+                            Quitar cajón
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-2.5 space-y-2">
+                    <p className="text-[10px] font-bold text-violet-700 uppercase tracking-wide">
+                      Cajón ligado / mostrar solo si…
+                    </p>
+                    <p className="text-[11px] text-slate-500 -mt-1">
+                      {isChild
+                        ? 'Esta pregunta es el cajón: solo se abre si la de arriba tiene esa respuesta.'
+                        : 'Déjalo en «Siempre visible» salvo que esta fila sea el detalle de otra.'}
+                    </p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[160px]">
+                        <label className={lbl}>Esta pregunta aparece si</label>
+                        <select
+                          className={inp}
+                          value={q.showIf?.field ?? ''}
+                          onChange={(e) => {
+                            const field = e.target.value;
+                            if (!field) {
+                              update(idx, { showIf: undefined });
+                              return;
+                            }
+                            const parent = questions.find((p) => p.id === field);
+                            const equals =
+                              parent?.type === 'select' && parent.options?.[0]
+                                ? parent.options[0].value
+                                : true;
+                            update(idx, { showIf: { field, equals } });
+                          }}
+                        >
+                          <option value="">Siempre visible</option>
+                          {parentOptionsFor(idx).map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {(p.label || 'Pregunta').slice(0, 70)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="w-28">
+                        <label className={lbl}>Respuesta</label>
+                        <select
+                          className={inp}
+                          disabled={!q.showIf?.field}
+                          value={q.showIf ? String(q.showIf.equals) : 'true'}
+                          onChange={(e) => {
+                            if (!q.showIf?.field) return;
+                            const raw = e.target.value;
+                            const equals =
+                              raw === 'true' ? true : raw === 'false' ? false : raw;
+                            update(idx, { showIf: { field: q.showIf.field, equals } });
+                          }}
+                        >
+                          {equalsChoices(q.showIf?.field).map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {(() => {
+                      const parentId = q.showIf?.field;
+                      if (!parentId) return null;
+                      const parent = questions.find((p) => p.id === parentId);
+                      if (!parent) {
+                        return (
+                          <p className="text-[11px] text-rose-600 font-semibold">
+                            La pregunta a la que está ligada ya no está en la lista. En el flujo no se verá.
+                          </p>
+                        );
+                      }
+                      const overlap = (q.plans || []).filter((p) => parent.plans.includes(p));
+                      if (overlap.length === 0) {
+                        return (
+                          <p className="text-[11px] text-amber-700 font-semibold">
+                            Sin planes en común con «{parent.label || parentId}»
+                            ({plansSummary(parent.plans, planOptions)}).
+                            En esos planes este cajón no podrá mostrarse.
+                          </p>
+                        );
+                      }
+                      if (parent.plans.length < allPlanCodes.length) {
+                        return (
+                          <p className="text-[11px] text-slate-500">
+                            Solo visible en planes donde también esté «{parent.label || parentId}»
+                            ({plansSummary(parent.plans, planOptions)}), y si responde {String(q.showIf?.equals)}.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
 
                   <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-2.5 space-y-2.5">
                     <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600 inline-flex items-center gap-1">
                       <Percent size={11} />
-                      Puntaje (%) · lo ve el técnico
+                      Puntaje para mesa técnica
+                    </p>
+                    <p className="text-[11px] text-slate-500 -mt-1">
+                      El cliente no ve estos %. Solo aparecen en el desglose del técnico.
                     </p>
                     {q.type === 'boolean' && (
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className={lbl}>Si responde Sí</label>
+                          <label className={lbl}>% si responde Sí</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -550,7 +752,7 @@ export function FuneralHealthQuestionsEditor({
                           </div>
                         </div>
                         <div>
-                          <label className={lbl}>Si responde No</label>
+                          <label className={lbl}>% si responde No</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -571,7 +773,7 @@ export function FuneralHealthQuestionsEditor({
                     )}
                     {q.type === 'text' && (
                       <div>
-                        <label className={lbl}>Si escribe algo</label>
+                        <label className={lbl}>% si escribe algo</label>
                         <div className="relative max-w-[10rem]">
                           <input
                             type="number"
@@ -591,13 +793,14 @@ export function FuneralHealthQuestionsEditor({
                     )}
                     {q.type === 'select' && (
                       <div className="space-y-2">
-                        <p className="text-[11px] text-slate-500">Cada opción puede tener su propio %.</p>
+                        <p className="text-[11px] text-slate-500">Valor interno · texto que ve el cliente · % del técnico.</p>
                         {(q.options ?? []).map((opt, oi) => (
                           <div key={`${opt.value}-${oi}`} className="grid grid-cols-[1fr_1fr_5.5rem] gap-1.5">
                             <input
                               className={`${inp} font-mono text-xs`}
                               value={opt.value}
-                              placeholder="valor"
+                              placeholder="clave"
+                              title="Valor interno (no lo ve el cliente)"
                               onChange={(e) => {
                                 const options = [...(q.options ?? [])];
                                 const prev = options[oi].value;
@@ -613,7 +816,8 @@ export function FuneralHealthQuestionsEditor({
                             <input
                               className={inp}
                               value={opt.label}
-                              placeholder="Etiqueta"
+                              placeholder="Texto al cliente"
+                              title="Lo que lee el cliente en la lista"
                               onChange={(e) => {
                                 const options = [...(q.options ?? [])];
                                 options[oi] = { ...options[oi], label: e.target.value };
@@ -654,7 +858,10 @@ export function FuneralHealthQuestionsEditor({
                     {q.type === 'boolean' && (
                       <div className="pt-1 border-t border-indigo-100 space-y-2">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                          Bloqueo automático
+                          Bloquear el envío
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Si se cumple, el cliente no puede continuar. El caso no llega a mesa técnica.
                         </p>
                         <div className="flex flex-wrap gap-3">
                           <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
@@ -681,7 +888,7 @@ export function FuneralHealthQuestionsEditor({
                             className={inp}
                             value={q.blockReason ?? ''}
                             onChange={(e) => update(idx, { blockReason: e.target.value || undefined })}
-                            placeholder="Motivo que verá el cliente / técnico"
+                            placeholder="Mensaje que verá el cliente si se bloquea"
                           />
                         )}
                       </div>
@@ -690,7 +897,7 @@ export function FuneralHealthQuestionsEditor({
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className={lbl + ' mb-0'}>Planes del módulo (dónde aplica)</label>
+                      <label className={lbl + ' mb-0'}>En qué planes aparece</label>
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -739,95 +946,22 @@ export function FuneralHealthQuestionsEditor({
                         </label>
                       ))}
                     </div>
-                  </div>
-
-                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-2.5 space-y-2">
-                    <p className="text-[10px] font-bold text-violet-700 uppercase tracking-wide">
-                      Condición (otra pregunta del cuestionario)
-                    </p>
-                    <p className="text-[11px] text-slate-500 -mt-1">
-                      No elige el plan. Define si esta pregunta aparece según la respuesta de otra.
-                    </p>
-                    <div className="flex flex-wrap items-end gap-2">
-                      <div className="flex-1 min-w-[160px]">
-                        <label className={lbl}>Se despliega si</label>
-                        <select
-                          className={inp}
-                          value={q.showIf?.field ?? ''}
-                          onChange={(e) => {
-                            const field = e.target.value;
-                            if (!field) {
-                              update(idx, { showIf: undefined });
-                              return;
-                            }
-                            const parent = questions.find((p) => p.id === field);
-                            const equals =
-                              parent?.type === 'select' && parent.options?.[0]
-                                ? parent.options[0].value
-                                : true;
-                            update(idx, { showIf: { field, equals } });
-                          }}
-                        >
-                          <option value="">Siempre visible</option>
-                          {parentOptionsFor(idx).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {(p.label || p.id).slice(0, 60)}
-                              {p.label ? ` · ${p.id}` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="w-28">
-                        <label className={lbl}>Respuesta</label>
-                        <select
-                          className={inp}
-                          disabled={!q.showIf?.field}
-                          value={q.showIf ? String(q.showIf.equals) : 'true'}
-                          onChange={(e) => {
-                            if (!q.showIf?.field) return;
-                            const raw = e.target.value;
-                            const equals =
-                              raw === 'true' ? true : raw === 'false' ? false : raw;
-                            update(idx, { showIf: { field: q.showIf.field, equals } });
-                          }}
-                        >
-                          {equalsChoices(q.showIf?.field).map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    {(() => {
-                      const parentId = q.showIf?.field;
-                      if (!parentId) return null;
-                      const parent = questions.find((p) => p.id === parentId);
-                      if (!parent) {
-                        return (
-                          <p className="text-[11px] text-rose-600 font-semibold">
-                            La pregunta padre «{parentId}» no existe en esta lista. En el flujo no se verá.
-                          </p>
-                        );
-                      }
-                      const overlap = (q.plans || []).filter((p) => parent.plans.includes(p));
-                      if (overlap.length === 0) {
-                        return (
-                          <p className="text-[11px] text-amber-700 font-semibold">
-                            Sin planes en común con «{parent.label || parentId}»
-                            ({plansSummary(parent.plans, planOptions)}).
-                            En esos planes esta pregunta no podrá mostrarse.
-                          </p>
-                        );
-                      }
-                      if (parent.plans.length < allPlanCodes.length) {
-                        return (
-                          <p className="text-[11px] text-slate-500">
-                            Solo visible en planes donde también esté «{parent.label || parentId}»
-                            ({plansSummary(parent.plans, planOptions)}), y si responde {String(q.showIf?.equals)}.
-                          </p>
-                        );
-                      }
-                      return null;
-                    })()}
+                    {allPlanCodes.length > 0 && q.plans.length < allPlanCodes.length && (
+                      <p className="text-[11px] text-amber-800 font-semibold mt-2 leading-relaxed">
+                        El cliente no la verá si elige un plan que no esté marcado.
+                        Faltan:{' '}
+                        {planOptions
+                          .filter((p) => !q.plans.includes(p.code))
+                          .map((p) => p.label)
+                          .join(' · ') || 'ninguno'}
+                        . Pulsa «Todos» si debe salir en todos.
+                      </p>
+                    )}
+                    {q.plans.length === 0 && (
+                      <p className="text-[11px] text-rose-600 font-semibold mt-2">
+                        Sin planes: no saldrá en ningún flujo. Marca al menos uno o pulsa Todos.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

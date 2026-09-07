@@ -12,47 +12,55 @@
 const express = require('express');
 const personasClient = require('../services/personasClient');
 const personasMapper = require('../services/personasMapper');
+const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
 const {
-  recordFuneralEmission,
-  recordFuneralEmissionBySid,
+  recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
 
-function resolveFuneralSubmissionId(state) {
-  const payload = state?.checkoutPayload && typeof state.checkoutPayload === 'object'
-    ? state.checkoutPayload
-    : {};
-  const canal = state?.metadataCanal && typeof state.metadataCanal === 'object'
-    ? state.metadataCanal
-    : {};
-  return String(
-    state?.funeralSubmissionId
-    || payload.funeralSubmissionId
-    || canal.funeralSubmissionId
-    || '',
-  ).trim();
+function asRecord(value) {
+  return value && typeof value === 'object' ? value : {};
 }
 
-function resolvePaymentSid(state) {
-  return String(state?.paymentSid || state?.sid || '').trim();
+/** Refs para persistir la póliza en Nexus (cualquier empresa). */
+function resolveFuneralRefs(state) {
+  const payload = asRecord(state?.checkoutPayload);
+  const canal = asRecord(state?.metadataCanal);
+  return {
+    submissionId: String(
+      state?.funeralSubmissionId
+      || payload.funeralSubmissionId
+      || canal.funeralSubmissionId
+      || '',
+    ).trim(),
+    paymentSid: String(state?.paymentSid || state?.sid || payload.paymentSid || '').trim(),
+    sessionId: String(
+      state?.originSessionId
+      || payload.originSessionId
+      || canal.originSessionId
+      || state?.sessionId
+      || payload.sessionId
+      || '',
+    ).trim(),
+  };
+}
+
+/** Fusiona metadata SSO del JWT (nexusAuth) en state.metadataCanal — igual que RCV. */
+function withNexusMetadata(state, nexusMetadata) {
+  if (!state || typeof state !== 'object') return state;
+  if (!nexusMetadata || typeof nexusMetadata !== 'object' || !Object.keys(nexusMetadata).length) {
+    return state;
+  }
+  return {
+    ...state,
+    metadataCanal: { ...(state.metadataCanal || {}), ...nexusMetadata },
+  };
 }
 
 const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
-
-/** Calcula la edad (años cumplidos) a partir de una fecha ISO (yyyy-mm-dd). */
-function edadDesdeFecha(fechaIso) {
-  if (!fechaIso) return null;
-  const d = new Date(fechaIso);
-  if (Number.isNaN(d.getTime())) return null;
-  const hoy = new Date();
-  let edad = hoy.getFullYear() - d.getFullYear();
-  const m = hoy.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && hoy.getDate() < d.getDate())) edad--;
-  return edad >= 0 ? edad : null;
-}
 
 /**
  * Normaliza un asegurado del front al formato de la API:
@@ -62,11 +70,7 @@ function edadDesdeFecha(fechaIso) {
 function mapAsegurado(a) {
   const cparen = Number(a.cparen ?? a.parentesco ?? 0) || 0;
   const xrif = String(a.xrif_asegurado ?? a.identificacion ?? '').replace(/\D/g, '');
-  const nedad =
-    a.nedad_asegurado != null
-      ? Number(a.nedad_asegurado)
-      : edadDesdeFecha(a.fechaNac ?? a.fnac ?? a.fecha_nacimiento);
-  return { cparen, xrif_asegurado: xrif, nedad_asegurado: nedad };
+  return { cparen, xrif_asegurado: xrif, nedad_asegurado: resolveNedadAsegurado(a) };
 }
 
 // ── GET /planes ─────────────────────────────────────────────────────────────
@@ -117,11 +121,15 @@ router.post('/cotizacion', async (req, res) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[personas/cotizacion]', msg);
-    res.status(502).json({
+    const edades = asegurados
+      .map((a) => `${a.xrif_asegurado || '?'} (${a.nedad_asegurado} años, parentesco ${a.cparen})`)
+      .join('; ');
+    console.error('[personas/cotizacion]', msg, edades);
+    const isAge = /criterios de edad/i.test(msg);
+    res.status(isAge ? 422 : 502).json({
       success: false,
-      code: err.code || 'LAMUNDIAL_PERSON_ERROR',
-      message: `No se pudo cotizar: ${msg}`,
+      code: err.code || (isAge ? 'PERSONAS_AGE' : 'LAMUNDIAL_PERSON_ERROR'),
+      message: `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
     });
   }
 });
@@ -167,10 +175,11 @@ router.post('/poliza-vigente', async (req, res) => {
 // ── POST /validacion ──────────────────────────────────────────────────────────
 router.post('/validacion', async (req, res) => {
   const { state, plan: bodyPlan } = req.body || {};
-  const cplan = bodyPlan || state?.selectedPlan?.cplan;
+  const mergedState = withNexusMetadata(state, req.nexusMetadata);
+  const cplan = bodyPlan || mergedState?.selectedPlan?.cplan;
 
   try {
-    const validation = await assertPersonasCanEmit(state, { plan: cplan });
+    const validation = await assertPersonasCanEmit(mergedState, { plan: cplan });
     res.json({ success: true, validation: validation.result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -190,7 +199,8 @@ router.post('/validacion', async (req, res) => {
 // emite la póliza (vista eePoliza_Personas_General) vía nest-api.
 // Recibe el estado del wizard: { state: { tomador, funeral, selectedPlan }, frecuencia? }
 router.post('/emision', async (req, res) => {
-  const { state, frecuencia } = req.body || {};
+  const { state: rawState, frecuencia } = req.body || {};
+  const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
   const cplan = state?.selectedPlan?.cplan;
   const cramo = DEFAULT_RAMO;
@@ -243,6 +253,11 @@ router.post('/emision', async (req, res) => {
       { plan: cplan, frecuencia: ifrecuencia },
     );
 
+    const meta = state.metadataCanal || {};
+    console.log(
+      `[personas/emision] metadataCanal cproductor=${meta.cproductor ?? 'default'} cusuario=${meta.cusuario ?? 'default'} canal=${meta.canal ?? 'default'} cgestor_in=${meta.cgestor_in ?? 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'}`,
+    );
+
     const emitted = await personasClient.createEmissionPerson(payload);
 
     const emitMetadata = { ...metadata };
@@ -267,18 +282,20 @@ router.post('/emision', async (req, res) => {
         ptasa: cotizacion.ptasa,
       },
     };
-    const submissionId = resolveFuneralSubmissionId(state);
-    const paymentSid = resolvePaymentSid(state);
+    const funeralRefs = resolveFuneralRefs(state);
     try {
-      let saved = null;
-      if (submissionId) {
-        saved = await recordFuneralEmission(submissionId, emissionRecord);
-      }
-      if (!saved && paymentSid) {
-        saved = await recordFuneralEmissionBySid(paymentSid, emissionRecord);
-      }
+      const saved = await recordFuneralEmissionFlexible(funeralRefs, emissionRecord);
       if (!saved) {
-        console.warn('[personas/emision] póliza emitida sin URL en historial (falta funeralSubmissionId/sid)');
+        console.warn(
+          `[personas/emision] póliza ${emissionRecord.cnpoliza} sin historial`
+          + ` (id=${funeralRefs.submissionId || '-'} sid=${funeralRefs.paymentSid || '-'}`
+          + ` session=${funeralRefs.sessionId || '-'})`,
+        );
+      } else {
+        console.log(
+          `[personas/emision] historial funerario id=${saved.id} empresa=${saved.empresaId}`
+          + ` cnpoliza=${saved.cnpoliza}`,
+        );
       }
     } catch (err) {
       console.warn('[personas/emision] no se pudo guardar URL en historial:', err?.message || err);

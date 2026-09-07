@@ -359,18 +359,45 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const ano = parseInt(String(v.año || v.ano || ''), 10) || new Date().getFullYear();
 
   const metadata = state.metadataCanal || {};
+  const pickActor = (...keys) => {
+    for (const key of keys) {
+      for (const src of [metadata, state]) {
+        const val = src?.[key];
+        if (val != null && String(val).trim() !== '') return val;
+      }
+    }
+    return undefined;
+  };
 
-  const productor = metadata.cproductor !== undefined ? metadata.cproductor : (process.env.LAMUNDIAL_PRODUCTOR || 80080);
-  const cusuario = resolveCusuarioCoberturas(metadata);
+  const productor = pickActor('cproductor', 'productor') ?? (process.env.LAMUNDIAL_PRODUCTOR || 80080);
   const quoteMeta = overrides.quoteMeta || state.quoteMeta || {};
   const tasasMeta = quoteMeta.tasas || {};
   const cramo = resolveRcvCramo(v, metadata);
   const ctipocanal = metadata.ctipocanal !== undefined && String(metadata.ctipocanal).trim() !== ''
     ? metadata.ctipocanal
     : undefined;
-  const ccanalalt = parseCanalAltOptional(metadata.ccanalalt_in);
-  const cscanalalt = parseCanalAltOptional(metadata.cscanalalt_in);
-  
+  const ccanalalt = parseCanalAltOptional(pickActor('ccanalalt_in', 'ccanalalt'));
+  const cscanalalt = parseCanalAltOptional(pickActor('cscanalalt_in', 'cscanalalt'));
+  const preferGestor = (...vals) => {
+    const codes = vals
+      .map((v) => (v != null ? String(v).trim() : ''))
+      .filter(Boolean);
+    if (!codes.length) return undefined;
+    return codes.find((c) => c.includes('-')) || codes[0];
+  };
+  const cgestor = preferGestor(pickActor('cgestor'), metadata.cgestor, state.cgestor);
+  const cgestorIn = preferGestor(pickActor('cgestor_in'), metadata.cgestor_in, state.cgestor_in);
+  const ssoCusuario = pickActor('cusuario');
+  const ssoUser = ssoCusuario != null ? parseInt(String(ssoCusuario), 10) : NaN;
+  const planesUser = parseInt(String(resolveCusuarioCoberturas(metadata)), 10);
+  // Emisión: cusuario del SSO (p.ej. 7 del iframe). 1422/planes solo cotiza.
+  const cusuario = Number.isFinite(ssoUser) && ssoUser > 0 && ssoUser !== planesUser
+    ? ssoUser
+    : (cgestor ? undefined : planesUser);
+  const centidadRaw = pickActor('centidad');
+  const centidad = centidadRaw != null ? String(centidadRaw).trim().toUpperCase() : undefined;
+  const citemRaw = pickActor('citem');
+  const citem = citemRaw != null ? String(citemRaw).trim() : undefined;
   const plan = (
     overrides.plan ||
     state.selectedPlan?.cplan ||
@@ -422,6 +449,11 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
 
     productor: productor != null ? String(productor) : undefined,
     cusuario,
+    ...(cgestor ? { cgestor } : {}),
+    ...(cgestorIn ? { cgestor_in: cgestorIn } : {}),
+    ...(state.sid ? { sid: String(state.sid).trim() } : {}),
+    ...(centidad ? { centidad } : {}),
+    ...(citem ? { citem } : {}),
     ...(ctipocanal !== undefined ? { ctipocanal } : {}),
     ccanalalt,
     cscanalalt,
@@ -617,7 +649,14 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     cterm_y_cod: parseInt(p.dec_term_y_cod || '1', 10),
     cproductor: parseInt(p.productor || process.env.LAMUNDIAL_PRODUCTOR || 80080, 10),
     ctipocanal: p.ctipocanal ?? 'E',
-    cusuario: parseInt(p.cusuario || resolveCusuarioCoberturas({}), 10),
+    ...(p.cusuario != null && String(p.cusuario).trim() !== ''
+      ? { cusuario: parseInt(String(p.cusuario), 10) }
+      : {}),
+    ...(p.cgestor ? { cgestor: String(p.cgestor).trim() } : {}),
+    ...(p.cgestor_in ? { cgestor_in: String(p.cgestor_in).trim() } : {}),
+    ...(p.centidad ? { centidad: String(p.centidad).trim().toUpperCase() } : {}),
+    ...(p.citem ? { citem: String(p.citem).trim() } : {}),
+    ...(p.sid ? { sid: String(p.sid).trim() } : {}),
     msumaaseg,
     ifrecuencia: p.frecuencia || 'A',
     femision,

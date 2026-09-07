@@ -17,16 +17,50 @@ const { clasificarDiligencia } = require('../services/diligenciaService');
 
 const router = express.Router();
 
-/** Fusiona metadata SSO del JWT (nexusAuth) en state.metadataCanal. */
+function decodeJwtMetadata(token) {
+  if (!token || typeof token !== 'string') return {};
+  try {
+    const part = token.replace(/^Bearer\s+/i, '').split('.')[1];
+    if (!part) return {};
+    const json = Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const payload = JSON.parse(json);
+    return payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+  } catch {
+    return {};
+  }
+}
+
+function preferGestorCode(...vals) {
+  const codes = vals
+    .map((v) => (v != null ? String(v).trim() : ''))
+    .filter(Boolean);
+  if (!codes.length) return '';
+  return codes.find((c) => c.includes('-')) || codes[0];
+}
+
+/** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
-  if (!nexusMetadata || typeof nexusMetadata !== 'object' || !Object.keys(nexusMetadata).length) {
-    return state;
+  const actorKeys = ['cgestor', 'cgestor_in', 'centidad', 'citem', 'cproductor', 'ccanalalt_in', 'cscanalalt_in', 'ccanalalt', 'cscanalalt'];
+  const sources = [];
+  if (nexusMetadata && typeof nexusMetadata === 'object') sources.push(nexusMetadata);
+  if (state.metadataCanal && typeof state.metadataCanal === 'object') sources.push(state.metadataCanal);
+  sources.push(state);
+  for (const key of ['nexus_token', 'nexusToken']) {
+    if (typeof state[key] === 'string') sources.push(decodeJwtMetadata(state[key]));
   }
-  return {
-    ...state,
-    metadataCanal: { ...(state.metadataCanal || {}), ...nexusMetadata },
-  };
+
+  const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  for (const key of actorKeys) {
+    const vals = sources.map((src) => src?.[key]);
+    const val = (key === 'cgestor' || key === 'cgestor_in')
+      ? preferGestorCode(...vals)
+      : (vals.find((v) => v != null && String(v).trim() !== '') ?? '');
+    if (val) mergedMeta[key] = val;
+  }
+
+  const gestor = mergedMeta.cgestor != null ? String(mergedMeta.cgestor).trim() : '';
+  return { ...state, metadataCanal: mergedMeta, ...(gestor ? { cgestor: gestor } : {}) };
 }
 
 /**
@@ -181,7 +215,7 @@ router.post('/policies/emit', async (req, res) => {
     const mergedState = withNexusMetadata(state, req.nexusMetadata);
     const meta = mergedState.metadataCanal || {};
     console.log(
-      `[modulo-emision/emit] metadataCanal cproductor=${meta.cproductor ?? 'default'} cusuario=${meta.cusuario ?? meta.cusuario_planes ?? 'default'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'}`,
+      `[modulo-emision/emit] metadataCanal centidad=${meta.centidad ?? '?'} citem=${meta.citem ?? '?'} cproductor=${meta.cproductor ?? 'default'} cusuario=${meta.cusuario ?? meta.cusuario_planes ?? 'default'} cgestor=${meta.cgestor ?? 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'}`,
     );
 
     const result = await policyService.quoteAndEmit(mergedState, {

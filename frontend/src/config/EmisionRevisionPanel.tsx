@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  Check, X, Loader2, ClipboardList, User, FileText, AlertTriangle,
-  History, Clock, CreditCard, ExternalLink, FileDown, ArrowLeft,
-  RefreshCw, Mail, Hash, ShieldCheck, Inbox,
+  Check, X, Loader2, ClipboardList, User, AlertTriangle,
+  History, ExternalLink, FileDown, ArrowLeft,
+  RefreshCw, Mail, ShieldCheck, Inbox,
 } from 'lucide-react';
-import { AuroraBackground } from '../components/AuroraBackground';
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
+import { publicAsset } from '../lib/app-base';
 
 const NEXUS_URL = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
 const PANEL = readConfigPanelContext();
@@ -135,18 +135,35 @@ const OCR_DOC_LABELS: Record<string, string> = {
   pasaporte: 'Pasaporte',
 };
 
+/** Uploads OCR viven en `/ocr/files/...`, no en `/emision/files/...`. */
 function resolveDocUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith('/')) {
+
+  const withOcrFilesPrefix = (pathname: string): string => {
+    if (pathname.startsWith('/ocr/files/')) return pathname;
+    if (pathname.startsWith('/files/')) return `/ocr${pathname}`;
+    const filesAt = pathname.indexOf('/files/');
+    if (filesAt >= 0) return `/ocr${pathname.slice(filesAt)}`;
+    return pathname;
+  };
+
+  if (/^https?:\/\//i.test(trimmed)) {
     try {
-      return `${window.location.origin}${trimmed}`;
+      const u = new URL(trimmed);
+      u.pathname = withOcrFilesPrefix(u.pathname);
+      return u.toString();
     } catch {
       return trimmed;
     }
   }
-  return trimmed;
+
+  const path = withOcrFilesPrefix(trimmed.startsWith('/') ? trimmed : `/${trimmed}`);
+  try {
+    return `${window.location.origin}${path}`;
+  } catch {
+    return path;
+  }
 }
 
 function strUrl(v: unknown): string | undefined {
@@ -247,6 +264,18 @@ function replacePanelToken(next: string) {
   }
 }
 
+function jwtScope(token: string): string {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return '';
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(json) as { scope?: string };
+    return String(payload.scope ?? '');
+  } catch {
+    return '';
+  }
+}
+
 async function postRefresh(path: string, current: string): Promise<string | null> {
   const res = await fetch(`${NEXUS_URL}${path}`, {
     method: 'POST',
@@ -262,9 +291,16 @@ async function refreshRevisionToken(): Promise<boolean> {
   const current = readPanelToken();
   if (!current) return false;
   try {
-    const next =
-      (await postRefresh('/api/funeral-submissions/refresh-token', current)) ||
-      (await postRefresh('/api/config/refresh-token', current));
+    const scope = jwtScope(current);
+    const paths =
+      scope === 'config-panel'
+        ? ['/api/config/refresh-token', '/api/funeral-submissions/refresh-token']
+        : ['/api/funeral-submissions/refresh-token'];
+    let next: string | null = null;
+    for (const path of paths) {
+      next = await postRefresh(path, current);
+      if (next) break;
+    }
     if (!next) return false;
     replacePanelToken(next);
     return true;
@@ -323,6 +359,37 @@ function collectOcrBlocks(sub: Submission): { key: string; label: string; ocr: R
     .filter((x): x is { key: string; label: string; ocr: Record<string, unknown> } => x != null);
 }
 
+function BrandBar({ className = '' }: { className?: string }) {
+  return <div className={`revision-brand-bar ${className}`} aria-hidden />;
+}
+
+function MundialLogo({ compact = false }: { compact?: boolean }) {
+  const [imgError, setImgError] = useState(false);
+  if (imgError) {
+    return (
+      <div className="leading-tight shrink-0">
+        <p className={`font-wordmark text-indigo-700 ${compact ? 'text-base' : 'text-xl'}`}>La Mundial</p>
+        {!compact && (
+          <p className="text-[9px] font-bold tracking-[0.22em] text-slate-400 uppercase">de Seguros</p>
+        )}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={publicAsset('logo-lamundial-sidebar.png')}
+      alt="La Mundial de Seguros"
+      className={
+        compact
+          ? 'h-8 w-auto object-contain shrink-0'
+          : 'h-10 sm:h-11 w-auto max-w-[190px] object-contain shrink-0'
+      }
+      onError={() => setImgError(true)}
+      draggable={false}
+    />
+  );
+}
+
 function DocLinkCard({ doc }: { doc: DocLink }) {
   const isPolicy = doc.kind === 'policy';
   return (
@@ -330,66 +397,267 @@ function DocLinkCard({ doc }: { doc: DocLink }) {
       href={doc.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`group flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition-all active:scale-[0.99] ${
+      className={`group flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-all active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
         isPolicy
-          ? 'border-indigo-200 bg-gradient-to-r from-indigo-50 to-white text-indigo-950 shadow-sm hover:border-indigo-300 hover:shadow'
-          : 'border-slate-200/80 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
+          ? 'border-indigo-200 bg-indigo-50/60 text-indigo-950 hover:border-indigo-300 hover:bg-indigo-50'
+          : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
       }`}
     >
-      <span className={`grid place-items-center w-11 h-11 rounded-xl shrink-0 ${
-        isPolicy ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600'
+      <span className={`grid place-items-center w-10 h-10 rounded-lg shrink-0 ${
+        isPolicy ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-600'
       }`}
       >
-        {isPolicy ? <FileDown size={18} /> : <ExternalLink size={16} />}
+        {isPolicy ? <FileDown size={17} /> : <ExternalLink size={15} />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold leading-tight">{doc.label}</span>
-        <span className="block text-[11px] text-slate-500 truncate mt-0.5">
-          Abrir en una pestaña nueva
-        </span>
+        <span className="block text-[11px] text-slate-500 truncate mt-0.5">Abrir documento</span>
       </span>
-      <span className="text-[11px] font-bold text-indigo-600 shrink-0">
-        Ver
-      </span>
+      <span className="text-[11px] font-bold text-indigo-700 shrink-0 group-hover:underline">Ver</span>
     </a>
   );
 }
 
-function SectionCard({
-  title,
-  icon,
-  children,
-  accent,
-}: {
-  title: string;
-  icon: ReactNode;
-  children: ReactNode;
-  accent?: boolean;
-}) {
+function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine[] }) {
   return (
-    <section className={`rounded-2xl border p-4 sm:p-5 ${
-      accent
-        ? 'border-indigo-100 bg-indigo-50/50'
-        : 'border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
-    }`}
-    >
-      <h3 className={`text-[11px] font-black uppercase tracking-[0.14em] mb-3.5 flex items-center gap-2 ${
-        accent ? 'text-indigo-600' : 'text-slate-500'
-      }`}
-      >
-        {icon}
-        {title}
-      </h3>
-      {children}
-    </section>
+    <div className="revision-card overflow-hidden min-w-0">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50/90 border-b border-slate-100">
+        <div className="flex items-center gap-2">
+          <span className="grid place-items-center w-7 h-7 rounded-lg bg-indigo-700 text-white shrink-0">
+            <ClipboardList size={13} />
+          </span>
+          <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-indigo-900">
+            Scoring salud
+          </h3>
+        </div>
+        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(total)}`}>
+          {total} pts
+        </span>
+      </div>
+      <ul className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+        {breakdown.length === 0 ? (
+          <li className="text-sm text-slate-500 py-2 sm:col-span-2">Sin desglose de preguntas.</li>
+        ) : (
+          breakdown.map((line) => (
+            <li
+              key={line.questionId}
+              className="flex items-start justify-between gap-2 text-xs border-b border-slate-100 pb-1.5"
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-800 leading-snug">{line.label}</p>
+                <p className="text-[10px] text-slate-500">Resp: {formatAnswer(line.answer)}</p>
+              </div>
+              <span className="font-bold text-indigo-700 shrink-0 tabular-nums">+{line.points}</span>
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
   );
 }
 
-function Field({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
+function CompactSummaryCard({
+  selected,
+  primaLabel,
+  beneficiaries,
+  polNum,
+  recNum,
+  emittedWhen,
+}: {
+  selected: Submission;
+  primaLabel: string | null;
+  beneficiaries: string[];
+  polNum?: string;
+  recNum?: string;
+  emittedWhen?: string | null;
+}) {
   return (
-    <div className={wide ? 'col-span-2' : undefined}>
-      <dt className="text-[11px] font-semibold text-slate-400 mb-0.5">{label}</dt>
-      <dd className="text-sm font-medium text-slate-800 break-words">{children}</dd>
+    <div className="revision-card overflow-hidden min-w-0">
+      <BrandBar />
+      <div className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="grid place-items-center w-11 h-11 rounded-xl bg-indigo-700 text-white text-sm font-black shrink-0">
+              {initials(selected.tomadorNombre || selected.tomadorRif)}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${estadoBadge(selected.estado)}`}>
+                  {estadoLabel(selected.estado)}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">#{selected.id.slice(0, 8)}</span>
+              </div>
+              <h2 className="font-display text-lg sm:text-xl font-black text-indigo-900 leading-tight break-words">
+                {selected.tomadorNombre || 'Tomador'}
+              </h2>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                {selected.tomadorRif && (
+                  <span className="inline-flex items-center gap-1">
+                    <User size={11} className="text-indigo-400" />
+                    {selected.tomadorRif}
+                  </span>
+                )}
+                {selected.tomadorEmail && (
+                  <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
+                    <Mail size={11} className="text-indigo-400 shrink-0" />
+                    <span className="break-all">{selected.tomadorEmail}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <div className={`rounded-lg border px-3 py-1.5 text-center min-w-[64px] ${scoreTone(selected.scoreTotal)}`}>
+              <p className="text-base font-black tabular-nums leading-none">{selected.scoreTotal}</p>
+              <p className="text-[8px] uppercase font-bold mt-0.5 tracking-wider">Score</p>
+            </div>
+            {primaLabel && (
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-center min-w-[64px]">
+                <p className="text-base font-black tabular-nums leading-none text-indigo-800">{primaLabel}</p>
+                <p className="text-[8px] uppercase font-bold mt-0.5 tracking-wider text-indigo-400">Prima</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-x-4 gap-y-2 mt-3 pt-3 border-t border-slate-100 text-xs">
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Plan</dt>
+            <dd className="font-semibold text-slate-800 mt-0.5 leading-snug">
+              {selected.planName || selected.snapshot?.selectedPlan?.name || selected.cplan}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Código</dt>
+            <dd className="font-semibold text-slate-800 mt-0.5">
+              {selected.cplan}
+              {selected.cramo != null ? ` · R${selected.cramo}` : ''}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Frecuencia</dt>
+            <dd className="font-semibold text-slate-800 mt-0.5">
+              {selected.snapshot?.funeral?.frecuencia || '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Tomador</dt>
+            <dd className="font-medium text-slate-800 mt-0.5 leading-snug">{personLabel(selected.snapshot?.tomador)}</dd>
+          </div>
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Titular</dt>
+            <dd className="font-medium text-slate-800 mt-0.5 leading-snug">{personLabel(selected.snapshot?.asegurado)}</dd>
+          </div>
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Póliza</dt>
+            <dd className="font-medium text-slate-800 mt-0.5">
+              {polNum || <span className="text-slate-400 italic">Pendiente</span>}
+            </dd>
+          </div>
+        </dl>
+
+        {beneficiaries.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Beneficiarios</p>
+            <ul className="flex flex-wrap gap-1">
+              {beneficiaries.map((line) => (
+                <li key={line} className="text-[11px] rounded-md bg-slate-50 px-2 py-0.5 text-slate-700">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-100">
+          {[
+            { label: 'Solicitud', value: formatDate(selected.createdAt) },
+            {
+              label: 'Revisión',
+              value: selected.reviewedAt
+                ? formatDate(selected.reviewedAt)
+                : 'Pendiente',
+            },
+            {
+              label: 'Emisión',
+              value: emittedWhen ? formatDate(emittedWhen) : '—',
+            },
+          ].map((item) => (
+            <span
+              key={item.label}
+              className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2 py-1 text-[10px] text-slate-600"
+            >
+              <span className="font-bold text-slate-400 uppercase">{item.label}</span>
+              {item.value}
+            </span>
+          ))}
+          {recNum && (
+            <span className="inline-flex items-center rounded-lg bg-slate-50 border border-slate-100 px-2 py-1 text-[10px] text-slate-600">
+              <span className="font-bold text-slate-400 uppercase mr-1">Recibo</span>
+              {recNum}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DecisionPanel({
+  acting,
+  rejectReason,
+  onRejectReason,
+  onApprove,
+  onReject,
+  className = '',
+  compact = false,
+}: {
+  acting: boolean;
+  rejectReason: string;
+  onRejectReason: (v: string) => void;
+  onApprove: () => void;
+  onReject: () => void;
+  className?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={
+        compact
+          ? `min-w-0 w-full ${className}`
+          : `revision-decision-card rounded-2xl p-4 sm:p-5 min-w-0 w-full overflow-hidden ${className}`
+      }
+    >
+      {!compact && <BrandBar className="w-full rounded-t-xl mb-4" />}
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-indigo-800 mb-2">
+        Decisión del técnico
+      </p>
+      <button
+        type="button"
+        disabled={acting}
+        onClick={onApprove}
+        className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-700 text-white text-sm font-bold hover:bg-indigo-800 disabled:opacity-50 min-h-[44px] shadow-lg shadow-indigo-700/25 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 mb-2"
+      >
+        {acting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+        Autorizar pago
+      </button>
+      <div className="flex flex-col gap-2 w-full min-w-0">
+        <input
+          type="text"
+          placeholder="Motivo de rechazo (opcional)"
+          value={rejectReason}
+          onChange={(e) => onRejectReason(e.target.value)}
+          className="w-full min-w-0 text-sm border border-slate-200 rounded-xl px-3 min-h-[44px] bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+        />
+        <button
+          type="button"
+          disabled={acting}
+          onClick={onReject}
+          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border-2 border-rose-200 bg-white text-rose-700 text-sm font-bold hover:bg-rose-50 disabled:opacity-50 min-h-[44px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30"
+        >
+          <X size={16} /> Rechazar
+        </button>
+      </div>
     </div>
   );
 }
@@ -547,502 +815,379 @@ export function EmisionRevisionPanel() {
     void loadDetail(s.id);
   };
 
+  const primaLabel = quote?.mprimaext != null
+    ? `$${Number(quote.mprimaext).toFixed(2)}`
+    : quote?.mprima != null
+      ? `$${Number(quote.mprima).toFixed(2)}`
+      : null;
+
   return (
-    <div className="min-h-screen relative">
-      <AuroraBackground />
-      <div className="pt-4 sm:pt-6 px-3 sm:px-6 lg:px-10 pb-28 lg:pb-12 max-w-6xl mx-auto relative z-10">
-        <header className={`mb-4 sm:mb-6 ${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
-          <div className="rounded-3xl bg-indigo-700 text-white px-5 sm:px-7 py-5 sm:py-6 shadow-[0_18px_40px_-20px_rgba(15,26,90,0.55)]">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-[0.65rem] font-bold tracking-[0.2em] text-indigo-200 uppercase mb-1.5 inline-flex items-center gap-1.5">
-                  <ShieldCheck size={12} />
-                  Mesa técnica · funerario
+    <div className="revision-shell min-h-screen overflow-x-hidden">
+      <header className={`sticky top-0 z-30 bg-white shadow-sm ${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
+        <BrandBar />
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10">
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <span className="sm:hidden"><MundialLogo compact /></span>
+              <span className="hidden sm:inline-flex"><MundialLogo /></span>
+              <div className="hidden sm:block w-px h-11 bg-slate-200 shrink-0" aria-hidden />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold tracking-[0.18em] text-fuchsia-500 uppercase inline-flex items-center gap-1.5">
+                  <ShieldCheck size={11} />
+                  Mesa técnica · Funerario
                 </p>
-                <h1 className="font-display text-2xl sm:text-[1.85rem] font-black tracking-tight">
+                <h1 className="font-display text-lg sm:text-2xl text-indigo-900 leading-tight">
                   Autorización de pólizas
                 </h1>
-                <p className="text-sm text-indigo-100/80 mt-1.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Empresa #{EMPRESA_ID} · {canalDisplayLabel(PANEL.canal)}
                 </p>
               </div>
-              {filter === 'pending' && !loading && (
-                <div className="rounded-2xl bg-white/10 border border-white/15 px-4 py-3 min-w-[96px] text-center">
-                  <p className="text-2xl font-black tabular-nums leading-none">{pendingCount}</p>
-                  <p className="text-[10px] uppercase tracking-wider text-indigo-100 mt-1 font-bold">
+            </div>
+            {filter === 'pending' && !loading && (
+              <div className="flex items-center gap-2 rounded-xl sm:rounded-2xl bg-indigo-700 text-white px-3 py-2 sm:px-5 sm:py-3 shadow-lg shadow-indigo-700/20">
+                <div className="text-right">
+                  <p className="text-xl sm:text-3xl font-black tabular-nums leading-none">{pendingCount}</p>
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-indigo-200 mt-0.5 sm:mt-1 font-bold">
                     Por revisar
                   </p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        </header>
+        </div>
+      </header>
 
+      <div className={`max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-4 sm:py-5 lg:pb-8 ${
+        mobileDetail && selected?.estado === 'pending'
+          ? 'pb-[calc(15rem+env(safe-area-inset-bottom))]'
+          : 'pb-8'
+      }`}>
         {error && (
-          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
           </div>
         )}
 
-        <div className={`flex flex-wrap items-center gap-2 mb-4 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
-          <div className="flex p-1 rounded-xl bg-white/80 border border-slate-200/80 shadow-sm">
-            {filterTabs.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter(key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                  filter === key ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {key === 'history' && <History size={12} />}
-                {label}
-              </button>
-            ))}
+        <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
+          <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="inline-flex p-1 rounded-xl bg-white border border-slate-200 shadow-sm min-w-min">
+              {filterTabs.map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all min-h-[44px] touch-manipulation whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                    filter === key
+                      ? 'bg-indigo-700 text-white shadow-md'
+                      : 'text-slate-600 hover:text-indigo-900 hover:bg-slate-50'
+                  }`}
+                >
+                  {key === 'history' && <History size={12} />}
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500 font-semibold tabular-nums">
             {loading ? '…' : `${list.length} registro${list.length === 1 ? '' : 's'}`}
           </span>
           <button
             type="button"
             onClick={() => void loadList()}
-            className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+            className="sm:ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 min-h-[44px] px-3 rounded-lg border border-indigo-100 bg-white hover:bg-indigo-50 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
           >
-            <RefreshCw size={12} />
+            <RefreshCw size={13} />
             Actualizar
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
-          <div className={`lg:col-span-2 bg-white/95 backdrop-blur rounded-3xl border border-slate-200/80 overflow-hidden shadow-[0_8px_30px_-18px_rgba(15,23,42,0.25)] ${
-            mobileDetail && selected ? 'hidden lg:block' : ''
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+          <aside className={`lg:col-span-3 xl:col-span-3 revision-card overflow-hidden flex flex-col ${
+            mobileDetail && selected ? 'hidden lg:flex' : ''
           }`}
           >
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-              <Inbox size={14} className="text-indigo-600" />
-              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Bandeja</p>
+            <div className="px-4 py-3.5 bg-indigo-700 text-white flex items-center gap-2 shrink-0">
+              <Inbox size={16} />
+              <span className="text-sm font-bold">Bandeja de entrada</span>
+              {!loading && (
+                <span className="ml-auto text-xs font-bold bg-white/15 rounded-full px-2.5 py-0.5 tabular-nums">
+                  {list.length}
+                </span>
+              )}
             </div>
-            {loading ? (
-              <div className="p-10 flex justify-center">
-                <Loader2 className="animate-spin text-indigo-500" />
-              </div>
-            ) : list.length === 0 ? (
-              <p className="p-8 text-sm text-slate-500 text-center">{emptyMessage}</p>
-            ) : (
-              <ul className="divide-y divide-slate-100 max-h-[min(70vh,720px)] overflow-y-auto">
-                {list.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      onClick={() => openSubmission(s)}
-                      className={`w-full text-left px-4 py-3.5 hover:bg-indigo-50/70 transition-colors ${
-                        selected?.id === s.id ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'border-l-4 border-transparent'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className="grid place-items-center w-10 h-10 rounded-full bg-indigo-100 text-indigo-800 text-xs font-black shrink-0">
-                          {initials(s.tomadorNombre || s.tomadorRif)}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-sm text-slate-900 truncate">
-                              {s.tomadorNombre || s.tomadorRif || 'Sin nombre'}
-                            </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${estadoBadge(s.estado)}`}>
-                              {estadoLabel(s.estado)}
-                            </span>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/60 min-h-[200px]">
+              {loading ? (
+                <div className="py-16 flex justify-center">
+                  <Loader2 className="animate-spin text-indigo-600" size={28} />
+                </div>
+              ) : list.length === 0 ? (
+                <p className="py-12 px-4 text-sm text-slate-500 text-center">{emptyMessage}</p>
+              ) : (
+                list.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => openSubmission(s)}
+                    className={`revision-inbox-item w-full text-left rounded-xl p-3 min-h-[72px] touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                      selected?.id === s.id ? 'revision-inbox-item--active' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="grid place-items-center w-11 h-11 rounded-full bg-indigo-100 text-indigo-800 text-xs font-black shrink-0 ring-2 ring-indigo-50">
+                        {initials(s.tomadorNombre || s.tomadorRif)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="font-bold text-sm text-slate-900 leading-tight truncate">
+                            {s.tomadorNombre || s.tomadorRif || 'Sin nombre'}
                           </span>
-                          <p className="text-xs text-slate-500 mt-0.5 truncate">
-                            {s.planName || `Plan ${s.cplan}`}
-                            {policyNumber(s) ? ` · ${policyNumber(s)}` : ''}
-                          </p>
-                          <div className="flex items-center justify-between gap-2 mt-1">
-                            <p className="text-[10px] text-slate-400">
-                              {formatDate(s.reviewedAt || s.createdAt)}
-                            </p>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${scoreTone(s.scoreTotal)}`}>
-                              {s.scoreTotal} pts
-                            </span>
-                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${estadoBadge(s.estado)}`}>
+                            {estadoLabel(s.estado)}
+                          </span>
                         </span>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                        <p className="text-xs text-slate-500 mt-1 truncate">
+                          {s.planName || `Plan ${s.cplan}`}
+                        </p>
+                        <div className="flex items-center justify-between gap-2 mt-2">
+                          <p className="text-[10px] text-slate-400">{formatDate(s.reviewedAt || s.createdAt)}</p>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(s.scoreTotal)}`}>
+                            {s.scoreTotal} pts
+                          </span>
+                        </div>
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </aside>
 
-          <div className={`lg:col-span-3 min-h-[280px] ${
+          <main className={`lg:col-span-9 xl:col-span-9 min-h-[320px] min-w-0 ${
             !(mobileDetail && selected) ? 'hidden lg:block' : ''
           }`}
           >
             {!selected ? (
-              <div className="bg-white/90 rounded-3xl border border-dashed border-slate-200 p-10 text-center shadow-sm">
-                <span className="mx-auto mb-4 grid place-items-center w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-400">
-                  <ClipboardList size={26} />
+              <div className="revision-card p-10 sm:p-14 text-center h-full flex flex-col items-center justify-center min-h-[360px]">
+                <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-indigo-700">
+                  <ClipboardList size={36} strokeWidth={1.5} />
                 </span>
-                <p className="font-semibold text-slate-700">Elige una solicitud</p>
-                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">
-                  Revisa identidad, scoring y documentos antes de autorizar el pago.
+                <h2 className="font-display text-xl text-indigo-900 mb-2">Selecciona una solicitud</h2>
+                <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
+                  Revisa identidad, scoring y documentos antes de autorizar el enlace de pago al cliente.
                 </p>
+                {pendingCount > 0 && (
+                  <p className="mt-4 text-xs font-bold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 rounded-full px-3 py-1.5">
+                    {pendingCount} pendiente{pendingCount === 1 ? '' : 's'} en bandeja
+                  </p>
+                )}
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <button
                   type="button"
                   onClick={() => setMobileDetail(false)}
-                  className="lg:hidden inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600"
+                  className="lg:hidden inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 min-h-[44px] px-1 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 rounded-lg"
                 >
                   <ArrowLeft size={16} />
                   Volver al listado
                 </button>
 
-                <div className="rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.25)]">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${estadoBadge(selected.estado)}`}>
-                          {estadoLabel(selected.estado)}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono inline-flex items-center gap-1">
-                          <Hash size={10} />
-                          {selected.id.slice(0, 8)}
-                        </span>
-                      </div>
-                      <h2 className="font-display text-xl sm:text-2xl font-black text-slate-900 leading-tight">
-                        {selected.tomadorNombre || 'Tomador'}
-                      </h2>
-                      <div className="mt-2 flex flex-col sm:flex-row sm:flex-wrap gap-1.5 sm:gap-3 text-sm text-slate-500">
-                        {selected.tomadorRif && (
-                          <span className="inline-flex items-center gap-1.5">
-                            <User size={13} className="text-slate-400" />
-                            {selected.tomadorRif}
-                          </span>
-                        )}
-                        {selected.tomadorEmail && (
-                          <span className="inline-flex items-center gap-1.5 min-w-0">
-                            <Mail size={13} className="text-slate-400 shrink-0" />
-                            <span className="truncate">{selected.tomadorEmail}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className={`rounded-2xl border px-4 py-3 text-center min-w-[88px] ${scoreTone(selected.scoreTotal)}`}>
-                      <p className="text-2xl font-black tabular-nums leading-none">{selected.scoreTotal}</p>
-                      <p className="text-[10px] uppercase font-bold mt-1 tracking-wider">Puntaje</p>
-                    </div>
-                  </div>
-                </div>
-
                 {selected.estado === 'paid' && (
-                  <p className="text-sm text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3">
-                    Póliza pagada y emitida. Quedó registrada en el histórico
-                    {polNum ? ` · ${polNum}` : ''}.
+                  <p className="text-xs text-indigo-900 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                    Póliza pagada y emitida{polNum ? ` · ${polNum}` : ''}.
                   </p>
                 )}
                 {selected.estado === 'approved' && (
-                  <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
-                    Aprobada el {formatDate(selected.reviewedAt)}.
+                  <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                    Aprobada {formatDate(selected.reviewedAt)}.
                     {selected.emailSent
-                      ? ' Se envió el correo con el link de pago al cliente.'
+                      ? ' Correo con link de pago enviado.'
                       : selected.emailError
-                        ? ` Link generado pero el correo falló: ${selected.emailError}`
+                        ? ` Correo falló: ${selected.emailError}`
                         : ' Link de pago generado.'}
                   </p>
                 )}
                 {selected.estado === 'rejected' && (
-                  <p className="text-sm text-rose-800 bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3">
-                    Solicitud rechazada
-                    {selected.reviewedAt ? ` el ${formatDate(selected.reviewedAt)}` : ''}.
+                  <p className="text-xs text-rose-800 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
+                    Rechazada{selected.reviewedAt ? ` ${formatDate(selected.reviewedAt)}` : ''}.
                     {selected.rejectReason ? ` Motivo: ${selected.rejectReason}` : ''}
                   </p>
                 )}
                 {selected.estado === 'expired' && (
-                  <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3">
-                    Link de pago expirado
-                    {selected.paymentExpiresAt ? ` (${formatDate(selected.paymentExpiresAt)})` : ''}.
+                  <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    Link expirado{selected.paymentExpiresAt ? ` (${formatDate(selected.paymentExpiresAt)})` : ''}.
                   </p>
                 )}
 
-                <SectionCard title="Documentos de póliza emitida" icon={<FileDown size={14} />}>
-                  {policyDocs.length === 0 ? (
-                    <p className="text-sm text-slate-500">
-                      {selected.estado === 'paid'
-                        ? 'Sin PDF de póliza registrado. La URL se guarda al completar la emisión.'
-                        : selected.estado === 'approved'
-                          ? 'Aún no hay póliza: el cliente debe pagar. Tras la emisión aparecerán el cuadro de póliza y el número oficial.'
-                          : 'El cuadro de póliza y anexos se guardan aquí al completar pago + emisión.'}
-                    </p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {policyDocs.map((doc) => (
-                        <li key={doc.key}>
-                          <DocLinkCard doc={doc} />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {emittedWhen && (
-                    <p className="text-[11px] text-slate-400 mt-3">
-                      Emitida {formatDate(emittedWhen)}
-                      {polNum ? ` · ${polNum}` : ''}
-                    </p>
-                  )}
-                </SectionCard>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-w-0">
+                  <div className="lg:col-span-8 xl:col-span-9 space-y-4 min-w-0">
+                    <CompactSummaryCard
+                      selected={selected}
+                      primaLabel={primaLabel}
+                      beneficiaries={beneficiaries}
+                      polNum={polNum}
+                      recNum={recNum}
+                      emittedWhen={emittedWhen}
+                    />
 
-                <SectionCard title="Datos de la póliza" icon={<FileText size={14} />}>
-                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <Field label="Plan" wide>
-                      {selected.planName || selected.snapshot?.selectedPlan?.name || selected.cplan}
-                    </Field>
-                    <Field label="Código / ramo">
-                      {selected.cplan}
-                      {selected.cramo != null ? ` · ramo ${selected.cramo}` : ''}
-                    </Field>
-                    <Field label="Nº póliza">
-                      {polNum || (
-                        <span className="text-slate-400 italic font-normal">
-                          {selected.estado === 'paid' ? 'No registrado' : 'Se genera al pagar y emitir'}
-                        </span>
-                      )}
-                    </Field>
-                    {recNum && <Field label="Recibo">{recNum}</Field>}
-                    <Field label="Frecuencia">
-                      {selected.snapshot?.funeral?.frecuencia || '—'}
-                    </Field>
-                    <Field label="Prima">
-                      {quote?.mprimaext != null
-                        ? `$${Number(quote.mprimaext).toFixed(2)}`
-                        : quote?.mprima != null
-                          ? `$${Number(quote.mprima).toFixed(2)}`
-                          : '—'}
-                      {quote?.ptasa != null ? ` · tasa ${quote.ptasa}` : ''}
-                    </Field>
-                    <Field label="Tomador">{personLabel(selected.snapshot?.tomador)}</Field>
-                    <Field label="Asegurado / titular">{personLabel(selected.snapshot?.asegurado)}</Field>
-                    <Field label="Beneficiarios" wide>
-                      {beneficiaries.length === 0 ? (
-                        '—'
-                      ) : (
-                        <ul className="space-y-1">
-                          {beneficiaries.map((line) => (
-                            <li key={line} className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-sm">
-                              {line}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </Field>
-                  </dl>
-                </SectionCard>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <ScoringCard
+                        total={selected.scoreTotal}
+                        breakdown={selected.scoreBreakdown ?? []}
+                      />
 
-                <SectionCard title="Línea de tiempo" icon={<Clock size={14} />}>
-                  <ol className="space-y-3">
-                    {[
-                      { label: 'Solicitud creada', value: formatDate(selected.createdAt) },
-                      { label: 'Revisión técnica', value: selected.reviewedAt ? `${formatDate(selected.reviewedAt)}${selected.reviewedBy ? ` · ${selected.reviewedBy}` : ''}` : 'Pendiente' },
-                      { label: 'Emisión', value: emittedWhen ? formatDate(emittedWhen) : 'Aún no emitida' },
-                    ].map((item) => (
-                      <li key={item.label} className="flex gap-3">
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
-                        <div>
-                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{item.label}</p>
-                          <p className="text-sm font-medium text-slate-800">{item.value}</p>
+                      <div className="revision-card overflow-hidden min-w-0">
+                        <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50/90 border-b border-slate-100">
+                          <FileDown size={14} className="text-indigo-700" />
+                          <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-indigo-900">
+                            Documentos y enlaces
+                          </h3>
+                          <span className="ml-auto text-[10px] font-semibold text-slate-400">
+                            {policyDocs.length + uploadDocs.length} archivo
+                            {policyDocs.length + uploadDocs.length === 1 ? '' : 's'}
+                          </span>
                         </div>
-                      </li>
-                    ))}
-                  </ol>
-                  {selected.rejectReason && (
-                    <p className="mt-3 text-sm text-rose-700 bg-rose-50 rounded-xl px-3 py-2">
-                      Motivo rechazo: {selected.rejectReason}
-                    </p>
-                  )}
-                </SectionCard>
-
-                {uploadDocs.length > 0 && (
-                  <SectionCard title="Expediente OCR" icon={<FileText size={14} />}>
-                    <ul className="space-y-2">
-                      {uploadDocs.map((doc) => (
-                        <li key={doc.key}>
-                          <DocLinkCard doc={doc} />
-                        </li>
-                      ))}
-                    </ul>
-                  </SectionCard>
-                )}
-
-                {(selected.paymentUrl || selected.paymentSid || selected.paymentExpiresAt) && (
-                  <SectionCard title="Checkout de pago (no es la póliza)" icon={<CreditCard size={14} />} accent>
-                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {selected.paymentSid && (
-                        <Field label="SID checkout">
-                          <span className="font-mono text-[11px] break-all">{selected.paymentSid}</span>
-                        </Field>
-                      )}
-                      {selected.paymentExpiresAt && (
-                        <Field label="Link expira">{formatDate(selected.paymentExpiresAt)}</Field>
-                      )}
-                      {selected.paymentUrl && (
-                        <Field label="URL de pago" wide>
-                          <a
-                            href={selected.paymentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-indigo-700 font-semibold hover:underline"
-                          >
-                            Abrir checkout
-                            <ExternalLink size={13} />
-                          </a>
-                        </Field>
-                      )}
-                    </dl>
-                  </SectionCard>
-                )}
-
-                <details className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 group">
-                  <summary className="text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer flex items-center gap-2">
-                    <User size={14} />
-                    Datos OCR de cédulas
-                    <span className="ml-auto text-[10px] font-semibold text-slate-400 normal-case">
-                      {ocrBlocks.length ? `${ocrBlocks.length} documento${ocrBlocks.length === 1 ? '' : 's'}` : 'Sin datos'}
-                    </span>
-                  </summary>
-                  <div className="mt-3">
-                    {ocrBlocks.length === 0 ? (
-                      <p className="text-sm text-slate-500">Sin datos OCR de cédula en el snapshot.</p>
-                    ) : (
-                      <div className="space-y-4">
-                        {ocrBlocks.map((block) => (
-                          <div key={block.key}>
-                            <p className="text-xs font-bold text-slate-600 mb-2">{block.label}</p>
-                            <dl className="grid grid-cols-2 gap-2">
-                              {Object.entries(block.ocr)
-                                .filter(([, v]) => v != null && String(v).trim())
-                                .slice(0, 12)
-                                .map(([k, v]) => (
-                                  <div key={k}>
-                                    <dt className="text-slate-400 uppercase text-[10px]">{k}</dt>
-                                    <dd className="text-sm font-medium text-slate-800">{String(v)}</dd>
-                                  </div>
-                                ))}
+                        <div className="p-3">
+                          {policyDocs.length === 0 && uploadDocs.length === 0 ? (
+                            <p className="text-xs text-slate-500">
+                              {selected.estado === 'paid'
+                                ? 'Sin PDF de póliza registrado.'
+                                : 'Cuadro de póliza y expediente OCR aparecen tras pago/emisión.'}
+                            </p>
+                          ) : (
+                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {policyDocs.map((doc) => (
+                                <li key={doc.key}>
+                                  <DocLinkCard doc={doc} />
+                                </li>
+                              ))}
+                              {uploadDocs.map((doc) => (
+                                <li key={doc.key}>
+                                  <DocLinkCard doc={doc} />
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {(selected.paymentUrl || selected.paymentSid || selected.paymentExpiresAt) && (
+                            <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 pt-3 mt-3 border-t border-slate-100 text-xs">
+                              {selected.paymentUrl && (
+                                <div className="sm:col-span-2 xl:col-span-3">
+                                  <dt className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Checkout</dt>
+                                  <dd>
+                                    <a
+                                      href={selected.paymentUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-indigo-700 font-semibold hover:underline"
+                                    >
+                                      Abrir link de pago
+                                      <ExternalLink size={12} />
+                                    </a>
+                                  </dd>
+                                </div>
+                              )}
+                              {selected.paymentExpiresAt && (
+                                <div>
+                                  <dt className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Expira</dt>
+                                  <dd className="font-medium text-slate-800">{formatDate(selected.paymentExpiresAt)}</dd>
+                                </div>
+                              )}
+                              {selected.paymentSid && (
+                                <div>
+                                  <dt className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">SID</dt>
+                                  <dd className="font-mono text-[10px] text-slate-700 break-all">{selected.paymentSid}</dd>
+                                </div>
+                              )}
                             </dl>
-                          </div>
-                        ))}
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <details className="revision-card px-4 py-3 min-w-0">
+                        <summary className="text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer flex items-center gap-2">
+                          <User size={14} />
+                          Datos OCR de cédulas
+                          <span className="ml-auto text-[10px] font-semibold text-slate-400 normal-case">
+                            {ocrBlocks.length ? `${ocrBlocks.length} doc.` : 'Sin datos'}
+                          </span>
+                        </summary>
+                        <div className="mt-3">
+                          {ocrBlocks.length === 0 ? (
+                            <p className="text-xs text-slate-500">Sin datos OCR en el snapshot.</p>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {ocrBlocks.map((block) => (
+                                <div key={block.key} className="rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                                  <p className="text-[10px] font-bold text-slate-600 mb-1.5">{block.label}</p>
+                                  <dl className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                    {Object.entries(block.ocr)
+                                      .filter(([, v]) => v != null && String(v).trim())
+                                      .slice(0, 8)
+                                      .map(([k, v]) => (
+                                        <div key={k}>
+                                          <dt className="text-slate-400 uppercase text-[9px]">{k}</dt>
+                                          <dd className="text-xs font-medium text-slate-800 break-words">{String(v)}</dd>
+                                        </div>
+                                      ))}
+                                  </dl>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </details>
+
+                      <details className="revision-card px-4 py-3 min-w-0">
+                        <summary
+                          className="text-xs font-bold text-slate-500 hover:text-indigo-600 uppercase tracking-wider cursor-pointer"
+                          onClick={() => setShowRawSnapshot((v) => !v)}
+                        >
+                          {showRawSnapshot ? 'Ocultar JSON' : 'Ver snapshot JSON'}
+                        </summary>
+                        {showRawSnapshot && (
+                          <pre className="mt-2 max-h-48 overflow-auto text-[10px] bg-slate-50 rounded-lg p-2 text-slate-700">
+                            {JSON.stringify(selected.snapshot, null, 2)}
+                          </pre>
+                        )}
+                      </details>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-4 xl:col-span-3 min-w-0">
+                    {selected.estado === 'pending' && (
+                      <div className="hidden lg:block lg:sticky lg:top-[7.5rem]">
+                        <DecisionPanel
+                          acting={acting}
+                          rejectReason={rejectReason}
+                          onRejectReason={setRejectReason}
+                          onApprove={() => void approve(selected.id)}
+                          onReject={() => void reject(selected.id)}
+                        />
                       </div>
                     )}
                   </div>
-                </details>
-
-                <details className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3">
-                  <summary className="text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer flex items-center gap-2">
-                    <ClipboardList size={14} />
-                    Scoring y preguntas
-                    <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${scoreTone(selected.scoreTotal)}`}>
-                      {selected.scoreTotal} pts
-                    </span>
-                  </summary>
-                  <ul className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {(selected.scoreBreakdown ?? []).map((line) => (
-                      <li
-                        key={line.questionId}
-                        className="flex items-start justify-between gap-2 text-sm border-b border-slate-100 last:border-0 pb-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-medium text-slate-800">{line.label}</p>
-                          <p className="text-xs text-slate-500">Resp: {formatAnswer(line.answer)}</p>
-                        </div>
-                        <span className="font-bold text-indigo-600 shrink-0">+{line.points}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-
-                <details className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3">
-                  <summary
-                    className="text-xs font-bold text-slate-500 hover:text-indigo-600 uppercase tracking-wider cursor-pointer"
-                    onClick={() => setShowRawSnapshot((v) => !v)}
-                  >
-                    {showRawSnapshot ? 'Ocultar snapshot JSON' : 'Ver snapshot JSON completo'}
-                  </summary>
-                  {showRawSnapshot && (
-                    <pre className="mt-3 max-h-48 overflow-auto text-[10px] bg-slate-50 rounded-xl p-3 text-slate-700">
-                      {JSON.stringify(selected.snapshot, null, 2)}
-                    </pre>
-                  )}
-                </details>
+                </div>
 
                 {selected.estado === 'pending' && (
-                  <div className="hidden lg:block rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-                      Decisión del técnico
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        type="button"
-                        disabled={acting}
-                        onClick={() => void approve(selected.id)}
-                        className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        {acting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                        Autorizar pago
-                      </button>
-                      <div className="flex-1 flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Motivo de rechazo (opcional)"
-                          value={rejectReason}
-                          onChange={(e) => setRejectReason(e.target.value)}
-                          className="flex-1 text-sm border border-slate-200 rounded-xl px-3"
-                        />
-                        <button
-                          type="button"
-                          disabled={acting}
-                          onClick={() => void reject(selected.id)}
-                          className="inline-flex items-center gap-1 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50"
-                        >
-                          <X size={16} /> Rechazar
-                        </button>
-                      </div>
-                    </div>
+                  <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_rgba(9,17,51,0.1)]">
+                    <DecisionPanel
+                      compact
+                      acting={acting}
+                      rejectReason={rejectReason}
+                      onRejectReason={setRejectReason}
+                      onApprove={() => void approve(selected.id)}
+                      onReject={() => void reject(selected.id)}
+                    />
                   </div>
                 )}
               </div>
             )}
-          </div>
+          </main>
         </div>
       </div>
-
-      {selected?.estado === 'pending' && mobileDetail && (
-        <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
-          <input
-            type="text"
-            placeholder="Motivo rechazo (opcional)"
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 mb-2"
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() => void approve(selected.id)}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50"
-            >
-              {acting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              Aprobar
-            </button>
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() => void reject(selected.id)}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-bold disabled:opacity-50"
-            >
-              <X size={16} /> Rechazar
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

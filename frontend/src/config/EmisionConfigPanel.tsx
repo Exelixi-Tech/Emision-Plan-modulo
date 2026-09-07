@@ -16,7 +16,7 @@ import {
   type HealthQuestionDraft,
   type PlanOption,
 } from './FuneralHealthQuestionsEditor';
-import { canalDisplayLabel, readConfigPanelContext } from './configPanelContext';
+import { canalDisplayLabel, readConfigPanelContext, isPreguntasOnlyView } from './configPanelContext';
 
 const ALL_PLAN_CODES = ['2', '3', '4', '5', '6', '7', '8', '9'];
 const PANEL_CTX = readConfigPanelContext();
@@ -71,7 +71,9 @@ export function EmisionConfigPanel() {
     PANEL_CTX.empresaNombre ||
     `Empresa ${EMPRESA_ID}`;
 
-  const soloPreguntas = producto === 'funerario' && FUNERARIO_SOLO_PREGUNTAS;
+  const soloPreguntas =
+    producto === 'funerario' && (FUNERARIO_SOLO_PREGUNTAS || isPreguntasOnlyView());
+  const preguntasUrlOnly = producto === 'funerario' && isPreguntasOnlyView();
   const [tab, setTab] = useState<Tab>(soloPreguntas ? 'preguntas' : 'general');
   const [saved, setSaved] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -178,28 +180,34 @@ export function EmisionConfigPanel() {
       const by: Record<string, HealthQuestionDraft[]> = {};
       if (rawBy && typeof rawBy === 'object' && !Array.isArray(rawBy)) {
         for (const [k, v] of Object.entries(rawBy)) {
-          if (Array.isArray(v) && v.length > 0) by[k] = enrichHealthQuestionScores(v);
+          if (Array.isArray(v)) by[k] = enrichHealthQuestionScores(v);
         }
       }
-      if (!by.default?.length) {
+      const hasSavedCanals = Object.keys(by).length > 0;
+      // Solo sembrar fábrica si no hay catálogo guardado. Si ya hay canales,
+      // no rellenar default con el listado viejo (reaparecían preguntas borradas).
+      if (!hasSavedCanals) {
         by.default = enrichHealthQuestionScores(
           Array.isArray(legacy) && legacy.length > 0 ? legacy : seed,
         );
       }
-      setHealthByCanal(by);
-      // Preferir canal de la URL/token; si aún no existe en config, se crea al cambiar
       const fromUrl = PANEL_CTX.canal || 'default';
-      const canal = by[fromUrl] ? fromUrl : by[activeCanal] ? activeCanal : 'default';
-      if (!by[fromUrl] && fromUrl !== 'default') {
-        by[fromUrl] = (by.default ?? seed).map((q) => ({
+      if (canalLocked && fromUrl !== 'default' && !Object.prototype.hasOwnProperty.call(by, fromUrl)) {
+        const base = (by.default?.length ? by.default : seed).map((q) => ({
           ...q,
           plans: [...(q.plans || [])],
         }));
-        setHealthByCanal({ ...by });
+        by[fromUrl] = base;
       }
-      const useCanal = by[fromUrl] ? fromUrl : canal;
+      const useCanal = Object.prototype.hasOwnProperty.call(by, fromUrl)
+        ? fromUrl
+        : by[activeCanal]
+          ? activeCanal
+          : (by.default ? 'default' : (Object.keys(by)[0] || 'default'));
+      if (!by[useCanal]) by[useCanal] = seed;
+      setHealthByCanal({ ...by });
       setActiveCanal(useCanal);
-      setHealthQuestions(by[useCanal] ?? by.default ?? seed);
+      setHealthQuestions(by[useCanal]);
     } else if (!healthQuestionsDirty.current && producto !== 'funerario') {
       setHealthQuestions([]);
     }
@@ -220,12 +228,16 @@ export function EmisionConfigPanel() {
   };
   const removeMapEntry = (idx: number) => { setApiMap(p => p.filter((_, i) => i !== idx)); setSaved(false); };
 
+  const fallbackCodes = funeralPlanOptions.map((p) => p.code);
   const cleanQuestions = (list: HealthQuestionDraft[]): HealthQuestionDraft[] =>
     list.map((q) => {
       const plans = (q.plans || []).map(String).filter(Boolean);
       const next: HealthQuestionDraft = {
         ...q,
-        plans: plans.length > 0 ? plans : [...ALL_PLAN_CODES],
+        id: String(q.id || '').trim() || `pregunta_${Date.now().toString(36)}`,
+        label: String(q.label || '').trim() || 'Pregunta',
+        plans: plans.length > 0 ? plans : [...fallbackCodes],
+        enabled: q.enabled !== false,
       };
       if (!next.showIf?.field) delete next.showIf;
       if (next.type === 'select') {
@@ -300,10 +312,29 @@ export function EmisionConfigPanel() {
         alert('No hay preguntas de salud para guardar. Agrega al menos una o restaura defaults.');
         return;
       }
-      // Solo el canal activo (el de la URL del integrador); Nexus hace merge por clave
-      byCanalPayload = { [canalKey]: cleanedQuestions };
-      if (canalKey === 'default') {
-        byCanalPayload.default = cleanedQuestions;
+      const snapshot: Record<string, HealthQuestionDraft[]> = {
+        ...healthByCanal,
+        [canalKey]: healthQuestions,
+      };
+      byCanalPayload = {};
+      for (const [k, list] of Object.entries(snapshot)) {
+        const cleaned = k === canalKey ? cleanedQuestions : cleanQuestions(list || []);
+        if (k === canalKey || cleaned.length > 0) {
+          byCanalPayload[k] = cleaned;
+        }
+      }
+      // Off en General (o en el canal del enlace) también apaga el mismo id en los demás canales.
+      const sourceList = byCanalPayload[canalKey] ?? cleanedQuestions;
+      const offIds = new Set(
+        sourceList.filter((q) => q.enabled === false).map((q) => String(q.id)),
+      );
+      if (offIds.size > 0) {
+        for (const k of Object.keys(byCanalPayload)) {
+          if (k === canalKey) continue;
+          byCanalPayload[k] = byCanalPayload[k].map((q) =>
+            offIds.has(String(q.id)) ? { ...q, enabled: false } : q,
+          );
+        }
       }
     }
     // Modo solo-preguntas: no reenviar ajustes/API/mapeador (evita pisar config ajena).
@@ -349,7 +380,12 @@ export function EmisionConfigPanel() {
           },
     );
     if (ok) {
-      healthQuestionsDirty.current = false;
+      if (byCanalPayload && cleanedQuestions) {
+        setHealthByCanal(byCanalPayload);
+        setHealthQuestions(cleanedQuestions);
+      }
+      // Queda dirty para que el setConfig del PUT no vuelva a hidratar el catálogo viejo.
+      healthQuestionsDirty.current = true;
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     }
@@ -371,11 +407,11 @@ export function EmisionConfigPanel() {
                 PARAMETRIZADOR · {producto}
               </p>
               <h1 className="font-display text-3xl sm:text-[2.5rem] font-black text-slate-900 tracking-tight leading-tight">
-                Creación de Póliza
+                {preguntasUrlOnly ? 'Preguntas de salud' : 'Creación de Póliza'}
               </h1>
               <p className="text-slate-500 text-sm mt-2 max-w-xl leading-relaxed">
                 {soloPreguntas
-                  ? 'Arma el cuestionario: texto, planes, % de riesgo y si se bloquea. Lo que guardes es lo que ve el cliente y el técnico.'
+                  ? 'Arma el cuestionario del canal. El interruptor oculta sin borrar; la papelera sí quita del catálogo. El historial de casos ya enviados no se altera. Guarda para que el cliente lo vea.'
                   : 'Configura hacia dónde se envían los datos al emitir una póliza, el formato, la autenticación y el mapeado de campos.'}
               </p>
               <div className="mt-3 inline-flex flex-wrap items-center gap-2 text-[11px] font-semibold">
@@ -530,8 +566,8 @@ export function EmisionConfigPanel() {
                         </p>
                         <p className="text-[11px] text-slate-400">
                           {canalLocked
-                            ? 'Fijo por el enlace del integrador'
-                            : 'General = si el SSO no envía canal'}
+                            ? 'Este enlace trae un canal fijo; el cuestionario es solo de ese canal'
+                            : 'Cada canal tiene su lista. General se usa si el SSO no manda canal'}
                         </p>
                       </div>
                       {canalLocked ? (
@@ -560,6 +596,7 @@ export function EmisionConfigPanel() {
                                   key={k}
                                   type="button"
                                   onClick={() => switchCanal(k)}
+                                  title={`Editar cuestionario del canal ${canalDisplayLabel(k)}`}
                                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                                     active
                                       ? 'bg-slate-900 text-white'
@@ -578,7 +615,8 @@ export function EmisionConfigPanel() {
                               className="w-[7.5rem] text-xs border-0 border-b border-slate-200 rounded-none px-1 py-1 outline-none focus:border-slate-400 bg-transparent placeholder:text-slate-300"
                               value={newCanalName}
                               onChange={(e) => setNewCanalName(e.target.value)}
-                              placeholder="Nuevo canal…"
+                              placeholder="Nombre del canal"
+                              title="Crea otro cuestionario (mismo producto, distinto canal SSO)"
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
@@ -591,6 +629,7 @@ export function EmisionConfigPanel() {
                               onClick={addCanal}
                               disabled={!newCanalName.trim()}
                               className="text-xs font-bold text-indigo-600 hover:text-indigo-800 disabled:opacity-30 disabled:hover:text-indigo-600"
+                              title="Crear canal con copia del cuestionario General"
                             >
                               +
                             </button>
@@ -822,10 +861,20 @@ export function EmisionConfigPanel() {
                 </div>
               )}
               <div className="flex gap-3 w-full sm:w-auto sm:ml-auto">
-                <button onClick={() => { if (confirm('¿Restaurar configuración original?')) { healthQuestionsDirty.current = false; resetConfig(); } }} disabled={saving} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm">
+                <button
+                  onClick={() => { if (confirm('¿Restaurar el cuestionario de fábrica? Se pierden altas, bajas y textos de este panel hasta que vuelvas a guardar.')) { healthQuestionsDirty.current = false; resetConfig(); } }}
+                  disabled={saving}
+                  title="Vuelve a las preguntas de fábrica. Hay que Guardar si quieres dejarlo así."
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm"
+                >
                   <RotateCcw size={15} /> Restaurar defaults
                 </button>
-                <button onClick={handleSave} disabled={saving} className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-8 rounded-xl font-bold text-sm bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all disabled:opacity-50">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  title="Guarda en Nexus. Sin esto el cliente y el técnico no ven los cambios."
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-8 rounded-xl font-bold text-sm bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                >
                   {saving ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : saved ? <><CheckCircle2 size={16} /> ¡Guardado!</> : <><Save size={16} /> Guardar cambios</>}
                 </button>
               </div>
