@@ -790,3 +790,75 @@ export async function validateFuneralEmission(payload: {
     throw err;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+//  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
+// ──────────────────────────────────────────────────────────────────────
+
+export interface CotizacionPatrimonialPayload {
+  cplan: string;
+  cramo?: number;
+  ifrecuencia?: string;
+  pdescuento?: number;
+  precargo?: number;
+}
+
+export const patrimonialApi = {
+  /** Planes vigentes de riesgos generales (default cramo 20). */
+  planes: (cramo = 20) =>
+    api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?cramo=${cramo}`),
+
+  /** Cotización vía quote-generalRisks ({ cramo, cplan, ifrecuencia, pdescuento, precargo }). */
+  cotizar: (payload: CotizacionPatrimonialPayload) =>
+    api.post<QuotePolicyResponse>('/patrimonial/cotizacion', {
+      cramo: payload.cramo ?? 20,
+      cplan: payload.cplan,
+      ifrecuencia: payload.ifrecuencia || 'A',
+      pdescuento: payload.pdescuento ?? 0,
+      precargo: payload.precargo ?? 0,
+    }),
+
+  /** Emisión vía generalRisks. */
+  emitir: (payload: EmitPolicyPayload) =>
+    api.post<EmitPolicyResponse>('/patrimonial/emision', payload),
+};
+
+export interface SubmitPatrimonialReviewPayload {
+  sessionId: string;
+  cplan: string;
+  cramo?: number;
+  tomador: Record<string, unknown>;
+  asegurado?: Record<string, unknown>;
+  sameInsured?: boolean;
+  patrimoniales?: Record<string, unknown>;
+  selectedPlan: Record<string, unknown>;
+  quote?: Record<string, unknown> | null;
+  quoteState?: string;
+  documents?: Record<string, unknown>;
+  metadataCanal?: Record<string, unknown> | null;
+}
+
+export async function submitPatrimonialPolicyReview(
+  payload: SubmitPatrimonialReviewPayload,
+): Promise<{ submission: FuneralSubmissionResult }> {
+  try {
+    const { data } = await api.post<{
+      success: boolean;
+      submission: FuneralSubmissionResult;
+    }>('/patrimonial/submissions', payload);
+    return { submission: data.submission };
+  } catch (err) {
+    const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
+    const data = axErr.response?.data;
+    if (data && (data.code || data.message)) {
+      throw new PolicyEmitError({
+        code: data.code ?? 'SUBMISSION_ERROR',
+        message: data.message ?? 'No se pudo registrar la solicitud patrimonial.',
+        httpStatus: axErr.response?.status,
+        stage: 'submission',
+      });
+    }
+    throw err;
+  }
+}
+
