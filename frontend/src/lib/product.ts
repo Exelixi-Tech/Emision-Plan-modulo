@@ -49,7 +49,7 @@ export interface ProductDetectHints {
 }
 
 /**
- * Detecta rcv|funerario y lo persiste en sessionStorage (Nexus verify / bridge).
+ * Detecta rcv|funerario|patrimonial y lo persiste en sessionStorage (Nexus verify / bridge).
  */
 export function persistProductFromHints(hints?: ProductDetectHints): ProductId | null {
   const raw = hints?.product != null ? String(hints.product).trim() : '';
@@ -67,6 +67,10 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
     } catch { /* ignore */ }
   }
   const label = `${hints?.nombre ?? ''} ${hints?.moduloNombre ?? ''}`.toLowerCase();
+  if (label.includes('patrimon') || label.includes('riesgo') || label.includes('embarcac') || label.includes('inmueble')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'patrimonial'); } catch { /* ignore */ }
+    return 'patrimoniales';
+  }
   if (label.includes('funerar')) {
     try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
     return 'funerario';
@@ -82,13 +86,16 @@ export function getProductId(): ProductId {
   try {
     const fromUrl = new URL(window.location.href).searchParams.get('product');
     if (fromUrl && VALID_PRODUCTS.includes(fromUrl as ProductId)) {
-      sessionStorage.setItem(STORAGE_KEY, fromUrl);
-      return fromUrl as ProductId;
+      const canonical = fromUrl === 'patrimoniales' ? 'patrimonial' : fromUrl;
+      sessionStorage.setItem(STORAGE_KEY, canonical);
+      return canonical as ProductId;
     }
   } catch { /* ignore */ }
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored && VALID_PRODUCTS.includes(stored as ProductId)) return stored as ProductId;
+    if (stored && VALID_PRODUCTS.includes(stored as ProductId)) {
+      return (stored === 'patrimoniales' ? 'patrimonial' : stored) as ProductId;
+    }
   } catch { /* ignore */ }
   return 'rcv';
 }
@@ -108,7 +115,12 @@ export function getProductConfig(): ProductConfig {
       };
     }
   }
-  return PRODUCTS[getProductId()];
+  return PRODUCTS[getProductId()] || PRODUCTS.rcv;
+}
+
+export function isPatrimonial(): boolean {
+  const p = getProductId();
+  return p === 'patrimonial' || p === 'patrimoniales';
 }
 
 export function isFunerario(): boolean {

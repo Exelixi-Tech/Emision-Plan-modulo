@@ -14,6 +14,14 @@ export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 /** Producto de seguro que se está suscribiendo en el flujo. */
 export type ProductId = 'rcv' | 'funerario' | 'patrimoniales';
 
+export interface PatrimonialesData {
+  datosBien: string;
+  tipo: string;
+  descripcion: string;
+}
+
+export type BienData = PatrimonialesData;
+
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
 export interface DocumentFile {
@@ -255,13 +263,13 @@ export interface VehicleData {
 export interface PolicyCoverageLine {
   ccobertura?: number | string;
   name: string;
+  xcobertura?: string;
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
-  /** Alias Sis2000 / quote patrimonial. */
-  xcobertura?: string;
-  msuma?: number;
-  msumamax?: number;
+  msuma?: number | null;
+  msumamax?: number | null;
+  msumamin?: number | null;
 }
 
 export interface PolicyQuote {

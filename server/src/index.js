@@ -15,9 +15,9 @@ const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger');
 
-const emisionRoutes  = require('./routes/emision');
-const exelixiRoutes  = require('./routes/exelixiEmission');
-const valrepRoutes   = require('./routes/valrep');
+const emisionRoutes = require('./routes/emision');
+const exelixiRoutes = require('./routes/exelixiEmission');
+const valrepRoutes = require('./routes/valrep');
 const catalogoRoutes = require('./routes/catalogo');
 const personasRoutes = require('./routes/personas');
 const funeralHealthRoutes = require('./routes/funeralHealth');
@@ -25,7 +25,7 @@ const funeralSubmissionRoutes = require('./routes/funeralSubmission');
 const patrimonialRoutes = require('./routes/patrimonial');
 const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
 const revisionPanelRoutes = require('./routes/revisionPanel');
-const nexusAuth      = require('./middleware/nexusAuth');
+const nexusAuth = require('./middleware/nexusAuth');
 const { reportExpressError } = require('./services/monitorReporter');
 
 const app = express();
@@ -62,7 +62,7 @@ app.use('/api/revision', revisionPanelRoutes);
 
 // Multi-tenant: todas las rutas /api requieren nexus_token
 // Catálogos (valrep + INMA) consultados directamente desde Sis2000.
-app.use('/api/valrep',   nexusAuth, valrepRoutes);
+app.use('/api/valrep', nexusAuth, valrepRoutes);
 app.use('/api/catalogo', nexusAuth, catalogoRoutes);
 // Producto Funerario (personas) — planes y cotización vía API de Personas
 app.use('/api/personas', nexusAuth, personasRoutes);
