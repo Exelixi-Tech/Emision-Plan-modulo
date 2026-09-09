@@ -27,6 +27,26 @@ export function hydrateTarjetaMetadataCanal(): void {
   store.setMetadataCanal({ ...(store.metadataCanal || {}), ...stored });
 }
 
+export type TarjetaPlanCurrencyKind = 'usd' | 'ves';
+
+export function resolveTarjetaPlanCurrency(cmoneda?: unknown): TarjetaPlanCurrencyKind {
+  const code = String(cmoneda ?? '$').trim().toUpperCase();
+  if (code === 'BS' || code === 'B' || code === 'BOLIVAR' || code === 'BOLÍVAR' || code === 'VES') {
+    return 'ves';
+  }
+  return 'usd';
+}
+
+export function getTarjetaPlanCmoneda(metadataCanal?: Record<string, unknown> | null): string {
+  const meta = metadataCanal ?? readTarjetaMetadataCanal();
+  const raw = meta?.cmoneda;
+  return raw != null && String(raw).trim() ? String(raw).trim() : '$';
+}
+
+export function tarjetaQuoteShowsVes(cmoneda?: unknown): boolean {
+  return resolveTarjetaPlanCurrency(cmoneda) === 'ves';
+}
+
 export function isTarjetaRcvFlow(): boolean {
   try {
     const params = new URLSearchParams(window.location.search);
