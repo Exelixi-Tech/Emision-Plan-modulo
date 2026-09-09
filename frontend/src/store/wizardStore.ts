@@ -83,6 +83,12 @@ const defaultFuneral = (): FuneralData => ({
   healthQuestionnaireDone: false,
 });
 
+const defaultPatrimoniales = (): import('../types').PatrimonialesData => ({
+  datosBien: '',
+  tipo: '',
+  descripcion: '',
+});
+
 interface WizardActions {
   goTo: (step: number) => void;
   nextStep: () => void;
@@ -100,6 +106,7 @@ interface WizardActions {
   setConductor: (data: Partial<PersonData>) => void;
   setVehicle: (data: Partial<VehicleData>) => void;
   setFuneral: (data: Partial<FuneralData>) => void;
+  setPatrimoniales: (data: Partial<import('../types').PatrimonialesData>) => void;
   setRcv: (data: Partial<RcvPlanData>, options?: { keepQuote?: boolean }) => void;
   setCategory: (c: string) => void;
   setSelectedPlan: (plan: Plan | null) => void;
@@ -129,6 +136,7 @@ const initialState: WizardState = {
   ocrDone: false,
   tomador: defaultTomador(),
   funeral: defaultFuneral(),
+  patrimoniales: defaultPatrimoniales(),
   rcv: defaultRcv(),
   fraccionado: false,
   sameInsured: true,
@@ -226,6 +234,11 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       }
       return patch;
     }),
+
+  setPatrimoniales: (data) =>
+    set((s) => ({
+      patrimoniales: { ...s.patrimoniales, ...data },
+    })),
 
   setRcv: (data, options?: { keepQuote?: boolean }) =>
     set((s) => {

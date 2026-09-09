@@ -115,14 +115,17 @@ function isChainedFlow(): boolean {
 }
 
 export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) {
+  const disabled = import.meta.env.VITE_DISABLE_NEXUS_GUARD === 'true' || import.meta.env.VITE_DISABLE_NEXUS_GUARD === '1';
+
   // Si venimos del bridge (hay sid + nexus_token), mostramos el contenido
   // de inmediato y verificamos en background para no interrumpir la UX.
   const chained = isChainedFlow();
-  const [state, setState] = useState<GuardState>({ status: chained ? 'active' : 'loading' });
+  const [state, setState] = useState<GuardState>({ status: (chained || disabled) ? 'active' : 'loading' });
   const nexusApiUrl = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
   const isMounted = useRef(true);
 
   const doVerify = useCallback(async () => {
+    if (disabled) return;
     if (!nexusApiUrl) {
       setState({ status: 'blocked', reason: 'VITE_NEXUS_API_URL no está definida en .env' });
       return;

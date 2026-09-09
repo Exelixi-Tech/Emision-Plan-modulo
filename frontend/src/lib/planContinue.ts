@@ -8,15 +8,20 @@ import {
 } from './diligencia';
 import type { DocType } from '../types';
 
-/** Validación común antes de confirmar plan (RCV y funerario). */
+/** Validación común antes de confirmar plan (RCV, patrimonial y funerario). */
 export function validatePlanReady(
   category: string,
   selectedPlan: Plan | null,
   quoteState: QuoteState,
   quote: PolicyQuote | null,
+  options?: { requireCategory?: boolean },
 ): boolean {
-  if (!category || !selectedPlan) {
-    toast.warning('Selecciona un plan', 'Elige una categoría y un plan para continuar.');
+  if (!selectedPlan) {
+    toast.warning('Selecciona un plan', 'Elige un plan para continuar.');
+    return false;
+  }
+  if (options?.requireCategory && !category) {
+    toast.warning('Selecciona una categoría', 'Elige una categoría para continuar.');
     return false;
   }
   if (quoteState === 'loading') {

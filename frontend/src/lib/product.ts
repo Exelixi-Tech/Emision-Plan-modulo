@@ -23,6 +23,8 @@ export interface ProductConfig {
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
   rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
   funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, hasVehicle: false },
+  patrimonial: { id: 'patrimonial', label: 'Patrimonial', fullLabel: 'Riesgos Generales / Patrimonial', cramo: 20, hasVehicle: false },
+  patrimoniales: { id: 'patrimoniales', label: 'Patrimonial', fullLabel: 'Riesgos Generales / Patrimonial', cramo: 20, hasVehicle: false },
 };
 
 /** Ramo externo maplanes para BINAC* (confirmado: cramo 28; también existe fila duplicada en 18). */
@@ -31,7 +33,7 @@ export const RCV_RAMO_BINACIONAL = parseInt(
   10,
 );
 
-const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario'];
+const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimonial', 'patrimoniales'];
 const STORAGE_KEY = 'exelixi_product';
 
 export interface ProductDetectHints {
@@ -42,9 +44,13 @@ export interface ProductDetectHints {
 }
 
 /**
- * Detecta rcv|funerario y lo persiste en sessionStorage (Nexus verify / bridge).
+ * Detecta rcv|funerario|patrimonial y lo persiste en sessionStorage (Nexus verify / bridge).
  */
 export function persistProductFromHints(hints?: ProductDetectHints): ProductId | null {
+  if (hints?.product === 'patrimonial' || hints?.product === 'patrimoniales' || hints?.product === 'bien') {
+    try { sessionStorage.setItem(STORAGE_KEY, 'patrimonial'); } catch { /* ignore */ }
+    return 'patrimonial';
+  }
   if (hints?.product === 'funerario') {
     try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
     return 'funerario';
@@ -56,13 +62,18 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
   if (hints?.url) {
     try {
       const fromUrl = new URL(hints.url, window.location.origin).searchParams.get('product');
-      if (fromUrl === 'funerario' || fromUrl === 'rcv') {
-        sessionStorage.setItem(STORAGE_KEY, fromUrl);
-        return fromUrl as ProductId;
+      if (fromUrl && VALID_PRODUCTS.includes(fromUrl as ProductId)) {
+        const canonical = fromUrl === 'patrimoniales' ? 'patrimonial' : fromUrl;
+        sessionStorage.setItem(STORAGE_KEY, canonical);
+        return canonical as ProductId;
       }
     } catch { /* ignore */ }
   }
   const label = `${hints?.nombre ?? ''} ${hints?.moduloNombre ?? ''}`.toLowerCase();
+  if (label.includes('patrimon') || label.includes('riesgo') || label.includes('embarcac') || label.includes('inmueble')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'patrimonial'); } catch { /* ignore */ }
+    return 'patrimonial';
+  }
   if (label.includes('funerar')) {
     try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
     return 'funerario';
@@ -74,13 +85,16 @@ export function getProductId(): ProductId {
   try {
     const fromUrl = new URL(window.location.href).searchParams.get('product');
     if (fromUrl && VALID_PRODUCTS.includes(fromUrl as ProductId)) {
-      sessionStorage.setItem(STORAGE_KEY, fromUrl);
-      return fromUrl as ProductId;
+      const canonical = fromUrl === 'patrimoniales' ? 'patrimonial' : fromUrl;
+      sessionStorage.setItem(STORAGE_KEY, canonical);
+      return canonical as ProductId;
     }
   } catch { /* ignore */ }
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored && VALID_PRODUCTS.includes(stored as ProductId)) return stored as ProductId;
+    if (stored && VALID_PRODUCTS.includes(stored as ProductId)) {
+      return (stored === 'patrimoniales' ? 'patrimonial' : stored) as ProductId;
+    }
   } catch { /* ignore */ }
   return 'rcv';
 }
@@ -100,7 +114,12 @@ export function getProductConfig(): ProductConfig {
       };
     }
   }
-  return PRODUCTS[getProductId()];
+  return PRODUCTS[getProductId()] || PRODUCTS.rcv;
+}
+
+export function isPatrimonial(): boolean {
+  const p = getProductId();
+  return p === 'patrimonial' || p === 'patrimoniales';
 }
 
 export function isFunerario(): boolean {
