@@ -101,13 +101,14 @@ export function PlansStep() {
   const categoryLabel =
     (vehicle.xcategoria_uso?.trim() || vehicle.uso || 'RCV');
 
-  // Flujo tarjeta: fijar plan desde validate-card antes de que responda el catálogo.
+  // Flujo tarjeta: fijar plan + categoría (validatePlanReady exige ambos).
   useEffect(() => {
     if (!lockedCplan) return;
+    if (categoryLabel) setCategory(categoryLabel);
     const current = useWizardStore.getState().selectedPlan;
     if (current?.cplan?.toUpperCase() === lockedCplan.toUpperCase()) return;
     setSelectedPlan(buildLockedTarjetaPlan(lockedCplan, tarjetaMeta, categoryLabel));
-  }, [lockedCplan, tarjetaMeta, categoryLabel, setSelectedPlan]);
+  }, [lockedCplan, tarjetaMeta, categoryLabel, setSelectedPlan, setCategory]);
 
   // Carga planes cuando el vehículo está cargado. Patrón de cancelación estándar:
   // evita double-fetch en React StrictMode y descarta respuestas obsoletas.
@@ -136,7 +137,7 @@ export function PlansStep() {
         if (res.data.canalVisibility) {
           setCanalVisibility(res.data.canalVisibility);
         }
-        if (mapped.length > 0) setCategory(label);
+        if (mapped.length > 0 || lockedCplan) setCategory(label);
         if (lockedCplan) {
           setSelectedPlan(resolveLockedTarjetaPlan(mapped, lockedCplan, tarjetaMeta, label));
         } else {
@@ -147,6 +148,10 @@ export function PlansStep() {
         if (cancelled) return;
         setPlansError(true);
         setApiPlans([]);
+        if (lockedCplan) {
+          setCategory(categoryLabel);
+          setSelectedPlan(buildLockedTarjetaPlan(lockedCplan, tarjetaMeta, categoryLabel));
+        }
       })
       .finally(() => {
         if (!cancelled) setPlansLoading(false);

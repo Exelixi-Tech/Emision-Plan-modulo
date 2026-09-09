@@ -15,7 +15,8 @@ export function validatePlanReady(
   quoteState: QuoteState,
   quote: PolicyQuote | null,
 ): boolean {
-  if (!category || !selectedPlan) {
+  const hasCategory = Boolean(category?.trim()) || Boolean(selectedPlan?.tag?.trim());
+  if (!hasCategory || !selectedPlan?.cplan) {
     toast.warning('Selecciona un plan', 'Elige una categoría y un plan para continuar.');
     return false;
   }
