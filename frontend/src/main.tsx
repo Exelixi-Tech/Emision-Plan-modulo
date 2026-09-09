@@ -5,7 +5,7 @@ import App from './App.tsx'
 import './lib/bridge'
 import { NexusGuard } from './nexus/NexusGuard'
 import { applyExelixiBranding } from './lib/exelixi-branding'
-import { hydrateTarjetaHandoff, isTarjetaRcvFlow, markTarjetaPublicSession } from './lib/rcv-tarjeta-flow'
+import { hydrateTarjetaHandoff, hydrateTarjetaMetadataCanal, isTarjetaRcvFlow, markTarjetaPublicSession } from './lib/rcv-tarjeta-flow'
 
 import { EmisionConfigPanel } from './config/EmisionConfigPanel'
 import { EmisionRevisionPanel } from './config/EmisionRevisionPanel'
@@ -16,6 +16,7 @@ applyExelixiBranding('Emisión');
 if (isTarjetaRcvFlow()) {
   markTarjetaPublicSession();
   hydrateTarjetaHandoff();
+  hydrateTarjetaMetadataCanal();
 }
 
 // /config (dev) o /emision/config (prod) · /config/preguntas = solo cuestionario

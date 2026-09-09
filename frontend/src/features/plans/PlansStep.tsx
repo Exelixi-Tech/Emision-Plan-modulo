@@ -12,6 +12,7 @@ import { vehicleSignature, formatQuoteUsd, formatQuoteUsdMoney, formatQuoteVes, 
 import { resolveFrecuenciaAmounts, resolveRcvQuoteBasis, rcvQuoteIncludesFrecuenciaSig } from '../../lib/frecuencia';
 import { toast } from '../../store/toastStore';
 import { filterRcvOnlyCoberturas, isQaDeploy } from '../../lib/deploy-env';
+import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from '../../lib/rcv-tarjeta-flow';
 
 /** Beneficios estándar RCV conforme a la Ley — aplica a todos los planes */
 const RCV_BENEFITS = [
@@ -36,12 +37,53 @@ function apiPlanToWizardPlan(p: PlanRcv, categoryLabel: string): Plan {
   };
 }
 
+function buildLockedTarjetaPlan(
+  cplan: string,
+  meta: Record<string, unknown> | null,
+  categoryLabel: string,
+): Plan {
+  const name =
+    String(meta?.nombre_producto ?? meta?.nombreProducto ?? cplan).trim() || cplan;
+  return {
+    cplan,
+    name,
+    price: 'Tarifa La Mundial',
+    priceNum: 0,
+    tag: categoryLabel,
+    desc: 'Plan asociado a tu tarjeta de activación.',
+    benefits: RCV_BENEFITS,
+    sumaAsegurada: 0,
+    cproducto: meta?.cproducto != null ? String(meta.cproducto) : undefined,
+  };
+}
+
+function resolveLockedTarjetaPlan(
+  mapped: Plan[],
+  lockedCplan: string,
+  meta: Record<string, unknown> | null,
+  categoryLabel: string,
+): Plan {
+  const norm = lockedCplan.toUpperCase();
+  const fromApi = mapped.find((p) => (p.cplan ?? '').toUpperCase() === norm);
+  return fromApi ?? buildLockedTarjetaPlan(lockedCplan, meta, categoryLabel);
+}
+
 export function PlansStep() {
   const {
     setCategory, selectedPlan, setSelectedPlan,
     vehicle, quote, quoteState, rcv, setRcv,
-    setCanalVisibility,
+    setCanalVisibility, metadataCanal,
   } = useWizardStore();
+
+  const tarjetaFlow = shouldUseTarjetaPublicApi();
+  const tarjetaMeta =
+    metadataCanal?.cplan
+      ? metadataCanal
+      : (tarjetaFlow ? readTarjetaMetadataCanal() : null);
+  const lockedCplan =
+    tarjetaFlow && tarjetaMeta?.cplan
+      ? String(tarjetaMeta.cplan).trim()
+      : '';
 
   const product = getProductConfig();
 
@@ -58,6 +100,14 @@ export function PlansStep() {
 
   const categoryLabel =
     (vehicle.xcategoria_uso?.trim() || vehicle.uso || 'RCV');
+
+  // Flujo tarjeta: fijar plan desde validate-card antes de que responda el catálogo.
+  useEffect(() => {
+    if (!lockedCplan) return;
+    const current = useWizardStore.getState().selectedPlan;
+    if (current?.cplan?.toUpperCase() === lockedCplan.toUpperCase()) return;
+    setSelectedPlan(buildLockedTarjetaPlan(lockedCplan, tarjetaMeta, categoryLabel));
+  }, [lockedCplan, tarjetaMeta, categoryLabel, setSelectedPlan]);
 
   // Carga planes cuando el vehículo está cargado. Patrón de cancelación estándar:
   // evita double-fetch en React StrictMode y descarta respuestas obsoletas.
@@ -87,8 +137,11 @@ export function PlansStep() {
           setCanalVisibility(res.data.canalVisibility);
         }
         if (mapped.length > 0) setCategory(label);
-        // No auto-seleccionamos: el usuario elige el plan explícitamente.
-        setSelectedPlan(null);
+        if (lockedCplan) {
+          setSelectedPlan(resolveLockedTarjetaPlan(mapped, lockedCplan, tarjetaMeta, label));
+        } else {
+          setSelectedPlan(null);
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -101,7 +154,7 @@ export function PlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicle.ctipo, vehicle.cversion, vehicle.cmarca, vehicle.tipoPlaca]);
+  }, [vehicle.ctipo, vehicle.cversion, vehicle.cmarca, vehicle.tipoPlaca, lockedCplan, tarjetaMeta]);
 
   // ── Frecuencias por plan (spBuscaFrecuenciaPlan) ─────────────────────────
   useEffect(() => {
@@ -285,7 +338,9 @@ export function PlansStep() {
     <div className="animate-fade-in space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
-          Selecciona el plan que mejor se ajuste a tu vehículo.
+          {lockedCplan
+            ? 'Tu plan viene definido por la tarjeta de activación. Confirma la frecuencia de pago.'
+            : 'Selecciona el plan que mejor se ajuste a tu vehículo.'}
         </p>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
           <Shield size={11} />
@@ -328,35 +383,45 @@ export function PlansStep() {
                 ? <Loader2 size={14} className="animate-spin" />
                 : <Check size={15} strokeWidth={2.5} />}
             </div>
-            <select
-              value={selectedPlan?.cplan ?? ''}
-              onChange={(e) => {
-                const found = apiPlans.find((p) => p.cplan === e.target.value);
-                setSelectedPlan(found ?? null);
-                setRcv({ coberAdicional: 'RC', coberAdicionales: [] });
-                setQuoteCoverageOptions([]);
-              }}
-              disabled={plansLoading || apiPlans.length === 0}
-              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
-            >
-              {plansLoading ? (
-                <option value="">Cargando planes...</option>
-              ) : plansError ? (
-                <option value="">Error al cargar planes</option>
-              ) : apiPlans.length === 0 ? (
-                <option value="">Sin planes disponibles</option>
-              ) : (
-                <>
-                  <option value="" disabled>— Elige un plan —</option>
-                  {apiPlans.map((p) => (
-                    <option key={p.cplan} value={p.cplan ?? ''}>
-                      {p.name}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            {lockedCplan ? (
+              <div className="w-full pl-14 pr-4 py-3.5 rounded-xl border-2 border-violet-200 bg-violet-50/60 text-sm font-bold text-slate-900 select-none">
+                {plansLoading
+                  ? 'Cargando plan…'
+                  : selectedPlan?.name ?? String(tarjetaMeta?.nombre_producto ?? lockedCplan)}
+              </div>
+            ) : (
+              <>
+                <select
+                  value={selectedPlan?.cplan ?? ''}
+                  onChange={(e) => {
+                    const found = apiPlans.find((p) => p.cplan === e.target.value);
+                    setSelectedPlan(found ?? null);
+                    setRcv({ coberAdicional: 'RC', coberAdicionales: [] });
+                    setQuoteCoverageOptions([]);
+                  }}
+                  disabled={plansLoading || apiPlans.length === 0}
+                  className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+                >
+                  {plansLoading ? (
+                    <option value="">Cargando planes...</option>
+                  ) : plansError ? (
+                    <option value="">Error al cargar planes</option>
+                  ) : apiPlans.length === 0 ? (
+                    <option value="">Sin planes disponibles</option>
+                  ) : (
+                    <>
+                      <option value="" disabled>— Elige un plan —</option>
+                      {apiPlans.map((p) => (
+                        <option key={p.cplan} value={p.cplan ?? ''}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              </>
+            )}
           </div>
         </div>
 
