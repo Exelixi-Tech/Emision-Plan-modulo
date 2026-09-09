@@ -340,6 +340,17 @@ function estadoBadge(estado: string) {
   return map[estado] ?? 'bg-slate-100 text-slate-700 border-slate-200';
 }
 
+function displayScoreTotal(scoreTotal: number, breakdown?: ScoreLine[]): number {
+  if (Array.isArray(breakdown) && breakdown.length > 0) {
+    return breakdown.reduce((acc, line) => {
+      const n = Number(line.points);
+      return acc + (Number.isFinite(n) ? n : 0);
+    }, 0);
+  }
+  const n = Number(scoreTotal);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function scoreTone(score: number): string {
   if (score >= 100) return 'bg-rose-50 text-rose-700 border-rose-200';
   if (score >= 50) return 'bg-amber-50 text-amber-800 border-amber-200';
@@ -510,9 +521,9 @@ function CompactSummaryCard({
             </div>
           </div>
           <div className="flex gap-2 shrink-0">
-            <div className={`rounded-lg border px-3 py-1.5 text-center min-w-[64px] ${scoreTone(selected.scoreTotal)}`}>
+            <div className={`rounded-lg border px-3 py-1.5 text-center min-w-[64px] ${scoreTone(displayScoreTotal(selected.scoreTotal, selected.scoreBreakdown))}`}>
               <p className="text-base font-black tabular-nums leading-none">
-                {formatHealthScoreNumber(Number(selected.scoreTotal))}
+                {formatHealthScoreNumber(displayScoreTotal(selected.scoreTotal, selected.scoreBreakdown))}
               </p>
               <p className="text-[8px] uppercase font-bold mt-0.5 tracking-wider">Score</p>
             </div>
@@ -956,8 +967,8 @@ export function EmisionRevisionPanel() {
                         </p>
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <p className="text-[10px] text-slate-400">{formatDate(s.reviewedAt || s.createdAt)}</p>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(s.scoreTotal)}`}>
-                            {formatHealthScoreNumber(Number(s.scoreTotal))} pts
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(displayScoreTotal(s.scoreTotal, s.scoreBreakdown))}`}>
+                            {formatHealthScoreNumber(displayScoreTotal(s.scoreTotal, s.scoreBreakdown))} pts
                           </span>
                         </div>
                       </span>
@@ -1038,7 +1049,7 @@ export function EmisionRevisionPanel() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <ScoringCard
-                        total={selected.scoreTotal}
+                        total={displayScoreTotal(selected.scoreTotal, selected.scoreBreakdown)}
                         breakdown={selected.scoreBreakdown ?? []}
                       />
 
