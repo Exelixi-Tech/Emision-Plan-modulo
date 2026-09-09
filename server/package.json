@@ -9,6 +9,7 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
+    "@exelixi/modulo-emision": "file:..",
     "axios": "^1.15.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
