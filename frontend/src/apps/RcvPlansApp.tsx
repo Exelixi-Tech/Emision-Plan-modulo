@@ -4,6 +4,7 @@ import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
+import { continueTarjetaToPagos, shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
 import { EmissionPlanShell } from './EmissionPlanShell';
 
 /**
@@ -37,7 +38,11 @@ export default function RcvPlansApp() {
       '¡Plan seleccionado!',
       `Categoría ${category} · Plan ${selectedPlan!.name} listo para emitir.`,
     );
-    window.__bridgeAdvance?.();
+    if (shouldUseTarjetaPublicApi()) {
+      continueTarjetaToPagos();
+    } else {
+      window.__bridgeAdvance?.();
+    }
   }
 
   return (

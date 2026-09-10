@@ -12,6 +12,14 @@ import { vehicleSignature, formatQuoteUsd, formatQuoteUsdMoney, formatQuoteVes, 
 import { resolveFrecuenciaAmounts, resolveRcvQuoteBasis, rcvQuoteIncludesFrecuenciaSig } from '../../lib/frecuencia';
 import { toast } from '../../store/toastStore';
 import { filterRcvOnlyCoberturas, isQaDeploy } from '../../lib/deploy-env';
+import {
+  getTarjetaPlanCmoneda,
+  readTarjetaMetadataCanal,
+  resolveTarjetaPlanCurrency,
+  shouldUseTarjetaPublicApi,
+  tarjetaQuoteShowsVes,
+  type TarjetaPlanCurrencyKind,
+} from '../../lib/rcv-tarjeta-flow';
 
 /** Beneficios estándar RCV conforme a la Ley — aplica a todos los planes */
 const RCV_BENEFITS = [
@@ -36,12 +44,53 @@ function apiPlanToWizardPlan(p: PlanRcv, categoryLabel: string): Plan {
   };
 }
 
+function buildLockedTarjetaPlan(
+  cplan: string,
+  meta: Record<string, unknown> | null,
+  categoryLabel: string,
+): Plan {
+  const name =
+    String(meta?.nombre_producto ?? meta?.nombreProducto ?? cplan).trim() || cplan;
+  return {
+    cplan,
+    name,
+    price: 'Tarifa La Mundial',
+    priceNum: 0,
+    tag: categoryLabel,
+    desc: 'Plan asociado a tu tarjeta de activación.',
+    benefits: RCV_BENEFITS,
+    sumaAsegurada: 0,
+    cproducto: meta?.cproducto != null ? String(meta.cproducto) : undefined,
+  };
+}
+
+function resolveLockedTarjetaPlan(
+  mapped: Plan[],
+  lockedCplan: string,
+  meta: Record<string, unknown> | null,
+  categoryLabel: string,
+): Plan {
+  const norm = lockedCplan.toUpperCase();
+  const fromApi = mapped.find((p) => (p.cplan ?? '').toUpperCase() === norm);
+  return fromApi ?? buildLockedTarjetaPlan(lockedCplan, meta, categoryLabel);
+}
+
 export function PlansStep() {
   const {
     setCategory, selectedPlan, setSelectedPlan,
     vehicle, quote, quoteState, rcv, setRcv,
-    setCanalVisibility,
+    setCanalVisibility, metadataCanal,
   } = useWizardStore();
+
+  const tarjetaFlow = shouldUseTarjetaPublicApi();
+  const tarjetaMeta =
+    metadataCanal?.cplan
+      ? metadataCanal
+      : (tarjetaFlow ? readTarjetaMetadataCanal() : null);
+  const lockedCplan =
+    tarjetaFlow && tarjetaMeta?.cplan
+      ? String(tarjetaMeta.cplan).trim()
+      : '';
 
   const product = getProductConfig();
 
@@ -58,6 +107,15 @@ export function PlansStep() {
 
   const categoryLabel =
     (vehicle.xcategoria_uso?.trim() || vehicle.uso || 'RCV');
+
+  // Flujo tarjeta: fijar plan + categoría (validatePlanReady exige ambos).
+  useEffect(() => {
+    if (!lockedCplan) return;
+    if (categoryLabel) setCategory(categoryLabel);
+    const current = useWizardStore.getState().selectedPlan;
+    if (current?.cplan?.toUpperCase() === lockedCplan.toUpperCase()) return;
+    setSelectedPlan(buildLockedTarjetaPlan(lockedCplan, tarjetaMeta, categoryLabel));
+  }, [lockedCplan, tarjetaMeta, categoryLabel, setSelectedPlan, setCategory]);
 
   // Carga planes cuando el vehículo está cargado. Patrón de cancelación estándar:
   // evita double-fetch en React StrictMode y descarta respuestas obsoletas.
@@ -86,14 +144,21 @@ export function PlansStep() {
         if (res.data.canalVisibility) {
           setCanalVisibility(res.data.canalVisibility);
         }
-        if (mapped.length > 0) setCategory(label);
-        // No auto-seleccionamos: el usuario elige el plan explícitamente.
-        setSelectedPlan(null);
+        if (mapped.length > 0 || lockedCplan) setCategory(label);
+        if (lockedCplan) {
+          setSelectedPlan(resolveLockedTarjetaPlan(mapped, lockedCplan, tarjetaMeta, label));
+        } else {
+          setSelectedPlan(null);
+        }
       })
       .catch(() => {
         if (cancelled) return;
         setPlansError(true);
         setApiPlans([]);
+        if (lockedCplan) {
+          setCategory(categoryLabel);
+          setSelectedPlan(buildLockedTarjetaPlan(lockedCplan, tarjetaMeta, categoryLabel));
+        }
       })
       .finally(() => {
         if (!cancelled) setPlansLoading(false);
@@ -101,7 +166,7 @@ export function PlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicle.ctipo, vehicle.cversion, vehicle.cmarca, vehicle.tipoPlaca]);
+  }, [vehicle.ctipo, vehicle.cversion, vehicle.cmarca, vehicle.tipoPlaca, lockedCplan, tarjetaMeta]);
 
   // ── Frecuencias por plan (spBuscaFrecuenciaPlan) ─────────────────────────
   useEffect(() => {
@@ -280,12 +345,22 @@ export function PlansStep() {
     : 0;
   const priceSuffix = isShortPeriodQuote ? (freqAmounts.periodSuffix || '/ cuota') : '/ año';
   const vesSuffix = priceSuffix;
+  const tarjetaCmoneda = tarjetaFlow ? getTarjetaPlanCmoneda(tarjetaMeta) : null;
+  const tarjetaCurrencyKind: TarjetaPlanCurrencyKind | null = tarjetaFlow
+    ? resolveTarjetaPlanCurrency(tarjetaCmoneda)
+    : null;
+  const tarjetaVesPrimary = tarjetaFlow && tarjetaQuoteShowsVes(tarjetaCmoneda);
+  const cardDisplayPrice = tarjetaVesPrimary ? displayVes : displayPrice;
+  const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary;
+  const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary;
 
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
-          Selecciona el plan que mejor se ajuste a tu vehículo.
+          {lockedCplan
+            ? 'Tu plan viene definido por la tarjeta de activación. Confirma la frecuencia de pago.'
+            : 'Selecciona el plan que mejor se ajuste a tu vehículo.'}
         </p>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
           <Shield size={11} />
@@ -294,9 +369,9 @@ export function PlansStep() {
       </div>
 
       {/* Selectores */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${lockedCplan ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
 
-        {/* Categoría de uso — read-only, proviene del vehículo seleccionado */}
+        {!lockedCplan && (
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
             <Shield size={11} className="text-indigo-500" />
@@ -311,6 +386,7 @@ export function PlansStep() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Plan de cobertura — datos reales desde la API */}
         <div>
@@ -328,35 +404,45 @@ export function PlansStep() {
                 ? <Loader2 size={14} className="animate-spin" />
                 : <Check size={15} strokeWidth={2.5} />}
             </div>
-            <select
-              value={selectedPlan?.cplan ?? ''}
-              onChange={(e) => {
-                const found = apiPlans.find((p) => p.cplan === e.target.value);
-                setSelectedPlan(found ?? null);
-                setRcv({ coberAdicional: 'RC', coberAdicionales: [] });
-                setQuoteCoverageOptions([]);
-              }}
-              disabled={plansLoading || apiPlans.length === 0}
-              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
-            >
-              {plansLoading ? (
-                <option value="">Cargando planes...</option>
-              ) : plansError ? (
-                <option value="">Error al cargar planes</option>
-              ) : apiPlans.length === 0 ? (
-                <option value="">Sin planes disponibles</option>
-              ) : (
-                <>
-                  <option value="" disabled>— Elige un plan —</option>
-                  {apiPlans.map((p) => (
-                    <option key={p.cplan} value={p.cplan ?? ''}>
-                      {p.name}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            {lockedCplan ? (
+              <div className="w-full pl-14 pr-4 py-3.5 rounded-xl border-2 border-violet-200 bg-violet-50/60 text-sm font-bold text-slate-900 select-none">
+                {plansLoading
+                  ? 'Cargando plan…'
+                  : selectedPlan?.name ?? String(tarjetaMeta?.nombre_producto ?? lockedCplan)}
+              </div>
+            ) : (
+              <>
+                <select
+                  value={selectedPlan?.cplan ?? ''}
+                  onChange={(e) => {
+                    const found = apiPlans.find((p) => p.cplan === e.target.value);
+                    setSelectedPlan(found ?? null);
+                    setRcv({ coberAdicional: 'RC', coberAdicionales: [] });
+                    setQuoteCoverageOptions([]);
+                  }}
+                  disabled={plansLoading || apiPlans.length === 0}
+                  className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+                >
+                  {plansLoading ? (
+                    <option value="">Cargando planes...</option>
+                  ) : plansError ? (
+                    <option value="">Error al cargar planes</option>
+                  ) : apiPlans.length === 0 ? (
+                    <option value="">Sin planes disponibles</option>
+                  ) : (
+                    <>
+                      <option value="" disabled>— Elige un plan —</option>
+                      {apiPlans.map((p) => (
+                        <option key={p.cplan} value={p.cplan ?? ''}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              </>
+            )}
           </div>
         </div>
 
@@ -407,7 +493,7 @@ export function PlansStep() {
       {selectedPlan ? (
         <PlanDetailCard
           plan={selectedPlan}
-          displayPrice={displayPrice}
+          displayPrice={cardDisplayPrice}
           priceSuffix={priceSuffix}
           vesSuffix={vesSuffix}
           isLoadingQuote={isLoadingQuote}
@@ -421,6 +507,10 @@ export function PlansStep() {
           vehicleFallback={quote?.vehicleFallback}
           quoteError={quoteState === 'error'}
           quote={quote}
+          currencyKind={tarjetaCurrencyKind}
+          showVesLine={cardShowVesLine}
+          showTasa={cardShowTasa}
+          hideCategoryTag={Boolean(lockedCplan)}
           coberturasAdicionales={coberturasAdicionales}
           selectedCoberturaCode={selectedCoberturaCode}
           onSelectCobertura={(code) => {
@@ -454,6 +544,10 @@ function PlanDetailCard({
   isLoadingQuote, hasRealQuote, quoteVes, frecuenciaLabel, freqAmounts, quoteBasis, ptasa,
   vehicleLabel, vehicleFallback, quoteError,
   quote,
+  currencyKind = null,
+  showVesLine = true,
+  showTasa = true,
+  hideCategoryTag = false,
   coberturasAdicionales = [],
   selectedCoberturaCode = '',
   onSelectCobertura,
@@ -473,10 +567,15 @@ function PlanDetailCard({
   vehicleFallback?: boolean;
   quoteError: boolean;
   quote: import('../../types').PolicyQuote | null;
+  currencyKind?: TarjetaPlanCurrencyKind | null;
+  showVesLine?: boolean;
+  showTasa?: boolean;
+  hideCategoryTag?: boolean;
   coberturasAdicionales?: { value: string; text: string }[];
   selectedCoberturaCode?: string;
   onSelectCobertura?: (code: string | null) => void;
 }) {
+  const vesPrimary = currencyKind === 'ves';
   return (
     <article className="relative rounded-2xl border-2 border-indigo-500/40 bg-gradient-to-br from-indigo-50/90 via-violet-50/40 to-white p-4 sm:p-6 shadow-[0_24px_48px_-12px_rgba(15,26,90,0.22)] animate-spring-in overflow-hidden">
       <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-fuchsia-500/12 blur-3xl pointer-events-none" />
@@ -486,9 +585,11 @@ function PlanDetailCard({
       <div className="relative">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-5 mb-5">
           <div className="min-w-0 flex-1">
-            <span className="inline-block px-2 py-0.5 rounded-md bg-white text-slate-500 text-[0.62rem] font-bold mb-2 uppercase tracking-wider border border-slate-200">
-              {plan.tag}
-            </span>
+            {!hideCategoryTag && (
+              <span className="inline-block px-2 py-0.5 rounded-md bg-white text-slate-500 text-[0.62rem] font-bold mb-2 uppercase tracking-wider border border-slate-200">
+                {plan.tag}
+              </span>
+            )}
             <h3 className="font-display font-black text-slate-900 text-xl sm:text-2xl leading-tight break-words">{plan.name}</h3>
             <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-md">{plan.desc}</p>
 
@@ -522,7 +623,12 @@ function PlanDetailCard({
           <div className="w-full sm:w-auto sm:shrink-0 flex flex-col items-stretch sm:items-end gap-1">
             <div className="text-left sm:text-right">
               <div className="flex items-end gap-1 sm:justify-end">
-                <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
+                {!vesPrimary && (
+                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
+                )}
+                {vesPrimary && (
+                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">Bs</span>
+                )}
                 {isLoadingQuote && !hasRealQuote ? (
                   <span className="text-4xl sm:text-5xl font-display font-black gradient-text-indigo leading-none tabular-nums inline-flex items-center gap-2">
                     <Loader2 size={28} className="animate-spin opacity-70" />
@@ -541,12 +647,12 @@ function PlanDetailCard({
               </div>
               <p className="hidden sm:block text-[0.7rem] text-slate-500 font-semibold mt-1">{priceSuffix}</p>
 
-              {hasRealQuote && quoteVes > 0 && (
+              {showVesLine && hasRealQuote && quoteVes > 0 && !vesPrimary && (
                 <p className="text-[0.65rem] font-bold text-indigo-700/80 mt-1.5 tabular-nums">
                   ≈ {formatQuoteVesLabel(quoteVes)}{vesSuffix ? ` ${vesSuffix}` : ''}
                 </p>
               )}
-              {hasRealQuote && ptasa && ptasa > 0 && (
+              {showTasa && hasRealQuote && ptasa && ptasa > 0 && (
                 <p className="text-[0.6rem] text-slate-500 mt-0.5 tabular-nums">
                   Tasa de cambio: {formatQuoteTasa(ptasa)}
                 </p>
@@ -564,6 +670,9 @@ function PlanDetailCard({
               frecuenciaLabel={frecuenciaLabel}
               isLoading={isLoadingQuote && !hasRealQuote}
               hasReal={hasRealQuote}
+              currencyKind={currencyKind}
+              showVesLine={showVesLine}
+              showTasa={showTasa}
             />
           </div>
         )}
@@ -664,6 +773,9 @@ function PrimaCard({
   frecuenciaLabel,
   isLoading,
   hasReal,
+  currencyKind = null,
+  showVesLine = true,
+  showTasa = true,
 }: {
   quote: import('../../types').PolicyQuote | null;
   freqAmounts: ReturnType<typeof resolveFrecuenciaAmounts>;
@@ -671,7 +783,11 @@ function PrimaCard({
   frecuenciaLabel: string;
   isLoading: boolean;
   hasReal: boolean;
+  currencyKind?: TarjetaPlanCurrencyKind | null;
+  showVesLine?: boolean;
+  showTasa?: boolean;
 }) {
+  const vesPrimary = currencyKind === 'ves';
   if (isLoading) {
     return (
       <div className="w-full relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-800 via-indigo-700 to-violet-700 p-4 sm:p-5 shadow-[0_22px_42px_-14px_rgba(9,17,51,0.6)] ring-1 ring-white/10 flex flex-col gap-3 animate-pulse">
@@ -727,19 +843,29 @@ function PrimaCard({
           </div>
 
           <div className="flex items-baseline gap-1 mb-1">
-            <span className="text-lg font-display font-black text-white/60 leading-none pb-1">$</span>
+            {!vesPrimary && (
+              <span className="text-lg font-display font-black text-white/60 leading-none pb-1">$</span>
+            )}
+            {vesPrimary && (
+              <span className="text-lg font-display font-black text-white/60 leading-none pb-1">Bs</span>
+            )}
             <span className="font-display font-black text-white text-[2.35rem] sm:text-[2.6rem] leading-none tabular-nums tracking-tight">
-              {formatQuoteUsd(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
+              {vesPrimary
+                ? fmt(isShortPeriodQuote ? freqAmounts.installmentVes : freqAmounts.annualVes)
+                : formatQuoteUsd(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
             </span>
             <span className="text-sm text-white/70 font-semibold pb-1 ml-1">
-              USD {isShortPeriodQuote ? freqAmounts.periodSuffix : '/ año'}
+              {vesPrimary ? '' : 'USD '}{isShortPeriodQuote ? freqAmounts.periodSuffix : '/ año'}
             </span>
           </div>
 
-          <p className="text-sm font-bold text-indigo-200 tabular-nums mb-4">
-            ≈ Bs {fmt(isShortPeriodQuote ? freqAmounts.installmentVes : freqAmounts.annualVes)}
-            {isShortPeriodQuote ? ` ${freqAmounts.periodSuffix}` : ' / año'}
-          </p>
+          {showVesLine && !vesPrimary && (
+            <p className="text-sm font-bold text-indigo-200 tabular-nums mb-4">
+              ≈ Bs {fmt(isShortPeriodQuote ? freqAmounts.installmentVes : freqAmounts.annualVes)}
+              {isShortPeriodQuote ? ` ${freqAmounts.periodSuffix}` : ' / año'}
+            </p>
+          )}
+          {vesPrimary && <div className="mb-4" />}
 
           <div className="space-y-2 text-sm">
             {freqAmounts.cuotas > 1 ? (
@@ -769,7 +895,7 @@ function PrimaCard({
                 </span>
               </div>
             )}
-            {quote.ptasa > 0 && (
+            {showTasa && quote.ptasa > 0 && (
               <div className="flex items-center justify-between pt-2 border-t border-white/15">
                 <span className="text-white/65">Tasa de cambio</span>
                 <span className="text-white/90 tabular-nums font-semibold">{formatQuoteTasa(quote.ptasa)}</span>

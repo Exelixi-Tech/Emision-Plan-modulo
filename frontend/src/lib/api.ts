@@ -3,14 +3,42 @@ import type { CanalVisibility } from './canal-visibility';
 import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
+import { useWizardStore } from '../store/wizardStore';
+import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
-/** centidad/citem del JWT SSO — fallback si el proxy no reenvía metadata completa. */
+/** centidad/citem del JWT SSO o metadataCanal (flujo tarjeta sin token). */
 function appendCanalEntityQuery(qs: URLSearchParams): boolean {
+  if (shouldUseTarjetaPublicApi()) {
+    const storeMeta = (
+      useWizardStore.getState().metadataCanal as Record<string, unknown> | null
+    ) ?? readTarjetaMetadataCanal();
+    if (storeMeta) {
+      const centidad = storeMeta.centidad != null ? String(storeMeta.centidad).trim().toUpperCase() : '';
+      const citemRaw = storeMeta.citem
+        ?? (centidad === 'P' ? storeMeta.cproductor : null)
+        ?? (centidad === 'C' ? (storeMeta.ccanalalt_in ?? storeMeta.ccanalalt) : null);
+      const citem = citemRaw != null && citemRaw !== '' ? String(citemRaw).trim() : '';
+
+      if (centidad) qs.set('centidad', centidad);
+      if (citem) qs.set('citem', citem);
+      if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
+      if (storeMeta.cramo != null) qs.set('cramo', String(storeMeta.cramo));
+      if (centidad && citem) return true;
+
+      if (storeMeta.cproductor != null) {
+        if (!centidad) qs.set('centidad', 'P');
+        if (!citem) qs.set('citem', String(storeMeta.cproductor));
+        if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
+        return true;
+      }
+    }
+  }
+
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const meta = token ? decodeNexusTokenMetadata(token) : null;
   if (!meta) return false;

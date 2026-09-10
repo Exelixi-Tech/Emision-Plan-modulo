@@ -2,6 +2,14 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { verifyNexusAccess, resolveNexusApiUrl, type NexusVerifyResult } from './nexus-core';
 import { persistProductFromHints } from '../lib/product';
 import { persistCotizadorFromHints } from '../lib/cotizador-flow';
+import { getNexusToken } from '../lib/nexus-token-client';
+import { shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
+
+const MODULE_TOKEN_KEY = 'nexus_access_token_emision';
+
+function hasNexusAccessToken(): boolean {
+  return Boolean(getNexusToken(MODULE_TOKEN_KEY));
+}
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 interface NexusContextValue {
@@ -115,6 +123,26 @@ function isChainedFlow(): boolean {
 }
 
 export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) {
+  const tarjetaStandalone = shouldUseTarjetaPublicApi() && !hasNexusAccessToken();
+  if (tarjetaStandalone) {
+    return (
+      <NexusContext.Provider
+        value={{
+          empresa: { id: 0, nombre: 'La Mundial de Seguros', rif: '' },
+          submodulo: {
+            id: 0,
+            nombre: 'Activación tarjeta RCV',
+            url: window.location.href,
+            accessUrl: null,
+            moduloNombre: 'Emisión',
+          },
+        }}
+      >
+        {children}
+      </NexusContext.Provider>
+    );
+  }
+
   // Si venimos del bridge (hay sid + nexus_token), mostramos el contenido
   // de inmediato y verificamos en background para no interrumpir la UX.
   const chained = isChainedFlow();
