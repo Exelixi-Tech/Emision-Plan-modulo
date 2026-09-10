@@ -79,14 +79,29 @@ router.get('/planes', async (req, res) => {
   const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
   try {
     const { planes } = await personasClient.getPlanesPer(cramo);
-    res.json({ success: true, planes });
+    return res.json({ success: true, planes });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[personas/planes]', msg);
-    res.status(502).json({
-      success: false,
-      code: err.code || 'LAMUNDIAL_PERSON_ERROR',
-      message: `No se pudieron obtener los planes de personas: ${msg}`,
+    const codes = String(process.env.LAMUNDIAL_PLANES_FUNERARIO || '4,6,7,8')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!codes.length) {
+      return res.status(err.httpStatus || 502).json({
+        success: false,
+        code: err.code || 'LAMUNDIAL_PERSON_ERROR',
+        message: `No se pudieron obtener los planes de personas: ${msg}`,
+      });
+    }
+    return res.json({
+      success: true,
+      degraded: true,
+      planes: codes.map((cplan) => ({
+        cplan,
+        xplan: `Plan ${cplan}`,
+        parentescos: [],
+      })),
     });
   }
 });
