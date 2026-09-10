@@ -146,12 +146,14 @@ export function FuneralHealthModal({
     onConfirm(byInsured);
   };
 
+  const activeIdx = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
+
   const modal = (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="health-modal-title"
-      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[120] flex items-stretch sm:items-center justify-center p-0 sm:p-3"
     >
       <div
         className="absolute inset-0 bg-[#091133]/55 backdrop-blur-sm"
@@ -159,26 +161,26 @@ export function FuneralHealthModal({
         aria-hidden
       />
 
-      <div className="relative w-full sm:max-w-2xl max-h-[92dvh] sm:max-h-[88dvh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-[0_32px_80px_-20px_rgba(9,17,51,0.45)] overflow-hidden animate-spring-in">
+      <div className="relative w-full sm:max-w-2xl h-[100dvh] sm:h-[min(88dvh,40rem)] min-h-0 flex flex-col bg-white rounded-none sm:rounded-3xl shadow-[0_32px_80px_-20px_rgba(9,17,51,0.45)] overflow-hidden animate-spring-in">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 sm:px-7 pt-5 sm:pt-6 pb-4 border-b border-slate-100 bg-gradient-to-br from-indigo-50/80 via-white to-white">
+        <div className="shrink-0 flex items-start justify-between gap-3 px-4 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-5 pb-3 border-b border-slate-100 bg-gradient-to-br from-indigo-50/80 via-white to-white">
           <div className="min-w-0">
-            <p className="text-[0.62rem] font-black tracking-[0.22em] uppercase text-fuchsia-500 mb-1 inline-flex items-center gap-1.5">
+            <p className="text-[0.62rem] font-black tracking-[0.22em] uppercase text-fuchsia-500 mb-0.5 inline-flex items-center gap-1.5">
               <ClipboardList size={11} />
               Confirmación · Salud
             </p>
-            <h2 id="health-modal-title" className="font-display text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+            <h2 id="health-modal-title" className="font-display text-lg sm:text-2xl font-black text-slate-900 leading-tight">
               Cuestionario de salud
             </h2>
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Primero elige el plan. Luego declara la salud de cada asegurado. Los campos con * son obligatorios.
+            <p className="hidden [@media(min-height:700px)]:block text-xs text-slate-500 mt-1 leading-relaxed">
+              Declara la salud de cada asegurado. Los campos con * son obligatorios.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="flex-shrink-0 w-11 h-11 rounded-xl bg-white border border-slate-200 grid place-items-center text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-colors disabled:opacity-40 touch-manipulation"
+            className="flex-shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white border border-slate-200 grid place-items-center text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-colors disabled:opacity-40 touch-manipulation"
             aria-label="Cerrar cuestionario y volver al plan"
           >
             <X size={16} />
@@ -186,22 +188,22 @@ export function FuneralHealthModal({
         </div>
 
         {/* Plan preview */}
-        <div className="px-5 sm:px-7 py-4 bg-slate-50/80 border-b border-slate-100">
-          <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="shrink-0 px-4 sm:px-6 py-2.5 sm:py-3 bg-slate-50/80 border-b border-slate-100">
+          <div className="rounded-xl sm:rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 sm:p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[0.6rem] font-black uppercase tracking-wider text-indigo-500 mb-1">
+                <p className="text-[0.6rem] font-black uppercase tracking-wider text-indigo-500">
                   Plan confirmado
                 </p>
-                <p className="font-display font-black text-slate-900 text-lg leading-tight">{plan.name}</p>
-                <p className="text-xs text-slate-500 mt-1">{frecuenciaLabel}</p>
+                <p className="font-display font-black text-slate-900 text-sm sm:text-lg leading-tight truncate">{plan.name}</p>
+                <p className="text-[0.7rem] sm:text-xs text-slate-500 truncate">{frecuenciaLabel}</p>
               </div>
               {quote && (
-                <div className="text-right">
-                  <p className="text-2xl font-display font-black gradient-text-indigo tabular-nums">
+                <div className="text-right shrink-0">
+                  <p className="text-xl sm:text-2xl font-display font-black gradient-text-indigo tabular-nums">
                     ${quote.mprimaext.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                  <p className="text-[0.65rem] text-slate-500 font-semibold uppercase">Prima</p>
+                  <p className="text-[0.6rem] text-slate-500 font-semibold uppercase">Prima</p>
                 </div>
               )}
             </div>
@@ -209,33 +211,38 @@ export function FuneralHealthModal({
         </div>
 
         {tabs.length > 0 && (
-          <div className="px-5 sm:px-7 pt-3 pb-0 flex gap-2 overflow-x-auto">
-            {tabs.map((t) => {
-              const done = questions.length > 0 && Object.keys(byInsured[t.key] ?? {}).length > 0;
-              return (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => {
-                    setActiveKey(t.key);
-                    setErrors({});
-                  }}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                    activeKey === t.key
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
-                  }`}
-                >
-                  {t.label}
-                  {done ? ' ·' : ''}
-                </button>
-              );
-            })}
+          <div className="shrink-0 px-4 sm:px-6 pt-2.5 pb-1">
+            <p className="text-[0.65rem] font-bold text-slate-500 mb-1.5">
+              Asegurado {activeIdx + 1} de {tabs.length}
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {tabs.map((t) => {
+                const done = questions.length > 0 && Object.keys(byInsured[t.key] ?? {}).length > 0;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => {
+                      setActiveKey(t.key);
+                      setErrors({});
+                    }}
+                    className={`shrink-0 max-w-[11rem] truncate px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                      activeKey === t.key
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                    }`}
+                  >
+                    {t.label}
+                    {done ? ' ·' : ''}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {/* Questions */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-4">
+        {/* Questions — único tramo con scroll; header/footer fijos */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 sm:px-6 py-3 sm:py-4 space-y-3">
           {loadingQuestions ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
               <Loader2 size={28} className="animate-spin text-indigo-500" />
@@ -313,20 +320,20 @@ export function FuneralHealthModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 sm:px-7 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-md flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex items-center justify-center sm:justify-start gap-2 text-xs text-slate-500 order-2 sm:order-1">
+        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 order-2 sm:order-1">
             <ShieldCheck size={13} className="text-emerald-500 shrink-0" />
             <span className="font-medium">Respuestas almacenadas de forma segura</span>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto order-1 sm:order-2">
-            <Button variant="secondary" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none min-w-[7.5rem]">
+            <Button variant="secondary" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none min-w-[6.5rem]">
               Volver
             </Button>
             <Button
               variant="primary"
               onClick={handleSubmit}
               disabled={saving || loadingQuestions || visibleQuestions.length === 0}
-              className="flex-1 sm:flex-none sm:min-w-[11.5rem] btn-shine"
+              className="flex-1 sm:flex-none sm:min-w-[11rem] btn-shine"
             >
               {saving ? (
                 <>
