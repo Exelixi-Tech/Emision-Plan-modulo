@@ -9,6 +9,8 @@ import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } fro
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { ageErrorForParentesco, isTitularOnlyPlan } from '../../lib/funeralPlanParentescos';
+import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -25,6 +27,7 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
       'Asistencia y traslado',
     ],
     sumaAsegurada: 0,
+    parentescos: p.parentescos ?? [],
   };
 }
 
@@ -55,7 +58,11 @@ export function FuneralPlansStep() {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
         setApiPlans(mapped);
-        setSelectedPlan(null);
+        const current = useWizardStore.getState().selectedPlan;
+        const keep = current?.cplan
+          ? mapped.find((p) => p.cplan === current.cplan) ?? null
+          : null;
+        setSelectedPlan(keep);
       })
       .catch(() => {
         if (cancelled) return;
@@ -100,9 +107,17 @@ export function FuneralPlansStep() {
   }, [selectedPlan?.cplan, product.cramo, setFuneral, funeral.frecuencia]);
 
   // ── Cotización contra getCotizacionPer ─────────────────────────────────────
-  const aseguradosListos = funeral.asegurados.filter(
-    (a) => (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim(),
-  );
+  const planParentescos = selectedPlan?.parentescos ?? [];
+  const aseguradosListos = funeral.asegurados.filter((a, idx) => {
+    const idOk = (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim();
+    if (!idOk) return false;
+    if (idx > 0 && !(a.parentesco || '').toString().trim()) return false;
+    return !ageErrorForParentesco(
+      a.fechaNac,
+      idx === 0 ? '1' : a.parentesco,
+      planParentescos,
+    );
+  });
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
     ? `funeral|${planCode}|${funeral.frecuencia}|${aseguradosListos
@@ -194,11 +209,29 @@ export function FuneralPlansStep() {
                 const found = apiPlans.find((p) => p.cplan === e.target.value);
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
-                // Nuevo plan → exigir cuestionario de salud de nuevo
                 if (found) {
+                  const extras = useWizardStore.getState().funeral.asegurados;
+                  const nextAsegurados = isTitularOnlyPlan(found.parentescos)
+                    ? extras.slice(0, 1)
+                    : extras.map((a, idx) => {
+                      if (idx === 0) return a;
+                      const allowed = (found.parentescos ?? []).some(
+                        (p) => String(p.cparen) === String(a.parentesco),
+                      );
+                      return allowed ? a : { ...a, parentesco: '' };
+                    });
+                  if (isTitularOnlyPlan(found.parentescos) && extras.length > 1) {
+                    toast.warning(
+                      'Plan solo titular',
+                      'Se quitaron los asegurados adicionales porque este plan no los admite.',
+                      6000,
+                    );
+                  }
                   setFuneral({
+                    asegurados: nextAsegurados,
                     healthQuestionnaireDone: false,
                     healthAnswers: {},
+                    healthAnswersByInsured: {},
                     diagnosticoEnfermedad: false,
                     descripcionEnfermedad: '',
                     aceptaTerminos: false,
@@ -263,6 +296,8 @@ export function FuneralPlansStep() {
           </div>
         </div>
       </div>
+
+      <FuneralInsuredsEditor parentescos={planParentescos} />
 
       {/* Detalle del plan + prima */}
       {selectedPlan ? (

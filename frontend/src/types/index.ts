@@ -105,6 +105,13 @@ export interface PlanCoberturaAdicional {
   text: string;
 }
 
+export interface PlanParentesco {
+  cparen: number;
+  xparentesco: string;
+  min_edad: number;
+  max_edad: number;
+}
+
 export interface Plan {
   /** Código del plan en Sis2000 (ej. "RCVBAS", "Auto"). Se envía al backend en quote/emit. */
   cplan?: string;
@@ -122,6 +129,8 @@ export interface Plan {
   cproducto?: string;
   /** Opciones "Incluir" del plan (CA, PT, PP…) — paridad SysIP xcober */
   coberturasAdicionales?: PlanCoberturaAdicional[];
+  /** Parentescos admitidos por el plan (personas/planes). */
+  parentescos?: PlanParentesco[];
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';

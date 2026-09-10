@@ -620,10 +620,18 @@ export const catalogoApi = {
 //  Personas (producto Funerario, ramo 9) — planes y cotización
 // ──────────────────────────────────────────────────────────────────────
 
+export interface PlanParentescoPer {
+  cparen: number;
+  xparentesco: string;
+  min_edad: number;
+  max_edad: number;
+}
+
 export interface PlanPer {
   cplan: string;
   xplan?: string;
   cmoneda?: string;
+  parentescos?: PlanParentescoPer[];
 }
 
 /** Asegurado que se envía a la cotización de personas (formato amigable). */
