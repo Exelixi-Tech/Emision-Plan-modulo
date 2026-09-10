@@ -1,21 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
-  Check, Star, ChevronDown, ShieldCheck,
-  Loader2, Building2, CalendarClock,
+  Check, Star, Shield, ChevronDown, ShieldCheck,
+  Loader2, AlertTriangle, Building2, CalendarClock
 } from 'lucide-react';
 import type { Plan } from '../../types';
 import { patrimonialApi, type PlanRcv, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
+import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 
-const FREC_LABELS: Record<string, string> = {
-  A: 'Pago Anual (1 Cuota)',
-  S: 'Pago Semestral (2 Cuotas)',
-  T: 'Pago Trimestral (4 Cuotas)',
-  M: 'Pago Mensual (12 Cuotas)',
-};
-
+/** Convierte un PlanRcv de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanRcv): Plan {
   return {
     cplan: p.cplan,
@@ -38,13 +33,14 @@ function apiPlanToWizardPlan(p: PlanRcv): Plan {
 export function PatrimonialPlansStep() {
   const {
     patrimoniales, selectedPlan, setSelectedPlan, setCategory,
-    quote, quoteState, rcv, setRcv,
+    quote, quoteState, quoteError, rcv, setRcv,
   } = useWizardStore();
 
   const product = getProductConfig();
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
+  const [plansError, setPlansError] = useState(false);
 
   const [apiFrecuencias, setApiFrecuencias] = useState<CatalogItem[]>([]);
   const [frecLoading, setFrecLoading] = useState(false);
@@ -55,44 +51,19 @@ export function PatrimonialPlansStep() {
   useEffect(() => {
     let cancelled = false;
     setPlansLoading(true);
+    setPlansError(false);
 
     patrimonialApi.planes(product.cramo || 20)
       .then((res) => {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
         setApiPlans(mapped);
-        if (mapped.length > 0 && !selectedPlan) {
-          // Seleccionar por defecto el plan RCE9 o el primero
-          const defaultP = mapped.find((p) => p.cplan?.toUpperCase() === 'RCE9') || mapped[0];
-          setSelectedPlan(defaultP);
-          setCategory(defaultP.name);
-        }
+        setSelectedPlan(null);
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return;
-        console.error('Error al cargar planes patrimoniales:', err);
-        // Plan fallback garantizado
-        const fallbackPlans: Plan[] = [
-          {
-            cplan: 'RCE9',
-            name: 'Responsabilidad Civil Embarcación / Inmueble (RCE9)',
-            price: 'Tarifa La Mundial',
-            priceNum: 0,
-            tag: 'Patrimonial',
-            desc: 'Cobertura integral de riesgos generales y responsabilidad civil.',
-            benefits: [
-              'Protección de bienes patrimoniales',
-              'Responsabilidad civil general',
-              'Respaldo garantizado',
-            ],
-            sumaAsegurada: 0,
-          },
-        ];
-        setApiPlans(fallbackPlans);
-        if (!selectedPlan) {
-          setSelectedPlan(fallbackPlans[0]);
-          setCategory(fallbackPlans[0].name);
-        }
+        setPlansError(true);
+        setApiPlans([]);
       })
       .finally(() => {
         if (!cancelled) setPlansLoading(false);
@@ -106,9 +77,7 @@ export function PatrimonialPlansStep() {
   useEffect(() => {
     const planCode = selectedPlan?.cplan;
     if (!planCode) {
-      setApiFrecuencias([
-        { code: 'A', label: 'Anual' },
-      ]);
+      setApiFrecuencias([]);
       return;
     }
 
@@ -117,19 +86,14 @@ export function PatrimonialPlansStep() {
     getFrecuenciasByPlan(planCode, product.cramo || 20)
       .then((items) => {
         if (!cancelled) {
-          const list = items.length > 0 ? items : [{ code: 'A', label: 'Anual' }];
-          setApiFrecuencias(list);
-          const currentValid = list.find((i) => String(i.code) === activeFrecuencia);
-          if (!currentValid && list.length > 0) {
-            setRcv({ frecuencia: String(list[0].code) });
+          setApiFrecuencias(items);
+          const currentValid = items.find((i) => String(i.code) === activeFrecuencia);
+          if (!currentValid && items.length > 0) {
+            setRcv({ frecuencia: String(items[0].code) });
           }
         }
       })
-      .catch(() => {
-        if (!cancelled) {
-          setApiFrecuencias([{ code: 'A', label: 'Anual' }]);
-        }
-      })
+      .catch((err) => console.error('Error cargando frecuencias', err))
       .finally(() => {
         if (!cancelled) setFrecLoading(false);
       });
@@ -181,7 +145,7 @@ export function PatrimonialPlansStep() {
           || ax.message
           || 'No pudimos obtener la tarifa patrimonial.';
         useWizardStore.getState().setQuoteState('error', message);
-        toast.warning('Cotización no disponible', message, 8000);
+        toast.warning('Cotización no disponible', message, 9000);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteSig]);
@@ -189,37 +153,25 @@ export function PatrimonialPlansStep() {
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote = quoteState === 'ready' && Boolean(quote);
   const annualUsd = hasRealQuote ? quote!.mprimaext : 0;
-  const annualBs = hasRealQuote ? quote!.mprima : 0;
-  const ptasa = hasRealQuote ? quote!.ptasa : 0;
 
   return (
     <div className="animate-fade-in space-y-6">
-      {/* Header Info */}
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            Planes de Seguro Patrimonial
-            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold">
-              Riesgos Generales
-            </span>
-          </h2>
-          <p className="text-slate-500 text-sm leading-relaxed mt-1 max-w-lg">
-            Selecciona el plan patrimonial para asegurar el bien o inmueble con cotización en tiempo real.
-          </p>
-        </div>
-
+        <p className="text-slate-500 text-sm leading-relaxed max-w-md">
+          Selecciona el plan patrimonial para asegurar el bien o inmueble.
+        </p>
         {patrimoniales?.datosBien && (
-          <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700">
-            <Building2 size={15} className="text-indigo-600 flex-shrink-0" />
-            <div className="truncate max-w-[200px]">
-              <span className="font-bold">{patrimoniales.datosBien}</span>
-              {patrimoniales.tipo && <span className="text-slate-400"> · {patrimoniales.tipo}</span>}
-            </div>
-          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
+            <Building2 size={11} />
+            <span className="truncate max-w-[200px]">
+              {patrimoniales.datosBien}
+              {patrimoniales.tipo && ` · ${patrimoniales.tipo}`}
+            </span>
+          </span>
         )}
       </div>
 
-      {/* Selectores de Plan y Frecuencia */}
+      {/* Selectores */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Selector de plan */}
         <div>
@@ -242,105 +194,125 @@ export function PatrimonialPlansStep() {
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
               }}
-              disabled={plansLoading}
-              className="w-full h-14 pl-14 pr-10 rounded-2xl border border-slate-200 bg-white font-bold text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer shadow-sm hover:border-slate-300"
+              disabled={plansLoading || apiPlans.length === 0}
+              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
             >
-              {apiPlans.length === 0 && (
-                <option value="">{plansLoading ? 'Cargando planes...' : 'No hay planes disponibles'}</option>
+              {plansLoading ? (
+                <option value="">Cargando planes...</option>
+              ) : plansError ? (
+                <option value="">Error al cargar planes</option>
+              ) : apiPlans.length === 0 ? (
+                <option value="">Sin planes disponibles</option>
+              ) : (
+                <>
+                  <option value="" disabled>— Elige un plan —</option>
+                  {apiPlans.map((p) => (
+                    <option key={p.cplan} value={p.cplan ?? ''}>{p.name}</option>
+                  ))}
+                </>
               )}
-              {apiPlans.map((p) => (
-                <option key={p.cplan} value={p.cplan}>
-                  {p.cplan} — {p.name}
-                </option>
-              ))}
             </select>
-            <ChevronDown size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
 
-        {/* Frecuencia de pago */}
+        {/* Selector de frecuencia */}
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
-            <CalendarClock size={11} className="text-indigo-500" />
+            <CalendarClock size={11} className="text-emerald-500" />
             Frecuencia de pago
           </label>
           <div className="relative group">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg bg-slate-100 grid place-items-center pointer-events-none text-slate-600">
-              {frecLoading ? <Loader2 size={14} className="animate-spin text-indigo-500" /> : <CalendarClock size={15} />}
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
+              activeFrecuencia
+                ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              {frecLoading ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={15} strokeWidth={2.5} />}
             </div>
             <select
               value={activeFrecuencia}
               onChange={(e) => setRcv({ frecuencia: e.target.value })}
-              disabled={frecLoading || !selectedPlan}
-              className="w-full h-14 pl-14 pr-10 rounded-2xl border border-slate-200 bg-white font-bold text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer shadow-sm hover:border-slate-300"
+              disabled={frecLoading || apiFrecuencias.length === 0 || !selectedPlan}
+              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
             >
-              {apiFrecuencias.map((f) => (
-                <option key={String(f.code)} value={String(f.code)}>
-                  {FREC_LABELS[String(f.code)] || f.label || String(f.code)}
-                </option>
-              ))}
+              {frecLoading ? (
+                <option value="">Cargando...</option>
+              ) : !selectedPlan ? (
+                <option value="">Selecciona un plan primero</option>
+              ) : apiFrecuencias.length === 0 ? (
+                <option value="">Sin frecuencias</option>
+              ) : (
+                apiFrecuencias.map((f) => (
+                  <option key={f.code} value={String(f.code)}>{f.label}</option>
+                ))
+              )}
             </select>
-            <ChevronDown size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
       </div>
 
-      {/* Tarjeta de Cotización y Beneficios */}
-      {selectedPlan && (
-        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-b from-indigo-50/40 via-white to-white p-6 shadow-sm relative overflow-hidden">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-100">
-            <div>
-              <span className="px-2.5 py-1 rounded-lg bg-indigo-100/80 text-indigo-800 text-[0.65rem] font-extrabold uppercase tracking-wider">
-                Plan Seleccionado
-              </span>
-              <h3 className="text-lg font-bold text-slate-900 mt-1.5">{selectedPlan.name}</h3>
-              <p className="text-xs text-slate-500 mt-0.5">{selectedPlan.desc}</p>
-            </div>
-
-            {/* Price Box */}
-            <div className="bg-white rounded-2xl p-4 border border-indigo-100 shadow-sm min-w-[220px] text-right">
-              <span className="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wider block">
-                Prima {FREC_LABELS[activeFrecuencia]?.split(' ')[1] || 'Total'}
-              </span>
-              <div className="flex items-baseline justify-end gap-1 mt-0.5">
-                {isLoadingQuote ? (
-                  <div className="flex items-center gap-2 text-indigo-600 text-sm py-1 font-semibold">
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Cotizando...</span>
-                  </div>
-                ) : hasRealQuote ? (
-                  <>
-                    <span className="text-2xl font-black text-slate-900 tracking-tight">
-                      ${annualUsd.toFixed(2)}
-                    </span>
-                    <span className="text-xs font-bold text-slate-500">USD</span>
-                  </>
-                ) : (
-                  <span className="text-sm font-semibold text-slate-400">Tarifa según consulta</span>
+      {/* Detalle del plan + prima */}
+      {selectedPlan ? (
+        <article className="relative rounded-2xl border-2 border-indigo-500/40 bg-gradient-to-br from-indigo-50/90 via-violet-50/40 to-white p-4 sm:p-6 shadow-[0_24px_48px_-12px_rgba(15,26,90,0.22)] animate-spring-in overflow-hidden">
+          <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-indigo-500/12 blur-3xl pointer-events-none" />
+          <div className="relative">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5">
+              <div className="min-w-0 flex-1">
+                <span className="inline-block px-2 py-0.5 rounded-md bg-white text-slate-500 text-[0.62rem] font-bold mb-2 uppercase tracking-wider border border-slate-200">
+                  {selectedPlan.tag}
+                </span>
+                <h3 className="font-display font-black text-slate-900 text-xl sm:text-2xl leading-tight break-words">{selectedPlan.name}</h3>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-md">{selectedPlan.desc}</p>
+                {quoteState === 'error' && (
+                  <p className="mt-3 text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-2 rounded-md border border-rose-200 leading-relaxed normal-case">
+                    <AlertTriangle size={12} strokeWidth={2.4} className="inline mr-1 -mt-0.5" />
+                    {quoteError || 'No se pudo obtener la cotización del plan seleccionado.'}
+                  </p>
                 )}
               </div>
-              {hasRealQuote && annualBs > 0 && (
-                <p className="text-[0.7rem] text-slate-500 mt-1 font-medium">
-                  ≈ Bs. {annualBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  {ptasa > 1 && <span className="text-slate-400"> (Tasa: {ptasa.toFixed(2)})</span>}
-                </p>
-              )}
-            </div>
-          </div>
 
-          {/* Coberturas del plan */}
-          <div className="mt-6">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3.5 flex items-center gap-1.5">
-              <ShieldCheck size={14} className="text-indigo-600" />
+              <div className="w-full sm:w-auto sm:shrink-0 text-left sm:text-right">
+                <div className="flex items-end gap-1 sm:justify-end">
+                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
+                  {isLoadingQuote && !hasRealQuote ? (
+                    <span className="text-4xl sm:text-5xl font-display font-black gradient-text-indigo leading-none inline-flex items-center gap-2">
+                      <Loader2 size={28} className="animate-spin opacity-70" />
+                      <span className="opacity-50">---</span>
+                    </span>
+                  ) : (
+                    <span className="text-4xl sm:text-5xl font-display font-black gradient-text-indigo leading-none tabular-nums">
+                      <AnimatedCounter value={annualUsd} duration={500} decimals={hasRealQuote ? 2 : 0} />
+                    </span>
+                  )}
+                </div>
+                <p className="text-[0.7rem] text-slate-500 font-semibold mt-1 uppercase">
+                  / {activeFrecuencia === 'A' ? 'año' : activeFrecuencia === 'M' ? 'mes' : activeFrecuencia === 'S' ? 'semestre' : activeFrecuencia === 'T' ? 'trimestre' : 'cuota'}
+                </p>
+                {hasRealQuote && quote && quote.mprima > 0 && (
+                  <p className="text-[0.65rem] font-bold text-indigo-700/80 mt-1.5 tabular-nums">
+                    ≈ Bs {quote.mprima.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="divider-soft mb-5" />
+
+            <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-3 inline-flex items-center gap-1.5">
+              <Shield size={11} className="text-indigo-500" />
               Coberturas y beneficios incluidos
-            </h4>
+            </p>
 
             {quote?.coberturas && quote.coberturas.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {quote.coberturas.map((c, i) => (
                   <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 border border-slate-100 text-xs">
                     <span className="font-semibold text-slate-800 flex items-center gap-2">
-                      <Check size={13} className="text-indigo-600 flex-shrink-0" strokeWidth={2.5} />
+                      <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
+                        <Check size={9} strokeWidth={3.5} />
+                      </span>
                       {c.name}
                     </span>
                     {c.sumaAsegurada != null && c.sumaAsegurada > 0 && (
@@ -352,18 +324,37 @@ export function PatrimonialPlansStep() {
                 ))}
               </div>
             ) : (
-              <ul className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs text-slate-600">
-                {selectedPlan.benefits.map((b, idx) => (
-                  <li key={idx} className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                    <Check size={14} className="text-indigo-600 flex-shrink-0 mt-0.5" strokeWidth={2.5} />
-                    <span>{b}</span>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
+                {selectedPlan.benefits.map((b) => (
+                  <li key={b} className="flex items-start gap-2 text-xs text-slate-700">
+                    <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 mt-0.5 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
+                      <Check size={9} strokeWidth={3.5} />
+                    </span>
+                    <span className="leading-relaxed font-medium">{b}</span>
                   </li>
                 ))}
               </ul>
             )}
+
+            <div className="mt-5 pt-4 border-t border-indigo-100/80 flex items-center justify-between gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-1.5 text-[0.7rem] font-bold text-indigo-600">
+                <ShieldCheck size={11} />
+                Plan patrimonial seleccionado
+              </div>
+            </div>
           </div>
+        </article>
+      ) : (
+        <div className="text-center py-14 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-gradient-to-br from-slate-50/70 to-white">
+          <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 grid place-items-center mx-auto mb-3 shadow-sm">
+            <Shield size={22} className="text-slate-500" />
+          </div>
+          <p className="text-sm text-slate-500 font-medium">
+            {plansLoading ? 'Cargando planes disponibles...' : 'Elige un plan en el selector para ver la cotización.'}
+          </p>
         </div>
       )}
     </div>
   );
 }
+

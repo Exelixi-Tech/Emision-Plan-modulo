@@ -8,13 +8,33 @@ const {
   buildAuthHeaders,
   trackResponse,
 } = require('./nestTokenService');
-const { fetchPlanesV2 } = require('./planesClient');
+const personasClient = require('./personasClient');
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PATRIMONIAL || '20', 10);
 const DEFAULT_TIMEOUT = 30_000;
 
+const PATH_PREFIX = '/api/v1/valrep/';
+
 function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || DEFAULT_TIMEOUT;
+}
+
+let _patrimonial = null;
+let _patrimonialCfg = null;
+
+function getConfig() {
+  return {
+    baseUrl:
+      process.env.PERSONAS_API_URL ||
+      process.env.NEST_API_URL ||
+      process.env.NESTAPI_BASE_URL ||
+      process.env.SYSIP_API_URL ||
+      DEFAULT_BASE,
+    // apikey solo se usa en la emisión (canal maclient_api).
+    apiKey: process.env.PERSONAS_API_KEY || process.env.LAMUNDIAL_PERSON_APIKEY || '',
+    timeout: parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || DEFAULT_TIMEOUT,
+    cramo: parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9,
+  };
 }
 
 async function axiosOpts(extra = {}) {
@@ -24,6 +44,47 @@ async function axiosOpts(extra = {}) {
     validateStatus: () => true,
     ...extra,
   };
+}
+
+function getPatrimonial() {
+  const cfg = getConfig();
+  if (_patrimonial && _patrimonialCfg &&
+    _patrimonialCfg.baseUrl === cfg.baseUrl &&
+    _patrimonialCfg.timeout === cfg.timeout) {
+    return _patrimonial;
+  }
+  console.log('cfg.baseUrl', `${cfg.baseUrl.replace(/\/$/, '')}${PATH_PREFIX}`)
+  _patrimonial = axios.create({
+    baseURL: `${cfg.baseUrl.replace(/\/$/, '')}${PATH_PREFIX}`,
+    timeout: cfg.timeout,
+    headers: { 'Content-Type': 'application/json' },
+    validateStatus: () => true,
+  });
+  _patrimonialCfg = cfg;
+  return _patrimonial;
+}
+
+async function post(endpoint, body, extraHeaders) {
+  const client = getPatrimonial();
+  const ts = new Date().toISOString();
+  console.log(`[Patrimonial][${ts}] -> ${endpoint} ${JSON.stringify(body).slice(0, 1500)}`);
+  const t0 = Date.now();
+  let response;
+  const authHeaders = await buildAuthHeaders(extraHeaders);
+  try {
+    response = trackResponse(await client.post(endpoint, body, { headers: authHeaders }));
+    console.log(response.data)
+  } catch (netErr) {
+    const err = new Error(`Red no disponible llamando ${endpoint}: ${netErr.message}`);
+    err.code = 'PATRIMONIAL_NETWORK';
+    err.endpoint = endpoint;
+    throw err;
+  }
+  const elapsed = Date.now() - t0;
+  const ok = response.data?.status === true;
+  console.log(`[Patrimonial][${ts}] <- ${endpoint} ${response.status} ${ok ? 'ok' : 'FAIL'} in ${elapsed}ms`);
+  if (!ok) console.warn(`[Patrimonial] body: ${JSON.stringify(response.data).slice(0, 800)}`);
+  return response;
 }
 
 function extractErrorMessage(data) {
@@ -64,11 +125,22 @@ function buildError(httpStatus, data, endpoint) {
 /**
  * Consulta la lista de planes vigentes para el ramo patrimonial (default 20).
  * @param {number} [cramo=20]
- * @param {Record<string, unknown>} [nexusMetadata]
  */
-async function getPlanesPatrimonial(cramo = DEFAULT_RAMO, nexusMetadata = {}) {
-  const metadata = { ...nexusMetadata, cramo: Number(cramo || DEFAULT_RAMO) };
-  return fetchPlanesV2(metadata);
+async function getPlanesPatrimonial(cramo = DEFAULT_RAMO) {
+  const planes = await getPlanes(cramo)
+  console.log(planes)
+  return planes;
+}
+
+async function getPlanes(cramo) {
+  const ramo = cramo || getConfig().cramo;
+  const endpoint = '/planes/producto';
+  const response = await post(endpoint, { cproducto: 'EMB', citem: '80080', centidad: 'P' });
+  if (response.status >= 200 && response.status < 300 && response.data?.status === true) {
+    const planes = response.data.data?.plan ?? [];
+    return { planes, raw: response.data };
+  }
+  throw buildError(response.status, response.data, endpoint);
 }
 
 /**

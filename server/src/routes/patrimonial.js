@@ -61,7 +61,7 @@ function withNexusMetadata(state, nexusMetadata) {
 router.get('/planes', async (req, res) => {
   const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
   try {
-    const { planes } = await patrimonialClient.getPlanesPatrimonial(cramo, req.nexusMetadata);
+    const { planes } = await patrimonialClient.getPlanesPatrimonial(cramo);
     res.json({ success: true, planes });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
