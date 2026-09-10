@@ -25,6 +25,9 @@ export interface HealthQuestionDraft {
   blockIfTrue?: boolean;
   blockIfFalse?: boolean;
   blockReason?: string;
+  /** score = solo % · refer = mesa técnica · reject = rechazo inmediato */
+  actionIfTrue?: 'score' | 'refer' | 'reject';
+  actionIfFalse?: 'score' | 'refer' | 'reject';
 }
 
 export type PlanOption = { code: string; label: string };
@@ -920,37 +923,58 @@ export function FuneralHealthQuestionsEditor({
                     {q.type === 'boolean' && (
                       <div className="pt-1 border-t border-indigo-100 space-y-2">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                          Bloquear el envío
+                          Qué hace esta respuesta
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          Si se cumple, el cliente no puede continuar. El caso no llega a mesa técnica.
+                          Además del %, puedes mandar el caso a revisión o rechazarlo al instante.
                         </p>
-                        <div className="flex flex-wrap gap-3">
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfTrue}
-                              onChange={(e) => update(idx, { blockIfTrue: e.target.checked || undefined })}
-                            />
-                            Bloquear si Sí
-                          </label>
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfFalse}
-                              onChange={(e) => update(idx, { blockIfFalse: e.target.checked || undefined })}
-                            />
-                            Bloquear si No
-                          </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className={lbl}>Si responde Sí</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfTrue = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfTrue,
+                                  blockIfTrue: actionIfTrue === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className={lbl}>Si responde No</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfFalse = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfFalse,
+                                  blockIfFalse: actionIfFalse === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
                         </div>
-                        {(q.blockIfTrue || q.blockIfFalse) && (
+                        {((q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')) === 'reject' ||
+                          (q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')) === 'reject' ||
+                          q.actionIfTrue === 'refer' ||
+                          q.actionIfFalse === 'refer') && (
                           <input
                             className={inp}
                             value={q.blockReason ?? ''}
                             onChange={(e) => update(idx, { blockReason: e.target.value || undefined })}
-                            placeholder="Mensaje que verá el cliente si se bloquea"
+                            placeholder="Mensaje que verá el cliente (rechazo o revisión)"
                           />
                         )}
                       </div>

@@ -8,6 +8,7 @@ import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext'
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
 import { publicAsset } from '../lib/app-base';
 import { formatHealthScoreNumber, formatHealthScoreSigned } from '../lib/formatHealthScore';
+import { parseFuneralScoringRules } from './FuneralScoringRulesEditor';
 
 const NEXUS_URL = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
 const PANEL = readConfigPanelContext();
@@ -18,6 +19,7 @@ type ScoreLine = {
   label: string;
   answer: unknown;
   points: number;
+  insuredLabel?: string;
 };
 
 type Submission = {
@@ -322,6 +324,84 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function ReviewerEmailsBox() {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${NEXUS_URL}/api/config/${EMPRESA_ID}/funerario/emision`);
+        const data = await res.json().catch(() => ({}));
+        const rules = parseFuneralScoringRules(data?.data?.healthScoringRules);
+        setText(rules.reviewerEmails.join('\n'));
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setMsg('');
+    try {
+      const resGet = await fetch(`${NEXUS_URL}/api/config/${EMPRESA_ID}/funerario/emision`);
+      const data = await resGet.json().catch(() => ({}));
+      const rules = parseFuneralScoringRules(data?.data?.healthScoringRules);
+      const emails = text
+        .split(/[\n,;]+/)
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.includes('@'));
+      const put = await fetch(`${NEXUS_URL}/api/config/${EMPRESA_ID}/funerario/emision`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          healthScoringRules: { ...rules, reviewerEmails: emails },
+        }),
+      });
+      if (!put.ok) {
+        setMsg('No se pudo guardar. Reabre el enlace de revisión.');
+        return;
+      }
+      setText(emails.join('\n'));
+      setMsg(emails.length ? `${emails.length} correo(s) guardados.` : 'Lista vacía. No se enviarán alertas.');
+    } catch {
+      setMsg('No se pudo conectar a Nexus.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-indigo-100 bg-white px-4 py-3">
+      <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600 mb-1">
+        Correos de alerta (referidas)
+      </p>
+      <p className="text-[11px] text-slate-500 mb-2">
+        Un correo por línea. Se avisa cuando entre una solicitud a revisión.
+      </p>
+      <textarea
+        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 min-h-[4.5rem] outline-none focus:border-indigo-400"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="autorizador@lamundialdeseguros.com"
+      />
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving}
+          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-50"
+        >
+          {saving ? 'Guardando…' : 'Guardar correos'}
+        </button>
+        {msg && <span className="text-[11px] text-slate-500">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
 function formatAnswer(v: unknown): string {
   if (v === true) return 'Sí';
   if (v === false) return 'No';
@@ -456,7 +536,10 @@ function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine
               className="flex items-start justify-between gap-2 text-xs border-b border-slate-100 pb-1.5"
             >
               <div className="min-w-0">
-                <p className="font-semibold text-slate-800 leading-snug">{line.label}</p>
+                <p className="font-semibold text-slate-800 leading-snug">
+                  {line.insuredLabel ? `${line.insuredLabel} · ` : ''}
+                  {line.label}
+                </p>
                 <p className="text-[10px] text-slate-500">Resp: {formatAnswer(line.answer)}</p>
               </div>
               <span className="font-bold text-indigo-700 shrink-0 tabular-nums">
@@ -884,6 +967,9 @@ export function EmisionRevisionPanel() {
             <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
           </div>
         )}
+        <div className={`${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
+          <ReviewerEmailsBox />
+        </div>
 
         <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
           <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

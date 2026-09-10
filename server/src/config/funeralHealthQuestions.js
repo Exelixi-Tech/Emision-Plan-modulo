@@ -288,6 +288,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   let source = 'catalog';
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
+  let scoringRulesRaw = null;
   try {
     const {
       fetchProductConfig,
@@ -301,6 +302,9 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       const cfg = await fetchProductConfig(eid, 'funerario', 'emision', {
         bypassCache: true,
       });
+      if (cfg?.healthScoringRules && !scoringRulesRaw) {
+        scoringRulesRaw = cfg.healthScoringRules;
+      }
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
       const defaultList =
@@ -317,6 +321,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       if (hit.source === 'nexus-canal' && eid === primaryEmpresa) {
         picked = hit;
         empresaId = eid;
+        if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
         break;
       }
       if (!picked) {
@@ -363,6 +368,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     triedEmpresas: candidates,
     canal: canalKey,
     resolvedCanal,
+    scoringRules: scoringRulesRaw,
   };
 }
 

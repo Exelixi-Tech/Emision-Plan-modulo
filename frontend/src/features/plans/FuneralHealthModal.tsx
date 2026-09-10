@@ -9,6 +9,8 @@ import { Textarea, Select } from '../../components/ui/FormField';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { Button } from '../../components/ui/Button';
 
+export type HealthInsuredTab = { key: string; label: string };
+
 interface Props {
   open: boolean;
   plan: Plan;
@@ -16,10 +18,11 @@ interface Props {
   frecuenciaLabel: string;
   questions: HealthQuestion[];
   loadingQuestions: boolean;
-  initialAnswers?: Record<string, unknown>;
+  insureds: HealthInsuredTab[];
+  initialByInsured?: Record<string, Record<string, unknown>>;
   saving: boolean;
   onClose: () => void;
-  onConfirm: (answers: Record<string, unknown>) => void;
+  onConfirm: (byInsured: Record<string, Record<string, unknown>>) => void;
 }
 
 function isVisible(q: HealthQuestion, answers: Record<string, unknown>): boolean {
@@ -69,19 +72,29 @@ export function FuneralHealthModal({
   frecuenciaLabel,
   questions,
   loadingQuestions,
-  initialAnswers,
+  insureds,
+  initialByInsured,
   saving,
   onClose,
   onConfirm,
 }: Props) {
-  const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const tabs = insureds.length > 0 ? insureds : [{ key: 'aseg-0', label: 'Asegurado' }];
+  const [activeKey, setActiveKey] = useState(tabs[0].key);
+  const [byInsured, setByInsured] = useState<Record<string, Record<string, unknown>>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
-    setAnswers(initialAnswers ?? {});
+    const next: Record<string, Record<string, unknown>> = {};
+    for (const t of tabs) {
+      next[t.key] = { ...(initialByInsured?.[t.key] ?? {}) };
+    }
+    setByInsured(next);
+    setActiveKey(tabs[0].key);
     setErrors({});
-  }, [open, initialAnswers, plan.cplan]);
+  }, [open, plan.cplan, initialByInsured, tabs.map((t) => t.key).join('|')]);
+
+  const answers = byInsured[activeKey] ?? {};
 
   useEffect(() => {
     if (!open) return;
@@ -105,15 +118,14 @@ export function FuneralHealthModal({
   if (!open) return null;
 
   const setAnswer = (id: string, value: unknown) => {
-    setAnswers((prev) => {
-      const next = { ...prev, [id]: value };
-      // Si se oculta una hija (showIf), limpiar su respuesta
+    setByInsured((prev) => {
+      const current = { ...(prev[activeKey] ?? {}), [id]: value };
       for (const q of questions) {
-        if (q.showIf?.field === id && !isVisible(q, next)) {
-          delete next[q.id];
+        if (q.showIf?.field === id && !isVisible(q, current)) {
+          delete current[q.id];
         }
       }
-      return next;
+      return { ...prev, [activeKey]: current };
     });
     setErrors((prev) => {
       const next = { ...prev };
@@ -123,12 +135,15 @@ export function FuneralHealthModal({
   };
 
   const handleSubmit = () => {
-    const nextErrors = validateAnswers(questions, answers);
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      return;
+    for (const t of tabs) {
+      const nextErrors = validateAnswers(questions, byInsured[t.key] ?? {});
+      if (Object.keys(nextErrors).length > 0) {
+        setActiveKey(t.key);
+        setErrors(nextErrors);
+        return;
+      }
     }
-    onConfirm(answers);
+    onConfirm(byInsured);
   };
 
   const modal = (
@@ -156,8 +171,7 @@ export function FuneralHealthModal({
               Cuestionario de salud
             </h2>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Declara el estado de salud del asegurado para este plan. Los campos con * son obligatorios.
-              Tus respuestas quedan en el expediente; un técnico las revisa antes del pago.
+              Primero elige el plan. Luego declara la salud de cada asegurado. Los campos con * son obligatorios.
             </p>
           </div>
           <button
@@ -193,6 +207,32 @@ export function FuneralHealthModal({
             </div>
           </div>
         </div>
+
+        {tabs.length > 0 && (
+          <div className="px-5 sm:px-7 pt-3 pb-0 flex gap-2 overflow-x-auto">
+            {tabs.map((t) => {
+              const done = questions.length > 0 && Object.keys(byInsured[t.key] ?? {}).length > 0;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => {
+                    setActiveKey(t.key);
+                    setErrors({});
+                  }}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                    activeKey === t.key
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                  }`}
+                >
+                  {t.label}
+                  {done ? ' ·' : ''}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Questions */}
         <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-4">

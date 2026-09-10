@@ -17,6 +17,11 @@ import {
   type PlanOption,
 } from './FuneralHealthQuestionsEditor';
 import { canalDisplayLabel, readConfigPanelContext, isPreguntasOnlyView } from './configPanelContext';
+import {
+  FuneralScoringRulesEditor,
+  parseFuneralScoringRules,
+  type FuneralScoringRules,
+} from './FuneralScoringRulesEditor';
 
 const ALL_PLAN_CODES = ['2', '3', '4', '5', '6', '7', '8', '9'];
 const PANEL_CTX = readConfigPanelContext();
@@ -102,6 +107,9 @@ export function EmisionConfigPanel() {
   );
   const [funeralPlansLoading, setFuneralPlansLoading] = useState(false);
   const [funeralPlansError, setFuneralPlansError] = useState(false);
+  const [scoringRules, setScoringRules] = useState<FuneralScoringRules>(
+    parseFuneralScoringRules(null),
+  );
 
   useEffect(() => {
     if (producto !== 'funerario') return;
@@ -171,6 +179,9 @@ export function EmisionConfigPanel() {
     setDiligenciaUmbral(dil?.umbralMultiplicador ?? 300);
     setDiasCarencia(config.diasCarencia ?? 0);
     setEdadMaxima(config.edadMaxima ?? 70);
+    if (producto === 'funerario') {
+      setScoringRules(parseFuneralScoringRules(config.healthScoringRules));
+    }
     if (!healthQuestionsDirty.current && producto === 'funerario') {
       const legacy = config.healthQuestions as HealthQuestionDraft[] | undefined;
       const rawBy = config.healthQuestionsByCanal as
@@ -342,6 +353,7 @@ export function EmisionConfigPanel() {
       soloPreguntas && cleanedQuestions && byCanalPayload
         ? {
             healthQuestionsByCanal: byCanalPayload,
+            healthScoringRules: scoringRules,
             ...(Object.keys(byCanalPayload).includes('default')
               ? { healthQuestions: byCanalPayload.default }
               : {}),
@@ -365,6 +377,7 @@ export function EmisionConfigPanel() {
             ...(cleanedQuestions && byCanalPayload
               ? {
                   healthQuestionsByCanal: byCanalPayload,
+                  healthScoringRules: scoringRules,
                   ...(Object.keys(byCanalPayload).includes('default')
                     ? { healthQuestions: byCanalPayload.default }
                     : {}),
@@ -637,6 +650,14 @@ export function EmisionConfigPanel() {
                         </div>
                       )}
                     </div>
+                    <FuneralScoringRulesEditor
+                      rules={scoringRules}
+                      questions={healthQuestions}
+                      onChange={(next) => {
+                        setScoringRules(next);
+                        setSaved(false);
+                      }}
+                    />
                     <FuneralHealthQuestionsEditor
                       questions={healthQuestions}
                       onChange={onHealthQuestionsChange}

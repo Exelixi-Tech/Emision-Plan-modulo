@@ -80,6 +80,7 @@ const defaultFuneral = (): FuneralData => ({
   descripcionEnfermedad: '',
   aceptaTerminos: false,
   healthAnswers: {},
+  healthAnswersByInsured: {},
   healthQuestionnaireDone: false,
 });
 

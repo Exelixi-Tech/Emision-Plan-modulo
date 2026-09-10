@@ -168,6 +168,8 @@ export interface FuneralData {
   aceptaTerminos: boolean;
   /** Respuestas completas del cuestionario de salud (por plan). */
   healthAnswers?: Record<string, unknown>;
+  /** Respuestas por asegurado (clave tipoDoc-cedula). */
+  healthAnswersByInsured?: Record<string, Record<string, unknown>>;
   /** true cuando el cuestionario fue completado y guardado en BD. */
   healthQuestionnaireDone?: boolean;
 }

@@ -765,12 +765,15 @@ export interface SubmitFuneralReviewPayload {
 
 export async function submitFuneralPolicyReview(
   payload: SubmitFuneralReviewPayload,
-): Promise<{ submission: FuneralSubmissionResult; scoring: { total: number } }> {
+): Promise<{
+  submission: FuneralSubmissionResult;
+  scoring: { total: number; verdict?: string; verdictMessage?: string };
+}> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
-      scoring: { total: number };
+      scoring: { total: number; verdict?: string; verdictMessage?: string };
     }>('/funeral/submissions', payload);
     return { submission: data.submission, scoring: data.scoring };
   } catch (err) {

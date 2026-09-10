@@ -32,12 +32,25 @@ function getSessionId(): string {
   }
 }
 
-function mapHealthToFuneral(answers: Record<string, unknown>) {
+function insuredKey(person: { tipoDoc?: string; identificacion?: string }, idx: number) {
+  const id = String(person.identificacion ?? '').replace(/\D/g, '');
+  if (id) return `${String(person.tipoDoc || 'V').trim()}-${id}`;
+  return `aseg-${idx}`;
+}
+
+function insuredLabel(person: { nombre?: string; apellido?: string; identificacion?: string }, idx: number) {
+  const name = [person.nombre, person.apellido].filter(Boolean).join(' ').trim();
+  return name || String(person.identificacion || '').trim() || `Asegurado ${idx + 1}`;
+}
+
+function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) {
+  const first = Object.values(byInsured)[0] ?? {};
   return {
-    diagnosticoEnfermedad: answers.diagnosticoEnfermedad === true,
-    descripcionEnfermedad: String(answers.descripcionEnfermedad ?? ''),
-    aceptaTerminos: answers.aceptaTerminos === true,
-    healthAnswers: answers,
+    diagnosticoEnfermedad: first.diagnosticoEnfermedad === true,
+    descripcionEnfermedad: String(first.descripcionEnfermedad ?? ''),
+    aceptaTerminos: first.aceptaTerminos === true,
+    healthAnswers: first,
+    healthAnswersByInsured: byInsured,
     healthQuestionnaireDone: true,
   };
 }
@@ -62,7 +75,16 @@ export default function FuneralPlansApp() {
   const [pendingSubmission, setPendingSubmission] = useState<{
     id: string;
     scoreTotal: number;
+    verdict?: string;
+    message?: string;
   } | null>(null);
+
+  const healthInsureds = (funeral.asegurados || [])
+    .filter((a) => String(a.identificacion || '').trim())
+    .map((a, idx) => ({
+      key: insuredKey(a, idx),
+      label: insuredLabel(a, idx),
+    }));
 
   function toastPersonasBlocked(err: unknown) {
     const code = err instanceof PolicyEmitError ? err.code : '';
@@ -131,11 +153,12 @@ export default function FuneralPlansApp() {
     }
   }
 
-  async function handleHealthConfirm(answers: Record<string, unknown>) {
+  async function handleHealthConfirm(byInsured: Record<string, Record<string, unknown>>) {
     if (!selectedPlan?.cplan) return;
     setSavingHealth(true);
     try {
       const sessionId = getSessionId();
+      const packed = { byInsured };
 
       await saveFuneralHealthAnswers({
         sessionId,
@@ -143,7 +166,7 @@ export default function FuneralPlansApp() {
         cramo: product.cramo,
         tomadorRif: `${tomador.tipoDoc}-${tomador.identificacion}`,
         planName: selectedPlan.name,
-        answers,
+        answers: packed,
       });
 
       const { submission, scoring } = await submitFuneralPolicyReview({
@@ -159,25 +182,29 @@ export default function FuneralPlansApp() {
           : funeral.beneficiarios?.[0]
             ? { ...funeral.beneficiarios[0] }
             : undefined,
-        funeral: { ...funeral, ...mapHealthToFuneral(answers) },
+        funeral: { ...funeral, ...mapHealthToFuneral(byInsured) },
         selectedPlan: { ...selectedPlan },
         quote: quote ? { ...quote } : null,
         quoteState,
-        healthAnswers: answers,
+        healthAnswers: packed,
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
       });
 
-      setFuneral(mapHealthToFuneral(answers));
+      setFuneral(mapHealthToFuneral(byInsured));
       setHealthModalOpen(false);
+      const verdict = (scoring as { verdict?: string }).verdict;
+      const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
       setPendingSubmission({
         id: submission.id,
         scoreTotal: scoring.total ?? submission.scoreTotal,
+        verdict,
+        message: verdictMessage,
       });
 
       toast.success(
-        'Solicitud enviada',
-        'Un técnico revisará tu caso. Recibirás un correo cuando puedas pagar.',
+        verdict === 'emit' ? 'Puedes continuar al pago' : 'Solicitud enviada',
+        verdictMessage || 'Un técnico revisará tu caso.',
       );
     } catch (err: unknown) {
       toastPersonasBlocked(err);
@@ -206,7 +233,8 @@ export default function FuneralPlansApp() {
           frecuenciaLabel={FREC_LABELS[funeral.frecuencia ?? 'A'] ?? 'Pago anual'}
           questions={healthQuestions}
           loadingQuestions={loadingQuestions}
-          initialAnswers={funeral.healthAnswers}
+          insureds={healthInsureds}
+          initialByInsured={funeral.healthAnswersByInsured}
           saving={savingHealth}
           onClose={() => !savingHealth && setHealthModalOpen(false)}
           onConfirm={handleHealthConfirm}
@@ -217,6 +245,8 @@ export default function FuneralPlansApp() {
         <FuneralSubmissionPending
           tomadorEmail={tomador.email}
           planName={selectedPlan?.name}
+          verdict={pendingSubmission.verdict}
+          message={pendingSubmission.message}
         />
       )}
     </>
