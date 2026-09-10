@@ -12,6 +12,9 @@ import { toast } from '../../store/toastStore';
 import { ageErrorForParentesco, isTitularOnlyPlan } from '../../lib/funeralPlanParentescos';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
+/** SysIP persons-alt: si maplanes_frec no tiene el plan, al menos ANUAL. */
+const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL' }];
+
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
   return {
@@ -89,16 +92,20 @@ export function FuneralPlansStep() {
     setFrecLoading(true);
     getFrecuenciasByPlan(planCode, product.cramo)
       .then((items) => {
-        if (!cancelled) {
-          setApiFrecuencias(items);
-          // Si la frecuencia actual no es válida, seleccionar la primera por defecto
-          const currentValid = items.find((i) => String(i.code) === funeral.frecuencia);
-          if (!currentValid && items.length > 0) {
-            setFuneral({ frecuencia: String(items[0].code) });
-          }
+        if (cancelled) return;
+        const list = items.length ? items : FRECUENCIAS_PERSONAS_FALLBACK;
+        setApiFrecuencias(list);
+        const currentValid = list.find((i) => String(i.code) === funeral.frecuencia);
+        if (!currentValid) {
+          setFuneral({ frecuencia: String(list[0].code) });
         }
       })
-      .catch((err) => console.error('Error cargando frecuencias', err))
+      .catch((err) => {
+        console.error('Error cargando frecuencias', err);
+        if (cancelled) return;
+        setApiFrecuencias(FRECUENCIAS_PERSONAS_FALLBACK);
+        if (funeral.frecuencia !== 'A') setFuneral({ frecuencia: 'A' });
+      })
       .finally(() => {
         if (!cancelled) setFrecLoading(false);
       });
@@ -119,9 +126,11 @@ export function FuneralPlansStep() {
     );
   });
   const planCode = selectedPlan?.cplan ?? '';
+  // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
+  // La frecuencia solo define recibos al emitir.
   const quoteSig = planCode
-    ? `funeral|${planCode}|${funeral.frecuencia}|${aseguradosListos
-        .map((a) => `${a.parentesco}:${a.identificacion}:${a.fechaNac}`)
+    ? `funeral|${planCode}|A|${aseguradosListos
+        .map((a, idx) => `${idx === 0 ? '1' : a.parentesco}:${a.identificacion}:${a.fechaNac}`)
         .join(',')}`
     : '';
 
@@ -139,9 +148,9 @@ export function FuneralPlansStep() {
     personasApi.cotizar({
       cplan: planCode,
       cramo: product.cramo,
-      ifrecuencia: funeral.frecuencia,
-      asegurados: aseguradosListos.map((a) => ({
-        parentesco: a.parentesco,
+      ifrecuencia: 'A',
+      asegurados: aseguradosListos.map((a, idx) => ({
+        parentesco: idx === 0 ? '1' : a.parentesco,
         identificacion: a.identificacion,
         fechaNac: a.fechaNac,
       })),

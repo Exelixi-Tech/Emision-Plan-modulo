@@ -135,7 +135,7 @@ async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia }) {
     cramo: cramo || getConfig().cramo,
     cplan,
     asegurados,
-    ifrecuencia: ifrecuencia || 'M',
+    ifrecuencia: ifrecuencia || 'A',
   };
   const response = await post(endpoint, body);
   if (response.status >= 200 && response.status < 300 && response.data?.status === true) {

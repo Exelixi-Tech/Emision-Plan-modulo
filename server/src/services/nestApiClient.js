@@ -534,27 +534,38 @@ async function getValrepList(domain) {
     .filter((it) => it.code !== '' && it.label !== '');
 }
 
-/** @returns {Promise<Array<{ code: string, label: string }>>} */
+const RAMO_PERSONAS = 9;
+const FRECUENCIAS_PERSONAS_FALLBACK = [{ cvalor: 'A', xdescripcion: 'ANUAL' }];
+const FRECUENCIAS_GENERIC_FALLBACK = [
+  { cvalor: 'A', xdescripcion: 'Anual' },
+  { cvalor: 'S', xdescripcion: 'Semestral' },
+  { cvalor: 'T', xdescripcion: 'Trimestral' },
+  { cvalor: 'M', xdescripcion: 'Mensual' },
+];
+
+/**
+ * Frecuencias por plan. Ramo 9 (funerario/personas): si nest-api no tiene
+ * filas en maplanes_frec, devolver ANUAL como SysIP persons-alt (nunca 502).
+ * @returns {Promise<Array<{ code: string, label: string, ndias?: number|null }>>}
+ */
 async function getValrepFrecuencias(cplan, cramo) {
   const body = { cplan };
   if (cramo != null) body.cramo = cramo;
+  const isPersonas = Number(cramo) === RAMO_PERSONAS;
   const response = await axios.post(
     `${getBaseUrl()}/api/v1/valrep/frecuencia`,
     body,
     await axiosOpts({ validateStatus: () => true }),
   );
-  if (response.status >= 400 || !response.data?.status) {
-    throw new Error(response.data?.message || `HTTP ${response.status} consultando frecuencias`);
+  const msg = response.data?.message || `HTTP ${response.status} consultando frecuencias`;
+  const emptyPlan = /frecuencias para el plan/i.test(String(msg));
+  if ((response.status >= 400 || !response.data?.status) && !(isPersonas && emptyPlan)) {
+    throw new Error(msg);
   }
-  const payload = response.data.data || response.data;
+  const payload = response.data.data || response.data || {};
   let rawItems = payload.frecuencias || payload.plan || payload.items || [];
   if (!rawItems.length) {
-    rawItems = [
-      { cvalor: 'A', xdescripcion: 'Anual' },
-      { cvalor: 'S', xdescripcion: 'Semestral' },
-      { cvalor: 'T', xdescripcion: 'Trimestral' },
-      { cvalor: 'M', xdescripcion: 'Mensual' },
-    ];
+    rawItems = isPersonas ? FRECUENCIAS_PERSONAS_FALLBACK : FRECUENCIAS_GENERIC_FALLBACK;
   }
   const mapped = rawItems.map((f) => ({
     code: f.cvalor || f.ifrecuencia || f.code,

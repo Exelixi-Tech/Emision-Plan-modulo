@@ -228,7 +228,7 @@ router.post('/emision', async (req, res) => {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
   }
 
-  const ifrecuencia = frecuencia || funeral.frecuencia || 'M';
+  const ifrecuencia = frecuencia || funeral.frecuencia || 'A';
   const asegurados = personasMapper.buildAseguradosForQuote(funeral);
 
   if (asegurados.length === 0) {
