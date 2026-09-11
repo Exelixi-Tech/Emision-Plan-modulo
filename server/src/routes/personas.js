@@ -74,7 +74,7 @@ function funeralCanalMeta(req) {
   const q = req.query || {};
   const keys = [
     'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
-    'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
+    'cusuario', 'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
   ];
   for (const key of keys) {
     if (q[key] != null && String(q[key]).trim() !== '') {
@@ -135,7 +135,20 @@ router.get('/planes', async (req, res) => {
       );
     }
 
-    return res.json({ success: true, planes });
+    return res.json({
+      success: true,
+      planes,
+      canal: {
+        centidad: entity?.centidad || null,
+        citem: entity?.citem || null,
+        cproductor: meta.cproductor || null,
+        cusuario: meta.cusuario || null,
+        cramo,
+        cproducto: meta.cproducto || null,
+        ccanalalt: meta.ccanalalt_in || meta.ccanalalt || null,
+        cscanalalt: meta.cscanalalt_in || meta.cscanalalt || null,
+      },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[personas/planes]', msg);
