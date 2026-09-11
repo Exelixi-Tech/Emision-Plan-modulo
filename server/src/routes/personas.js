@@ -126,6 +126,11 @@ router.get('/planes', async (req, res) => {
       `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length}`,
     );
 
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
     return res.json({
       success: true,
       planes,
