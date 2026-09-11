@@ -122,6 +122,7 @@ async function getPlanesPer(input) {
   if (canal.centidad) body.centidad = String(canal.centidad).trim();
   if (canal.cproducto) body.cproducto = String(canal.cproducto).trim();
   if (canal.cproductor) body.cproductor = String(canal.cproductor).trim();
+  if (canal.cusuario) body.cusuario = String(canal.cusuario).trim();
   const response = await post(endpoint, body);
   if (response.status >= 200 && response.status < 300 && response.data?.status === true) {
     const planes = response.data.data?.planes ?? [];

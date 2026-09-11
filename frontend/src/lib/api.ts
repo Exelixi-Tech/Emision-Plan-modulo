@@ -65,6 +65,7 @@ const FUNERAL_CANAL_QUERY_KEYS = [
   'cgestor_in',
   'cproducto',
   'cproductor',
+  'cusuario',
   'ccanalalt',
   'ccanalalt_in',
   'cscanalalt',
@@ -95,6 +96,12 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
   if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
   if (citem && !qs.get('citem')) qs.set('citem', citem);
+  if (!qs.get('centidad') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('centidad', 'P');
+  }
+  if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('citem', String(meta.cproductor).trim());
+  }
 
   return Boolean(
     (centidad && citem)

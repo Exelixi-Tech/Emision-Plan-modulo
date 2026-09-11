@@ -103,20 +103,24 @@ function mapAsegurado(a) {
 router.get('/planes', async (req, res) => {
   const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
   const meta = funeralCanalMeta(req);
-  const entity = resolveEntityContext(meta)
-    || (meta.cproductor != null && String(meta.cproductor).trim() !== ''
-      ? { centidad: 'P', citem: String(meta.cproductor).trim() }
-      : null);
+  const entity = resolveEntityContext(meta);
+  const productor = meta.cproductor != null && String(meta.cproductor).trim() !== ''
+    ? String(meta.cproductor).trim()
+    : (entity?.citem || '');
+  const nestEntity = entity
+    || (productor ? { centidad: 'P', citem: productor } : null);
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
-      citem: entity?.citem || meta.citem,
-      centidad: entity?.centidad || meta.centidad,
+      citem: nestEntity?.citem || meta.citem,
+      centidad: nestEntity?.centidad || meta.centidad,
       cproducto: meta.cproducto,
-      cproductor: meta.cproductor || entity?.citem,
+      cproductor: productor || nestEntity?.citem,
+      cusuario: meta.cusuario,
     });
     let planes = Array.isArray(raw) ? raw : [];
 
+    // Igual que RCV: el filtro de visibility solo si el SSO trae canal real (C/P+citem/cproducto).
     if (entity) {
       const cproducto = meta.cproducto != null ? String(meta.cproducto).trim() : '';
       const { planesPermitidos } = await resolvePlanesPermitidos(
@@ -127,11 +131,11 @@ router.get('/planes', async (req, res) => {
         planes = filterPlanesByVisibility(planes, { ui: { planesPermitidos } });
       }
       console.log(
-        `[personas/planes] entity=${entity.centidad}/${entity.citem} cproducto=${cproducto || 'auto'} cgestor=${meta.cgestor || meta.cgestor_in || 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
+        `[personas/planes] entity=${entity.centidad}/${entity.citem} cproducto=${cproducto || 'auto'} cusuario=${meta.cusuario || 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
       );
     } else {
       console.log(
-        `[personas/planes] sin canal SSO; nest usa productor default. jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
+        `[personas/planes] spBuscaPlan P/${productor || 'default'} cusuario=${meta.cusuario || 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
       );
     }
 
@@ -139,9 +143,9 @@ router.get('/planes', async (req, res) => {
       success: true,
       planes,
       canal: {
-        centidad: entity?.centidad || null,
-        citem: entity?.citem || null,
-        cproductor: meta.cproductor || null,
+        centidad: nestEntity?.centidad || null,
+        citem: nestEntity?.citem || null,
+        cproductor: productor || null,
         cusuario: meta.cusuario || null,
         cramo,
         cproducto: meta.cproducto || null,
