@@ -121,7 +121,9 @@ async function getPlanesPer(input) {
   if (canal.citem) body.citem = String(canal.citem).trim();
   if (canal.centidad) body.centidad = String(canal.centidad).trim();
   if (canal.cproducto) body.cproducto = String(canal.cproducto).trim();
-  if (canal.cproductor) body.cproductor = String(canal.cproductor).trim();
+  if (canal.cproductor != null && String(canal.cproductor).trim() !== '') {
+    body.cproductor = String(canal.cproductor).trim();
+  }
   if (canal.cusuario) body.cusuario = String(canal.cusuario).trim();
   if (canal.cgestor_in) body.cgestor_in = String(canal.cgestor_in).trim();
   if (canal.cgestor) body.cgestor = String(canal.cgestor).trim();

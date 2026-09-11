@@ -19,11 +19,7 @@ const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
-const {
-  filterPlanesByVisibility,
-  resolveEntityContext,
-  resolvePlanesPermitidos,
-} = require('../services/canalClient');
+const { resolveEntityContext } = require('../services/canalClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -107,53 +103,37 @@ router.get('/planes', async (req, res) => {
   const sisOk = rawEntity
     && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
   const entity = sisOk ? rawEntity : null;
-  const productor = meta.cproductor != null && String(meta.cproductor).trim() !== ''
-    ? String(meta.cproductor).trim()
-    : (entity?.citem || '');
-  const nestEntity = entity
-    || (productor ? { centidad: 'P', citem: productor } : null);
+  const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
+  const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
+  const cproducto = meta.cproducto != null && String(meta.cproducto).trim() !== ''
+    ? String(meta.cproducto).trim()
+    : (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
-      citem: nestEntity?.citem || meta.citem,
-      centidad: meta.centidad || nestEntity?.centidad,
-      cproducto: meta.cproducto,
-      cproductor: productor || nestEntity?.citem,
+      citem: entity?.citem || meta.citem,
+      centidad: entity?.centidad || meta.centidad,
+      cproducto,
+      cproductor,
       cusuario: meta.cusuario,
       cgestor_in: meta.cgestor_in,
       cgestor: meta.cgestor,
     });
-    let planes = Array.isArray(raw) ? raw : [];
-
-    // Visibility solo con P/C/G. U (usuario) lo resuelve nest vía magestor, como SysIP.
-    if (entity) {
-      const cproducto = meta.cproducto != null ? String(meta.cproducto).trim() : '';
-      const { planesPermitidos } = await resolvePlanesPermitidos(
-        { ...meta, centidad: entity.centidad, citem: entity.citem },
-        { cproducto: cproducto || undefined, cramo },
-      );
-      if (planesPermitidos.length) {
-        planes = filterPlanesByVisibility(planes, { ui: { planesPermitidos } });
-      }
-      console.log(
-        `[personas/planes] entity=${entity.centidad}/${entity.citem} cproducto=${cproducto || 'auto'} cusuario=${meta.cusuario || 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
-      );
-    } else {
-      console.log(
-        `[personas/planes] spBuscaPlan P/${productor || 'default'} cusuario=${meta.cusuario || 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
-      );
-    }
+    const planes = Array.isArray(raw) ? raw : [];
+    console.log(
+      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length}`,
+    );
 
     return res.json({
       success: true,
       planes,
       canal: {
-        centidad: nestEntity?.centidad || null,
-        citem: nestEntity?.citem || null,
-        cproductor: productor || null,
+        centidad: entity?.centidad || meta.centidad || null,
+        citem: entity?.citem || meta.citem || null,
+        cproductor: cproductor,
         cusuario: meta.cusuario || null,
         cramo,
-        cproducto: meta.cproducto || null,
+        cproducto,
         ccanalalt: meta.ccanalalt_in || meta.ccanalalt || null,
         cscanalalt: meta.cscanalalt_in || meta.cscanalalt || null,
         cgestor_in: meta.cgestor_in || null,
