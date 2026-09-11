@@ -109,6 +109,25 @@ function parseCanalAltOptional(value) {
   return n;
 }
 
+function parseMetric(v) {
+  if (v == null || v === '') return null;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function geoCode(person, codeKey, labelKey) {
+  const code = person?.[codeKey];
+  if (code != null && String(code).trim() !== '') {
+    const n = Number(code);
+    if (Number.isFinite(n)) return n;
+  }
+  const label = person?.[labelKey];
+  if (label != null && String(label).trim() !== '' && /^\d+$/.test(String(label).trim())) {
+    return Number(label);
+  }
+  return null;
+}
+
 function todayYmd() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -207,13 +226,15 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     nombre_titular: titular.nombre ? cleanString(titular.nombre) : null,
     apellido_titular: titular.apellido ? cleanString(titular.apellido) : null,
     sexo_titular: titular.sexo ? normalizeSexo(titular.sexo) : null,
-    estado_civil_titular: titular.estadoCivil ? normalizeEstadoCivil(titular.estadoCivil) : null,
+    estado_civil_titular: titular.estadoCivil
+      ? normalizeEstadoCivil(titular.estadoCivil)
+      : normalizeEstadoCivil(tomador.estadoCivil),
     fnac_titular: titular.fechaNac ? normalizeDate(titular.fechaNac) : null,
-    estado_titular: titular.estado ? estado_tomador : null,
-    ciudad_titular: ciudad_tomador,
-    direccion_titular: cleanString(tomador.direccion),
-    telefono_titular: cleanPhone(tomador.telefono),
-    correo_titular: cleanString(tomador.email),
+    estado_titular: geoCode(titular, 'cestado', 'estado') ?? estado_tomador,
+    ciudad_titular: geoCode(titular, 'cciudad', 'ciudad') ?? ciudad_tomador,
+    direccion_titular: cleanString(titular.direccion) || cleanString(tomador.direccion),
+    telefono_titular: cleanPhone(titular.telefono) || cleanPhone(tomador.telefono),
+    correo_titular: cleanString(titular.email) || cleanString(tomador.email),
 
     // ── Declaraciones ──────────────────────────────────────────────────────────
     dec_persona_politica: tomador.personaPoliticamenteExpuesta === true ? 1 : 0,
@@ -229,16 +250,31 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     cscanalalt,
 
     // ── Asegurados (para el trigger de Sis2000) ─────────────────────────────────
-    asegurados: asegurados.map((a, idx) => ({
-      icedula_asegurado: normalizeTipoCedula(a.tipoDoc),
-      xrif_asegurado: digitsToNumber(a.identificacion),
-      xnombre_asegurado: cleanString(a.nombre),
-      xapellido_asegurado: cleanString(a.apellido),
-      fnac_asegurado: normalizeDate(a.fechaNac),
-      isexo_asegurado: normalizeSexo(a.sexo),
-      nparentesco_asegurado: Number(a.cparen ?? a.parentesco ?? (idx === 0 ? 1 : 0)) || 0,
-      iestado_civil_asegurado: normalizeEstadoCivil(a.estadoCivil) || 'S'
-    })),
+    asegurados: asegurados.map((a, idx) => {
+      const estadoAseg = geoCode(a, 'cestado', 'estado') ?? (idx === 0 ? estado_tomador : null);
+      const ciudadAseg = geoCode(a, 'cciudad', 'ciudad') ?? (idx === 0 ? ciudad_tomador : null);
+      return {
+        icedula_asegurado: normalizeTipoCedula(a.tipoDoc),
+        xrif_asegurado: digitsToNumber(a.identificacion),
+        xnombre_asegurado: cleanString(a.nombre),
+        xapellido_asegurado: cleanString(a.apellido),
+        fnac_asegurado: normalizeDate(a.fechaNac),
+        isexo_asegurado: normalizeSexo(a.sexo),
+        nparentesco_asegurado: Number(a.cparen ?? a.parentesco ?? (idx === 0 ? 1 : 0)) || 0,
+        iestado_civil_asegurado: normalizeEstadoCivil(a.estadoCivil) || 'S',
+        cestado: estadoAseg,
+        cciudad: ciudadAseg,
+        estado: estadoAseg,
+        ciudad: ciudadAseg,
+        direccion: cleanString(a.direccion) || (idx === 0 ? cleanString(tomador.direccion) : ''),
+        telefono: cleanPhone(a.telefono) || (idx === 0 ? cleanPhone(tomador.telefono) : ''),
+        email: cleanString(a.email) || (idx === 0 ? cleanString(tomador.email) : ''),
+        peso: parseMetric(a.peso ?? a.npeso_asegurado),
+        estatura: parseMetric(a.estatura ?? a.nestatura_asegurado),
+        npeso_asegurado: parseMetric(a.peso ?? a.npeso_asegurado),
+        nestatura_asegurado: parseMetric(a.estatura ?? a.nestatura_asegurado),
+      };
+    }),
 
     // ── Beneficiarios (para el trigger de Sis2000) ──────────────────────────────
     beneficiarios: (Array.isArray(funeral.beneficiarios) ? funeral.beneficiarios : []).map(b => ({

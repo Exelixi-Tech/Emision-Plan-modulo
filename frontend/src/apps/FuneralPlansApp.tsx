@@ -15,6 +15,7 @@ import {
   type HealthQuestion,
 } from '../lib/api';
 import { EmissionPlanShell } from './EmissionPlanShell';
+import { isFuneralInsuredComplete } from '../features/plans/FuneralInsuredsEditor';
 
 const FREC_LABELS: Record<string, string> = {
   M: 'Pago mensual',
@@ -114,6 +115,19 @@ export default function FuneralPlansApp() {
   async function handleContinuar() {
     if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
     if (!selectedPlan?.cplan) return;
+    const incomplete = (funeral.asegurados || []).findIndex(
+      (a, idx) => !isFuneralInsuredComplete(a, idx === 0),
+    );
+    if (incomplete >= 0) {
+      toast.warning(
+        incomplete === 0 ? 'Faltan datos del titular' : 'Faltan datos del asegurado',
+        incomplete === 0
+          ? 'Completa estatura, peso, dirección y contacto del titular en el formulario.'
+          : 'Completa todos los datos del asegurado adicional (como en SysIP) antes de continuar.',
+        7000,
+      );
+      return;
+    }
     setValidatingEmit(true);
     try {
       await validateFuneralEmission({

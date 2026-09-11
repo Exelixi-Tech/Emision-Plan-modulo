@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { Pencil, Plus, Trash2, Users } from 'lucide-react';
-import { Field, Input } from '../../components/ui/FormField';
+import { Field, Input, Textarea } from '../../components/ui/FormField';
 import { IdentityInput } from '../../components/ui/IdentityInput';
 import { SearchSelect } from '../../components/ui/SearchSelect';
+import { PersonLocationFields } from '../../components/PersonLocationFields';
+import { useCatalogs, useCiudades } from '../../hooks/useCatalogs';
+import { formatTelefono } from '../../lib/phone';
 import {
   additionalParentescos,
   ageErrorForParentesco,
@@ -21,16 +24,46 @@ function emptyExtra(): FuneralPerson {
     fechaNac: '',
     sexo: '',
     parentesco: '',
+    telefono: '',
+    email: '',
+    estadoCivil: '',
+    estado: '',
+    ciudad: '',
+    direccion: '',
+    peso: '',
+    estatura: '',
   };
 }
 
-function isExtraComplete(person: FuneralPerson): boolean {
+function hasText(v: unknown): boolean {
+  return String(v ?? '').trim().length > 0;
+}
+
+function parseMetric(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+export function isFuneralInsuredComplete(person: FuneralPerson, isTitular: boolean): boolean {
+  const est = parseMetric(person.estatura);
+  const peso = parseMetric(person.peso);
+  const phoneDigits = String(person.telefono || '').replace(/\D/g, '');
   return Boolean(
-    String(person.identificacion || '').trim()
-    && String(person.nombre || '').trim()
-    && String(person.apellido || '').trim()
-    && String(person.fechaNac || '').trim()
-    && String(person.parentesco || '').trim(),
+    hasText(person.identificacion)
+    && hasText(person.nombre)
+    && hasText(person.apellido)
+    && hasText(person.fechaNac)
+    && hasText(person.sexo)
+    && phoneDigits.length === 11
+    && hasText(person.email)
+    && (person.cestado != null || hasText(person.estado))
+    && (person.cciudad != null || hasText(person.ciudad))
+    && hasText(person.direccion)
+    && hasText(person.estadoCivil)
+    && est != null && est >= 0.5 && est <= 2.5
+    && peso != null && peso >= 2 && peso <= 400
+    && (isTitular || hasText(person.parentesco)),
   );
 }
 
@@ -40,10 +73,160 @@ function formatFecha(iso?: string): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+function FuneralExtraPersonForm({
+  person,
+  onChange,
+  parentescoOptions,
+  lockParentesco,
+  ageErr,
+}: {
+  person: FuneralPerson;
+  onChange: (patch: Partial<FuneralPerson>) => void;
+  parentescoOptions: { value: string; label: string }[];
+  lockParentesco: boolean;
+  ageErr?: string;
+}) {
+  const catalogs = useCatalogs();
+  const ciuState = useCiudades(person.cestado);
+  const errors: Record<string, string | undefined> = {};
+  if (ageErr && /edad|años|mínima|máxima/i.test(ageErr)) errors.fechaNac = ageErr;
+  if (ageErr && !errors.fechaNac) errors.parentesco = ageErr;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <Field label="Tipo Doc. Identidad *">
+        <IdentityInput
+          tipoDoc={person.tipoDoc || 'V'}
+          identificacion={person.identificacion}
+          onTipoDocChange={(v) => onChange({ tipoDoc: v })}
+          onIdentificacionChange={(v) => onChange({ identificacion: v })}
+        />
+      </Field>
+      <Field label="Parentesco *" error={errors.parentesco}>
+        {lockParentesco ? (
+          <Input value="Titular" disabled readOnly />
+        ) : (
+          <SearchSelect
+            value={person.parentesco}
+            options={parentescoOptions}
+            onChange={(value) => onChange({ parentesco: String(value) })}
+            placeholder="— Seleccionar —"
+            disabled={!parentescoOptions.length}
+          />
+        )}
+      </Field>
+      <Field label="Nombre *">
+        <Input
+          value={person.nombre}
+          onChange={(e) => onChange({ nombre: e.target.value })}
+          placeholder="Nombre"
+        />
+      </Field>
+      <Field label="Apellido *">
+        <Input
+          value={person.apellido}
+          onChange={(e) => onChange({ apellido: e.target.value })}
+          placeholder="Apellido"
+        />
+      </Field>
+      <Field label="Teléfono *">
+        <Input
+          value={formatTelefono(person.telefono ?? '')}
+          onChange={(e) => onChange({ telefono: formatTelefono(e.target.value) })}
+          placeholder="(0412) 123-4567"
+          type="tel"
+          inputMode="numeric"
+        />
+      </Field>
+      <Field label="Correo electrónico *">
+        <Input
+          value={person.email ?? ''}
+          onChange={(e) => onChange({ email: e.target.value })}
+          placeholder="correo@ejemplo.com"
+          type="email"
+        />
+      </Field>
+      <PersonLocationFields
+        person={person}
+        setPerson={onChange}
+        errors={{ estado: undefined, ciudad: undefined }}
+        estados={catalogs.estados}
+        ciuState={ciuState}
+        catalogsLoading={catalogs.loading}
+      />
+      <Field label="Fecha de Nac. *" error={errors.fechaNac}>
+        <Input
+          type="date"
+          value={person.fechaNac}
+          max={new Date().toISOString().split('T')[0]}
+          onChange={(e) => onChange({ fechaNac: e.target.value })}
+        />
+      </Field>
+      <Field label="Sexo *">
+        <SearchSelect
+          value={person.sexo}
+          options={
+            catalogs.sexos.length
+              ? catalogs.sexos.map((s) => ({ value: String(s.label), label: s.label }))
+              : [
+                  { value: 'Masculino', label: 'Masculino' },
+                  { value: 'Femenino', label: 'Femenino' },
+                ]
+          }
+          onChange={(value) => onChange({ sexo: String(value) })}
+          placeholder="— Seleccionar —"
+          loading={catalogs.loading}
+        />
+      </Field>
+      <Field label="Estatura *" hint="Altura (mts.)">
+        <Input
+          value={person.estatura ?? ''}
+          onChange={(e) => onChange({ estatura: e.target.value.replace(/[^0-9.,]/g, '') })}
+          placeholder="1.70"
+          inputMode="decimal"
+        />
+      </Field>
+      <Field label="Peso *" hint="Peso (kg.)">
+        <Input
+          value={person.peso ?? ''}
+          onChange={(e) => onChange({ peso: e.target.value.replace(/[^0-9.,]/g, '') })}
+          placeholder="70"
+          inputMode="decimal"
+        />
+      </Field>
+      <Field label="Estado Civil *">
+        <SearchSelect
+          value={person.estadoCivil}
+          options={
+            catalogs.estadosCivil.length
+              ? catalogs.estadosCivil.map((s) => ({ value: String(s.label), label: s.label }))
+              : [
+                  { value: 'Soltero(a)', label: 'Soltero(a)' },
+                  { value: 'Casado(a)', label: 'Casado(a)' },
+                  { value: 'Divorciado(a)', label: 'Divorciado(a)' },
+                  { value: 'Viudo(a)', label: 'Viudo(a)' },
+                ]
+          }
+          onChange={(value) => onChange({ estadoCivil: String(value) })}
+          placeholder="— Seleccionar —"
+          loading={catalogs.loading}
+        />
+      </Field>
+      <Field label="Dirección *" full>
+        <Textarea
+          value={person.direccion ?? ''}
+          onChange={(e) => onChange({ direccion: e.target.value })}
+          placeholder="Dirección completa"
+          rows={3}
+        />
+      </Field>
+    </div>
+  );
+}
+
 /**
- * Resumen de asegurados que ya vinieron del formulario.
- * Solo abre el formulario si falta un dato, el plan rechaza parentesco/edad,
- * o el usuario pulsa Editar / Agregar.
+ * Titular (resumen) + alta/edición de asegurados adicionales en el plan.
+ * Los campos coinciden con el formulario nativo SysIP / OPENJSON del pre-SP.
  */
 export function FuneralInsuredsEditor({
   parentescos,
@@ -89,10 +272,10 @@ export function FuneralInsuredsEditor({
         <div>
           <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest inline-flex items-center gap-1.5">
             <Users size={11} className="text-indigo-500" />
-            Asegurados del formulario
+            Asegurados
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Ya se cargaron en Personas. Aquí solo se validan contra el plan.
+            El titular viene del formulario. Agrega aquí los asegurados adicionales con los mismos datos.
             {!parentescos?.length
               ? ' Elige un plan para revisar parentescos.'
               : titularOnly
@@ -104,26 +287,28 @@ export function FuneralInsuredsEditor({
 
       <ul className="space-y-3">
         {funeral.asegurados.map((aseg, idx) => {
-          const ageErr = idx === 0
+          const isTitular = idx === 0;
+          const ageErr = isTitular
             ? undefined
             : ageErrorForParentesco(aseg.fechaNac, aseg.parentesco, parentescos);
-          const showForm = idx > 0 && (
+          const complete = isFuneralInsuredComplete(aseg, isTitular);
+          const showForm = !isTitular && (
             editingIdx === idx
-            || !isExtraComplete(aseg)
+            || !complete
             || Boolean(ageErr)
           );
           const parentescoLabel = parentescoOptions.find(
             (o) => o.value === String(aseg.parentesco),
-          )?.label || (idx === 0 ? 'Titular' : aseg.parentesco || '—');
+          )?.label || (isTitular ? 'Titular' : aseg.parentesco || '—');
 
           return (
             <li key={idx} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[0.7rem] font-black uppercase tracking-wider text-indigo-600">
-                  {idx === 0 ? 'Titular' : `Asegurado ${idx + 1}`}
+                  {isTitular ? 'Titular' : `Asegurado ${idx + 1}`}
                 </span>
                 <div className="flex items-center gap-1">
-                  {idx > 0 && !showForm && (
+                  {!isTitular && !showForm && (
                     <button
                       type="button"
                       onClick={() => setEditingIdx(idx)}
@@ -132,7 +317,7 @@ export function FuneralInsuredsEditor({
                       <Pencil size={12} /> Editar
                     </button>
                   )}
-                  {idx > 0 && showForm && isExtraComplete(aseg) && !ageErr && (
+                  {!isTitular && showForm && complete && !ageErr && (
                     <button
                       type="button"
                       onClick={() => setEditingIdx(null)}
@@ -141,7 +326,7 @@ export function FuneralInsuredsEditor({
                       Cerrar
                     </button>
                   )}
-                  {idx > 0 && (
+                  {!isTitular && (
                     <button
                       type="button"
                       onClick={() => remove(idx)}
@@ -153,7 +338,7 @@ export function FuneralInsuredsEditor({
                 </div>
               </div>
 
-              {idx === 0 || !showForm ? (
+              {isTitular || !showForm ? (
                 <div>
                   <p className="text-sm text-slate-600">
                     <span className="font-semibold text-slate-800">
@@ -164,53 +349,21 @@ export function FuneralInsuredsEditor({
                   <p className="text-[0.78rem] text-slate-500 mt-1">
                     {parentescoLabel}
                     {aseg.fechaNac ? ` · Nac. ${formatFecha(aseg.fechaNac)}` : ''}
+                    {aseg.estatura ? ` · ${aseg.estatura} m` : ''}
+                    {aseg.peso ? ` · ${aseg.peso} kg` : ''}
                   </p>
                   {ageErr && (
                     <p className="mt-2 text-xs font-semibold text-rose-700">{ageErr}</p>
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Field label="Identificación *">
-                    <IdentityInput
-                      tipoDoc={aseg.tipoDoc || 'V'}
-                      identificacion={aseg.identificacion}
-                      onTipoDocChange={(v) => update(idx, { tipoDoc: v })}
-                      onIdentificacionChange={(v) => update(idx, { identificacion: v })}
-                    />
-                  </Field>
-                  <Field label="Parentesco *" error={ageErr && !/edad|años/i.test(ageErr) ? ageErr : undefined}>
-                    <SearchSelect
-                      value={aseg.parentesco}
-                      options={parentescoOptions}
-                      onChange={(value) => update(idx, { parentesco: String(value) })}
-                      placeholder="— Seleccionar —"
-                      disabled={!parentescoOptions.length}
-                    />
-                  </Field>
-                  <Field label="Nombre *">
-                    <Input
-                      value={aseg.nombre}
-                      onChange={(e) => update(idx, { nombre: e.target.value })}
-                      placeholder="Nombre"
-                    />
-                  </Field>
-                  <Field label="Apellido *">
-                    <Input
-                      value={aseg.apellido}
-                      onChange={(e) => update(idx, { apellido: e.target.value })}
-                      placeholder="Apellido"
-                    />
-                  </Field>
-                  <Field label="Fecha de nacimiento *" error={ageErr && /edad|años|mínima|máxima/i.test(ageErr) ? ageErr : undefined}>
-                    <Input
-                      type="date"
-                      value={aseg.fechaNac}
-                      max={new Date().toISOString().split('T')[0]}
-                      onChange={(e) => update(idx, { fechaNac: e.target.value })}
-                    />
-                  </Field>
-                </div>
+                <FuneralExtraPersonForm
+                  person={aseg}
+                  onChange={(patch) => update(idx, patch)}
+                  parentescoOptions={parentescoOptions}
+                  lockParentesco={false}
+                  ageErr={ageErr}
+                />
               )}
             </li>
           );
