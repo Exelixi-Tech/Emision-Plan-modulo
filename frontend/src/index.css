@@ -582,11 +582,12 @@ body {
 }
 
 .revision-inbox-item--active {
-  border-color: #0F1A5A;
+  border-color: #4f46e5;
   box-shadow:
-    0 0 0 1px #0F1A5A,
-    0 10px 28px -12px rgba(15, 26, 90, 0.28);
+    0 0 0 1px #4f46e5,
+    0 10px 28px -12px rgba(79, 70, 229, 0.28);
   transform: translateY(-1px);
+  background: linear-gradient(180deg, #eef2ff 0%, #ffffff 55%);
 }
 
 .revision-empty-icon {

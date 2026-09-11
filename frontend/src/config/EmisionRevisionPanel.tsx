@@ -374,29 +374,43 @@ function ReviewerEmailsBox() {
   }
 
   return (
-    <div className="mb-4 rounded-xl border border-indigo-100 bg-white px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600 mb-1">
-        Correos de alerta (referidas)
-      </p>
-      <p className="text-[11px] text-slate-500 mb-2">
-        Un correo por línea. Se avisa cuando entre una solicitud a revisión.
-      </p>
-      <textarea
-        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 min-h-[4.5rem] outline-none focus:border-indigo-400"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="autorizador@lamundialdeseguros.com"
-      />
-      <div className="flex items-center gap-2 mt-2">
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={saving}
-          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-50"
-        >
-          {saving ? 'Guardando…' : 'Guardar correos'}
-        </button>
-        {msg && <span className="text-[11px] text-slate-500">{msg}</span>}
+    <div className="mb-5 rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
+      <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/40 flex items-start gap-3">
+        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white grid place-items-center shrink-0 shadow-md shadow-indigo-500/25">
+          <Mail size={16} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-black text-slate-900 leading-tight">Quién recibe las referidas</p>
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            Un correo por línea. Cada solicitud a mesa técnica avisa a esta lista.
+          </p>
+        </div>
+      </div>
+      <div className="px-4 sm:px-5 py-4">
+        <textarea
+          className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 min-h-[4.5rem] outline-none focus:border-indigo-400 bg-slate-50/50"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="autorizador@lamundialdeseguros.com"
+        />
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving}
+            className="text-xs font-bold px-4 py-2.5 min-h-[40px] rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 shadow-sm shadow-indigo-600/20"
+          >
+            {saving ? 'Guardando…' : 'Guardar correos'}
+          </button>
+          {msg && (
+            <span className={`text-[11px] font-semibold ${
+              msg.includes('No se') ? 'text-rose-600' : 'text-emerald-700'
+            }`}
+            >
+              {msg}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -432,9 +446,15 @@ function displayScoreTotal(scoreTotal: number, breakdown?: ScoreLine[]): number 
 }
 
 function scoreTone(score: number): string {
-  if (score >= 100) return 'bg-rose-50 text-rose-700 border-rose-200';
-  if (score >= 50) return 'bg-amber-50 text-amber-800 border-amber-200';
+  if (score >= 70) return 'bg-rose-50 text-rose-700 border-rose-200';
+  if (score >= 30) return 'bg-amber-50 text-amber-800 border-amber-200';
   return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+}
+
+function scoreBandHint(score: number): string {
+  if (score >= 70) return 'Alto';
+  if (score >= 30) return 'Medio';
+  return 'Bajo';
 }
 
 function collectOcrBlocks(sub: Submission): { key: string; label: string; ocr: Record<string, unknown> }[] {
@@ -513,17 +533,18 @@ function DocLinkCard({ doc }: { doc: DocLink }) {
 function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine[] }) {
   return (
     <div className="revision-card overflow-hidden min-w-0">
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50/90 border-b border-slate-100">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gradient-to-r from-indigo-50/90 to-white border-b border-slate-100">
         <div className="flex items-center gap-2">
-          <span className="grid place-items-center w-7 h-7 rounded-lg bg-indigo-700 text-white shrink-0">
-            <ClipboardList size={13} />
+          <span className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white shrink-0">
+            <ClipboardList size={14} />
           </span>
-          <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-indigo-900">
-            Scoring salud
-          </h3>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 leading-tight">Puntaje de salud</h3>
+            <p className="text-[10px] text-slate-500">Respuestas que sumaron %</p>
+          </div>
         </div>
-        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(total)}`}>
-          {formatHealthScoreNumber(total)} pts
+        <span className={`text-xs font-black px-2.5 py-1 rounded-lg border ${scoreTone(total)}`}>
+          {formatHealthScoreNumber(total)} pts · {scoreBandHint(total)}
         </span>
       </div>
       <ul className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
@@ -944,11 +965,14 @@ export function EmisionRevisionPanel() {
               </div>
             </div>
             {filter === 'pending' && !loading && (
-              <div className="flex items-center gap-2 rounded-xl sm:rounded-2xl bg-indigo-700 text-white px-3 py-2 sm:px-5 sm:py-3 shadow-lg shadow-indigo-700/20">
-                <div className="text-right">
-                  <p className="text-xl sm:text-3xl font-black tabular-nums leading-none">{pendingCount}</p>
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-indigo-200 mt-0.5 sm:mt-1 font-bold">
-                    Por revisar
+              <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white px-4 py-2.5 sm:px-5 shadow-sm">
+                <span className="w-10 h-10 rounded-xl bg-amber-500 text-white grid place-items-center font-black text-lg tabular-nums shadow-sm shadow-amber-500/30">
+                  {pendingCount}
+                </span>
+                <div className="text-left">
+                  <p className="text-sm font-black text-amber-900 leading-tight">Por revisar</p>
+                  <p className="text-[11px] text-amber-700/80 font-medium">
+                    {pendingCount === 1 ? 'Solicitud en bandeja' : 'Solicitudes en bandeja'}
                   </p>
                 </div>
               </div>
@@ -973,18 +997,19 @@ export function EmisionRevisionPanel() {
 
         <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
           <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="inline-flex p-1 rounded-xl bg-white border border-slate-200 shadow-sm min-w-min">
+            <div className="inline-flex p-1 rounded-2xl bg-white border border-slate-200/80 shadow-sm min-w-min">
               {filterTabs.map(({ key, label }) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setFilter(key)}
-                  className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all min-h-[44px] touch-manipulation whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                  className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all min-h-[44px] touch-manipulation whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                     filter === key
-                      ? 'bg-indigo-700 text-white shadow-md'
+                      ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25'
                       : 'text-slate-600 hover:text-indigo-900 hover:bg-slate-50'
                   }`}
                 >
+                  {key === 'pending' && <Inbox size={12} />}
                   {key === 'history' && <History size={12} />}
                   {label}
                 </button>
@@ -997,7 +1022,7 @@ export function EmisionRevisionPanel() {
           <button
             type="button"
             onClick={() => void loadList()}
-            className="sm:ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 min-h-[44px] px-3 rounded-lg border border-indigo-100 bg-white hover:bg-indigo-50 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+            className="sm:ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 min-h-[44px] px-3 rounded-xl border border-indigo-100 bg-white hover:bg-indigo-50 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
           >
             <RefreshCw size={13} />
             Actualizar
@@ -1009,16 +1034,21 @@ export function EmisionRevisionPanel() {
             mobileDetail && selected ? 'hidden lg:flex' : ''
           }`}
           >
-            <div className="px-4 py-3.5 bg-indigo-700 text-white flex items-center gap-2 shrink-0">
-              <Inbox size={16} />
-              <span className="text-sm font-bold">Bandeja de entrada</span>
+            <div className="px-4 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center gap-2.5 shrink-0">
+              <span className="w-8 h-8 rounded-lg bg-white/15 grid place-items-center">
+                <Inbox size={15} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black leading-tight">Bandeja</p>
+                <p className="text-[10px] text-indigo-100/90 font-medium truncate">Elige un caso para revisar</p>
+              </div>
               {!loading && (
-                <span className="ml-auto text-xs font-bold bg-white/15 rounded-full px-2.5 py-0.5 tabular-nums">
+                <span className="ml-auto text-xs font-black bg-white/20 rounded-full px-2.5 py-0.5 tabular-nums">
                   {list.length}
                 </span>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/60 min-h-[200px]">
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gradient-to-b from-slate-50/80 to-white min-h-[200px]">
               {loading ? (
                 <div className="py-16 flex justify-center">
                   <Loader2 className="animate-spin text-indigo-600" size={28} />
@@ -1026,7 +1056,9 @@ export function EmisionRevisionPanel() {
               ) : list.length === 0 ? (
                 <p className="py-12 px-4 text-sm text-slate-500 text-center">{emptyMessage}</p>
               ) : (
-                list.map((s) => (
+                list.map((s) => {
+                  const pts = displayScoreTotal(s.scoreTotal, s.scoreBreakdown);
+                  return (
                   <button
                     key={s.id}
                     type="button"
@@ -1036,7 +1068,7 @@ export function EmisionRevisionPanel() {
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="grid place-items-center w-11 h-11 rounded-full bg-indigo-100 text-indigo-800 text-xs font-black shrink-0 ring-2 ring-indigo-50">
+                      <span className="grid place-items-center w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-100 to-violet-100 text-indigo-800 text-xs font-black shrink-0">
                         {initials(s.tomadorNombre || s.tomadorRif)}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -1053,14 +1085,15 @@ export function EmisionRevisionPanel() {
                         </p>
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <p className="text-[10px] text-slate-400">{formatDate(s.reviewedAt || s.createdAt)}</p>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(displayScoreTotal(s.scoreTotal, s.scoreBreakdown))}`}>
-                            {formatHealthScoreNumber(displayScoreTotal(s.scoreTotal, s.scoreBreakdown))} pts
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(pts)}`}>
+                            {formatHealthScoreNumber(pts)} pts · {scoreBandHint(pts)}
                           </span>
                         </div>
                       </span>
                     </div>
                   </button>
-                ))
+                  );
+                })
               )}
             </div>
           </aside>
@@ -1070,17 +1103,22 @@ export function EmisionRevisionPanel() {
           }`}
           >
             {!selected ? (
-              <div className="revision-card p-10 sm:p-14 text-center h-full flex flex-col items-center justify-center min-h-[360px]">
+              <div className="revision-card p-8 sm:p-14 text-center h-full flex flex-col items-center justify-center min-h-[360px]">
                 <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-indigo-700">
                   <ClipboardList size={36} strokeWidth={1.5} />
                 </span>
-                <h2 className="font-display text-xl text-indigo-900 mb-2">Selecciona una solicitud</h2>
+                <h2 className="font-display text-xl font-black text-slate-900 mb-2">Elige un caso de la bandeja</h2>
                 <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
-                  Revisa identidad, scoring y documentos antes de autorizar el enlace de pago al cliente.
+                  Revisa puntaje, identidad y documentos. Luego autorizas el pago o rechazas la solicitud.
                 </p>
+                <ol className="mt-5 flex flex-wrap justify-center gap-2 text-[11px] font-bold text-slate-500">
+                  <li className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">1. Selecciona</li>
+                  <li className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">2. Revisa scoring</li>
+                  <li className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">3. Autoriza o rechaza</li>
+                </ol>
                 {pendingCount > 0 && (
-                  <p className="mt-4 text-xs font-bold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 rounded-full px-3 py-1.5">
-                    {pendingCount} pendiente{pendingCount === 1 ? '' : 's'} en bandeja
+                  <p className="mt-5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5">
+                    {pendingCount} pendiente{pendingCount === 1 ? '' : 's'} por revisar
                   </p>
                 )}
               </div>
