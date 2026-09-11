@@ -5,7 +5,7 @@ import { moduleApiBase } from '../lib/app-base';
 import {
   Settings2, RotateCcw, Save, CheckCircle2, AlertTriangle,
   Loader2, Plus, Trash2, ArrowLeftRight, Layers, Sparkles, Globe, Lock, Eye, EyeOff,
-  ClipboardList,
+  ClipboardList, Gauge,
 } from 'lucide-react';
 import { AuroraBackground } from '../components/AuroraBackground';
 import {
@@ -110,6 +110,7 @@ export function EmisionConfigPanel() {
   const [scoringRules, setScoringRules] = useState<FuneralScoringRules>(
     parseFuneralScoringRules(null),
   );
+  const [preguntasVista, setPreguntasVista] = useState<'cuestionario' | 'puntaje'>('cuestionario');
 
   useEffect(() => {
     if (producto !== 'funerario') return;
@@ -650,6 +651,33 @@ export function EmisionConfigPanel() {
                         </div>
                       )}
                     </div>
+                    <div className="inline-flex p-1 rounded-2xl bg-slate-100/80 border border-slate-200/70">
+                      <button
+                        type="button"
+                        onClick={() => setPreguntasVista('cuestionario')}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] ${
+                          preguntasVista === 'cuestionario'
+                            ? 'bg-white text-indigo-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <ClipboardList size={13} />
+                        Cuestionario
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreguntasVista('puntaje')}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] ${
+                          preguntasVista === 'puntaje'
+                            ? 'bg-white text-indigo-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Gauge size={13} />
+                        Destino del puntaje
+                      </button>
+                    </div>
+                    {preguntasVista === 'puntaje' ? (
                     <FuneralScoringRulesEditor
                       rules={scoringRules}
                       questions={healthQuestions}
@@ -658,6 +686,7 @@ export function EmisionConfigPanel() {
                         setSaved(false);
                       }}
                     />
+                    ) : (
                     <FuneralHealthQuestionsEditor
                       questions={healthQuestions}
                       onChange={onHealthQuestionsChange}
@@ -665,6 +694,7 @@ export function EmisionConfigPanel() {
                       plansLoading={funeralPlansLoading}
                       plansError={funeralPlansError}
                     />
+                    )}
                   </div>
                 )}
 

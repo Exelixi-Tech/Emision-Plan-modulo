@@ -798,6 +798,7 @@ export function EmisionRevisionPanel() {
   const [filter, setFilter] = useState<ListFilter>('pending');
   const [showRawSnapshot, setShowRawSnapshot] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   const applyRows = useCallback(
     (raw: Submission[]) => {
@@ -964,19 +965,31 @@ export function EmisionRevisionPanel() {
                 </p>
               </div>
             </div>
-            {filter === 'pending' && !loading && (
-              <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white px-4 py-2.5 sm:px-5 shadow-sm">
-                <span className="w-10 h-10 rounded-xl bg-amber-500 text-white grid place-items-center font-black text-lg tabular-nums shadow-sm shadow-amber-500/30">
-                  {pendingCount}
-                </span>
-                <div className="text-left">
-                  <p className="text-sm font-black text-amber-900 leading-tight">Por revisar</p>
-                  <p className="text-[11px] text-amber-700/80 font-medium">
-                    {pendingCount === 1 ? 'Solicitud en bandeja' : 'Solicitudes en bandeja'}
-                  </p>
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setAlertsOpen((v) => !v)}
+                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold min-h-[44px] transition-colors ${
+                  alertsOpen
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-800'
+                }`}
+              >
+                <Mail size={14} />
+                Alertas
+              </button>
+              {filter === 'pending' && !loading && (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                  <span className="w-8 h-8 rounded-lg bg-amber-500 text-white grid place-items-center font-black text-sm tabular-nums">
+                    {pendingCount}
+                  </span>
+                  <span className="hidden sm:block text-left">
+                    <span className="block text-xs font-black text-amber-900 leading-tight">Por revisar</span>
+                    <span className="block text-[10px] text-amber-700 font-medium">Bandeja</span>
+                  </span>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -991,9 +1004,11 @@ export function EmisionRevisionPanel() {
             <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
           </div>
         )}
-        <div className={`${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
-          <ReviewerEmailsBox />
-        </div>
+        {alertsOpen && (
+          <div className={`${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
+            <ReviewerEmailsBox />
+          </div>
+        )}
 
         <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
           <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
