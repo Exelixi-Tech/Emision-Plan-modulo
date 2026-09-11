@@ -652,7 +652,7 @@ export interface CotizacionPerPayload {
 }
 
 export const personasApi = {
-  /** Planes de personas vigentes (ramo 9 = funerario por defecto). */
+  /** Planes funerarios del canal SSO (productor/entidad/producto). */
   planes: (cramo = 9) =>
     api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?cramo=${cramo}`),
   /** Cotización de personas (getCotizacionPer). */

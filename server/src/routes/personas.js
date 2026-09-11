@@ -1,7 +1,7 @@
 /**
  * Rutas del producto Funerario (personas) — ramo 9.
  *
- *   GET  /api/personas/planes?cramo=9   → planes vigentes de personas
+ *   GET  /api/personas/planes?cramo=9   → planes del canal SSO (no lista fija)
  *   POST /api/personas/cotizacion       → cotización (getCotizacionPer)
  *   POST /api/personas/validacion       → póliza vigente (paso 4, antes del técnico)
  *   POST /api/personas/emision          → cotiza + valida + emite (pasos 4–6)
@@ -19,6 +19,11 @@ const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const {
+  filterPlanesByVisibility,
+  resolveEntityContext,
+  resolvePlanesPermitidos,
+} = require('../services/canalClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -63,6 +68,23 @@ const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 
+/** Fusiona metadata JWT con query (mismo criterio que RCV /catalogo/planes). */
+function funeralCanalMeta(req) {
+  const meta = { ...(req.nexusMetadata || {}) };
+  const q = req.query || {};
+  const keys = ['centidad', 'citem', 'cgestor', 'cproducto', 'cproductor', 'ccanalalt', 'ccanalalt_in'];
+  for (const key of keys) {
+    if (q[key] != null && String(q[key]).trim() !== '') {
+      meta[key] = String(q[key]).trim();
+    }
+  }
+  if (q.cramo != null && String(q.cramo).trim() !== '') {
+    const cramo = parseInt(String(q.cramo), 10);
+    if (Number.isFinite(cramo)) meta.cramo = cramo;
+  }
+  return meta;
+}
+
 /**
  * Normaliza un asegurado del front al formato de la API:
  *   { cparen, xrif_asegurado, nedad_asegurado }
@@ -77,31 +99,42 @@ function mapAsegurado(a) {
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
   const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
+  const meta = funeralCanalMeta(req);
+  const entity = resolveEntityContext(meta);
   try {
-    const { planes } = await personasClient.getPlanesPer(cramo);
+    const { planes: raw } = await personasClient.getPlanesPer({
+      cramo,
+      citem: entity?.citem || meta.citem,
+      centidad: entity?.centidad || meta.centidad,
+      cproducto: meta.cproducto,
+      cproductor: meta.cproductor,
+    });
+    let planes = Array.isArray(raw) ? raw : [];
+
+    if (entity) {
+      const cproducto = meta.cproducto != null ? String(meta.cproducto).trim() : '';
+      const { planesPermitidos } = await resolvePlanesPermitidos(meta, {
+        cproducto: cproducto || undefined,
+        cramo,
+      });
+      if (planesPermitidos.length) {
+        planes = filterPlanesByVisibility(planes, { ui: { planesPermitidos } });
+      }
+      console.log(
+        `[personas/planes] entity=${entity.centidad}/${entity.citem} cproducto=${cproducto || 'auto'} n=${planes.length}`,
+      );
+    } else {
+      console.log(`[personas/planes] sin entidad JWT; nest usa productor default. n=${planes.length}`);
+    }
+
     return res.json({ success: true, planes });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[personas/planes]', msg);
-    const codes = String(process.env.LAMUNDIAL_PLANES_FUNERARIO || '4,6,7,8')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!codes.length) {
-      return res.status(err.httpStatus || 502).json({
-        success: false,
-        code: err.code || 'LAMUNDIAL_PERSON_ERROR',
-        message: `No se pudieron obtener los planes de personas: ${msg}`,
-      });
-    }
-    return res.json({
-      success: true,
-      degraded: true,
-      planes: codes.map((cplan) => ({
-        cplan,
-        xplan: `Plan ${cplan}`,
-        parentescos: [],
-      })),
+    return res.status(err.httpStatus || 502).json({
+      success: false,
+      code: err.code || 'LAMUNDIAL_PERSON_ERROR',
+      message: `No se pudieron obtener los planes de personas: ${msg}`,
     });
   }
 });

@@ -112,11 +112,17 @@ async function post(endpoint, body, extraHeaders) {
   return response;
 }
 
-/** Lista de planes vigentes de personas para el ramo dado (9 = funerario). */
-async function getPlanesPer(cramo) {
-  const ramo = cramo || getConfig().cramo;
+/** Lista de planes funerarios del canal (producto + planes Sis2000, no whitelist). */
+async function getPlanesPer(input) {
+  const ramo = (typeof input === 'number' ? input : input?.cramo) || getConfig().cramo;
+  const canal = typeof input === 'object' && input ? input : {};
   const endpoint = '/planes';
-  const response = await post(endpoint, { cramo: ramo });
+  const body = { cramo: ramo };
+  if (canal.citem) body.citem = String(canal.citem).trim();
+  if (canal.centidad) body.centidad = String(canal.centidad).trim();
+  if (canal.cproducto) body.cproducto = String(canal.cproducto).trim();
+  if (canal.cproductor) body.cproductor = String(canal.cproductor).trim();
+  const response = await post(endpoint, body);
   if (response.status >= 200 && response.status < 300 && response.data?.status === true) {
     const planes = response.data.data?.planes ?? [];
     return { planes, raw: response.data };
