@@ -72,7 +72,10 @@ const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 function funeralCanalMeta(req) {
   const meta = { ...(req.nexusMetadata || {}) };
   const q = req.query || {};
-  const keys = ['centidad', 'citem', 'cgestor', 'cproducto', 'cproductor', 'ccanalalt', 'ccanalalt_in'];
+  const keys = [
+    'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
+    'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
+  ];
   for (const key of keys) {
     if (q[key] != null && String(q[key]).trim() !== '') {
       meta[key] = String(q[key]).trim();
@@ -100,31 +103,36 @@ function mapAsegurado(a) {
 router.get('/planes', async (req, res) => {
   const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
   const meta = funeralCanalMeta(req);
-  const entity = resolveEntityContext(meta);
+  const entity = resolveEntityContext(meta)
+    || (meta.cproductor != null && String(meta.cproductor).trim() !== ''
+      ? { centidad: 'P', citem: String(meta.cproductor).trim() }
+      : null);
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
       citem: entity?.citem || meta.citem,
       centidad: entity?.centidad || meta.centidad,
       cproducto: meta.cproducto,
-      cproductor: meta.cproductor,
+      cproductor: meta.cproductor || entity?.citem,
     });
     let planes = Array.isArray(raw) ? raw : [];
 
     if (entity) {
       const cproducto = meta.cproducto != null ? String(meta.cproducto).trim() : '';
-      const { planesPermitidos } = await resolvePlanesPermitidos(meta, {
-        cproducto: cproducto || undefined,
-        cramo,
-      });
+      const { planesPermitidos } = await resolvePlanesPermitidos(
+        { ...meta, centidad: entity.centidad, citem: entity.citem },
+        { cproducto: cproducto || undefined, cramo },
+      );
       if (planesPermitidos.length) {
         planes = filterPlanesByVisibility(planes, { ui: { planesPermitidos } });
       }
       console.log(
-        `[personas/planes] entity=${entity.centidad}/${entity.citem} cproducto=${cproducto || 'auto'} n=${planes.length}`,
+        `[personas/planes] entity=${entity.centidad}/${entity.citem} cproducto=${cproducto || 'auto'} cgestor=${meta.cgestor || meta.cgestor_in || 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
       );
     } else {
-      console.log(`[personas/planes] sin entidad JWT; nest usa productor default. n=${planes.length}`);
+      console.log(
+        `[personas/planes] sin canal SSO; nest usa productor default. jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'} n=${planes.length}`,
+      );
     }
 
     return res.json({ success: true, planes });

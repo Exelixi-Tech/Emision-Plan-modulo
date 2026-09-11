@@ -5,6 +5,7 @@ import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
+import { readMarketplaceActorSnapshot } from './sso-metadata';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
@@ -55,6 +56,52 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   if (meta.cramo != null) qs.set('cramo', String(meta.cramo));
 
   return Boolean(centidad && citem);
+}
+
+const FUNERAL_CANAL_QUERY_KEYS = [
+  'centidad',
+  'citem',
+  'cgestor',
+  'cgestor_in',
+  'cproducto',
+  'cproductor',
+  'ccanalalt',
+  'ccanalalt_in',
+  'cscanalalt',
+  'cscanalalt_in',
+] as const;
+
+/** Canal SSO del wizard funerario (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+  const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
+  const meta: Record<string, unknown> = {
+    ...readMarketplaceActorSnapshot(),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+
+  for (const key of FUNERAL_CANAL_QUERY_KEYS) {
+    if (meta[key] != null && String(meta[key]).trim() !== '') {
+      qs.set(key, String(meta[key]).trim());
+    }
+  }
+
+  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const citemRaw = meta.citem
+    ?? (centidad === 'P' ? meta.cproductor : null)
+    ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
+  const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
+  if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
+  if (citem && !qs.get('citem')) qs.set('citem', citem);
+
+  return Boolean(
+    (centidad && citem)
+    || (meta.cproductor != null && String(meta.cproductor).trim() !== '')
+    || (meta.cgestor != null && String(meta.cgestor).trim() !== '')
+    || (meta.cgestor_in != null && String(meta.cgestor_in).trim() !== ''),
+  );
 }
 
 function shouldUseBridgeRules(): boolean {
@@ -652,9 +699,13 @@ export interface CotizacionPerPayload {
 }
 
 export const personasApi = {
-  /** Planes funerarios del canal SSO (productor/entidad/producto). */
-  planes: (cramo = 9) =>
-    api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?cramo=${cramo}`),
+  /** Planes funerarios del canal SSO (productor/entidad/gestor), igual criterio que RCV. */
+  planes: (cramo = 9) => {
+    const qs = new URLSearchParams();
+    qs.set('cramo', String(cramo));
+    appendFuneralCanalQuery(qs);
+    return api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?${qs.toString()}`);
+  },
   /** Cotización de personas (getCotizacionPer). */
   cotizar: (payload: CotizacionPerPayload) =>
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
