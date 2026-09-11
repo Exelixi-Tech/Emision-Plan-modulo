@@ -1044,8 +1044,8 @@ export function EmisionRevisionPanel() {
       : null;
 
   return (
-    <div className="revision-shell min-h-screen overflow-x-hidden">
-      <header className={`sticky top-0 z-30 bg-white shadow-sm ${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
+    <div className="revision-shell">
+      <header className={`shrink-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/80 ${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
         <BrandBar />
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10">
           <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4">
@@ -1095,21 +1095,23 @@ export function EmisionRevisionPanel() {
         </div>
       </header>
 
-      <div className={`max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-4 sm:py-5 lg:pb-8 ${
+      <div className={`revision-workspace w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 pt-3 sm:pt-4 ${
         mobileDetail && selected?.estado === 'pending'
           ? 'pb-[calc(15rem+env(safe-area-inset-bottom))]'
-          : 'pb-8'
+          : 'pb-3 sm:pb-4'
       }`}>
         {error && (
-          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
+          <div className="mb-3 shrink-0 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
           </div>
         )}
         {alertsOpen && (
-          <ReviewerEmailsBox onClose={() => setAlertsOpen(false)} />
+          <div className="mb-3 shrink-0 max-h-[40vh] overflow-y-auto revision-detail-scroll">
+            <ReviewerEmailsBox onClose={() => setAlertsOpen(false)} />
+          </div>
         )}
 
-        <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
+        <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4 shrink-0 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
           <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="inline-flex p-1 rounded-2xl bg-white border border-slate-200/80 shadow-sm min-w-min">
               {filterTabs.map(({ key, label }) => (
@@ -1143,8 +1145,8 @@ export function EmisionRevisionPanel() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
-          <aside className={`lg:col-span-3 xl:col-span-3 revision-card overflow-hidden flex flex-col ${
+        <div className="revision-grid grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
+          <aside className={`lg:col-span-3 xl:col-span-3 revision-card overflow-hidden flex flex-col min-h-0 h-full ${
             mobileDetail && selected ? 'hidden lg:flex' : ''
           }`}
           >
@@ -1162,7 +1164,7 @@ export function EmisionRevisionPanel() {
                 </span>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gradient-to-b from-slate-50/80 to-white min-h-[200px]">
+            <div className="revision-inbox-list p-2.5 space-y-1.5 bg-gradient-to-b from-slate-50/80 to-white">
               {loading ? (
                 <div className="py-16 flex justify-center">
                   <Loader2 className="animate-spin text-indigo-600" size={28} />
@@ -1177,7 +1179,7 @@ export function EmisionRevisionPanel() {
                     key={s.id}
                     type="button"
                     onClick={() => openSubmission(s)}
-                    className={`revision-inbox-item w-full text-left rounded-xl p-3 min-h-[72px] touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                    className={`revision-inbox-item w-full text-left rounded-xl p-2.5 min-h-[56px] touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                       selected?.id === s.id ? 'revision-inbox-item--active' : ''
                     }`}
                   >
@@ -1212,12 +1214,12 @@ export function EmisionRevisionPanel() {
             </div>
           </aside>
 
-          <main className={`lg:col-span-9 xl:col-span-9 min-h-[320px] min-w-0 ${
+          <main className={`lg:col-span-9 xl:col-span-9 min-w-0 min-h-0 h-full overflow-y-auto revision-detail-scroll ${
             !(mobileDetail && selected) ? 'hidden lg:block' : ''
           }`}
           >
             {!selected ? (
-              <div className="revision-card p-8 sm:p-14 text-center h-full flex flex-col items-center justify-center min-h-[360px]">
+              <div className="revision-card p-8 sm:p-12 text-center h-full min-h-0 flex flex-col items-center justify-center">
                 <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-indigo-700">
                   <ClipboardList size={36} strokeWidth={1.5} />
                 </span>
