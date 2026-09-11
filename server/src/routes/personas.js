@@ -103,7 +103,10 @@ function mapAsegurado(a) {
 router.get('/planes', async (req, res) => {
   const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
   const meta = funeralCanalMeta(req);
-  const entity = resolveEntityContext(meta);
+  const rawEntity = resolveEntityContext(meta);
+  const sisOk = rawEntity
+    && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
+  const entity = sisOk ? rawEntity : null;
   const productor = meta.cproductor != null && String(meta.cproductor).trim() !== ''
     ? String(meta.cproductor).trim()
     : (entity?.citem || '');
@@ -113,14 +116,16 @@ router.get('/planes', async (req, res) => {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
       citem: nestEntity?.citem || meta.citem,
-      centidad: nestEntity?.centidad || meta.centidad,
+      centidad: meta.centidad || nestEntity?.centidad,
       cproducto: meta.cproducto,
       cproductor: productor || nestEntity?.citem,
       cusuario: meta.cusuario,
+      cgestor_in: meta.cgestor_in,
+      cgestor: meta.cgestor,
     });
     let planes = Array.isArray(raw) ? raw : [];
 
-    // Igual que RCV: el filtro de visibility solo si el SSO trae canal real (C/P+citem/cproducto).
+    // Visibility solo con P/C/G. U (usuario) lo resuelve nest vía magestor, como SysIP.
     if (entity) {
       const cproducto = meta.cproducto != null ? String(meta.cproducto).trim() : '';
       const { planesPermitidos } = await resolvePlanesPermitidos(
@@ -151,6 +156,8 @@ router.get('/planes', async (req, res) => {
         cproducto: meta.cproducto || null,
         ccanalalt: meta.ccanalalt_in || meta.ccanalalt || null,
         cscanalalt: meta.cscanalalt_in || meta.cscanalalt || null,
+        cgestor_in: meta.cgestor_in || null,
+        cgestor: meta.cgestor || null,
       },
     });
   } catch (err) {
