@@ -1,4 +1,4 @@
-import { Field, Input } from './ui/FormField';
+import { Field } from './ui/FormField';
 import { SearchSelect } from './ui/SearchSelect';
 import type { CatalogItem } from '../lib/api';
 
