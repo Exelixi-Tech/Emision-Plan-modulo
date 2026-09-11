@@ -952,6 +952,15 @@ export function EmisionRevisionPanel() {
     return () => window.clearInterval(id);
   }, [loadList]);
 
+  useEffect(() => {
+    document.documentElement.classList.add('revision-page');
+    document.body.classList.add('revision-page');
+    return () => {
+      document.documentElement.classList.remove('revision-page');
+      document.body.classList.remove('revision-page');
+    };
+  }, []);
+
   async function loadDetail(id: string) {
     const res = await fetch(
       `${NEXUS_URL}/api/funeral-submissions/${id}?empresaId=${EMPRESA_ID}`,
@@ -1045,126 +1054,111 @@ export function EmisionRevisionPanel() {
 
   return (
     <div className="revision-shell">
-      <header className={`shrink-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/80 ${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
+      <header className={`revision-topbar ${mobileDetail && selected ? 'hidden md:block' : ''}`}>
         <BrandBar />
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10">
-          <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4">
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <span className="sm:hidden"><MundialLogo compact /></span>
-              <span className="hidden sm:inline-flex"><MundialLogo /></span>
-              <div className="hidden sm:block w-px h-11 bg-slate-200 shrink-0" aria-hidden />
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold tracking-[0.18em] text-fuchsia-500 uppercase inline-flex items-center gap-1.5">
-                  <ShieldCheck size={11} />
-                  Mesa técnica · Funerario
-                </p>
-                <h1 className="font-display text-lg sm:text-2xl text-indigo-900 leading-tight">
-                  Autorización de pólizas
-                </h1>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Empresa #{EMPRESA_ID} · {canalDisplayLabel(PANEL.canal)}
-                </p>
+        <div className="revision-topbar__inner">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="md:hidden"><MundialLogo compact /></span>
+            <span className="hidden md:inline-flex"><MundialLogo /></span>
+            <div className="hidden md:block w-px h-10 bg-slate-200 shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold tracking-[0.16em] text-[#E84F51] uppercase inline-flex items-center gap-1.5">
+                <ShieldCheck size={11} />
+                Mesa técnica · Funerario
+              </p>
+              <h1 className="font-display text-lg md:text-xl text-[#0F1A5A] leading-tight">
+                Autorización de pólizas
+              </h1>
+              <p className="text-xs text-slate-500 truncate">
+                Empresa #{EMPRESA_ID} · {canalDisplayLabel(PANEL.canal)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAlertsOpen((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold min-h-[40px] ${
+                alertsOpen
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200'
+              }`}
+            >
+              <Mail size={14} />
+              Alertas
+            </button>
+            {filter === 'pending' && !loading && (
+              <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5">
+                <span className="w-7 h-7 rounded-lg bg-amber-500 text-white grid place-items-center font-black text-sm tabular-nums">
+                  {pendingCount}
+                </span>
+                <span className="hidden sm:block text-left">
+                  <span className="block text-xs font-black text-amber-900 leading-tight">Por revisar</span>
+                  <span className="block text-[10px] text-amber-700 font-medium">Bandeja</span>
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setAlertsOpen((v) => !v)}
-                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold min-h-[44px] transition-colors ${
-                  alertsOpen
-                    ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-800'
-                }`}
-              >
-                <Mail size={14} />
-                Alertas
-              </button>
-              {filter === 'pending' && !loading && (
-                <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                  <span className="w-8 h-8 rounded-lg bg-amber-500 text-white grid place-items-center font-black text-sm tabular-nums">
-                    {pendingCount}
-                  </span>
-                  <span className="hidden sm:block text-left">
-                    <span className="block text-xs font-black text-amber-900 leading-tight">Por revisar</span>
-                    <span className="block text-[10px] text-amber-700 font-medium">Bandeja</span>
-                  </span>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </header>
 
-      <div className={`revision-workspace w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 pt-3 sm:pt-4 ${
-        mobileDetail && selected?.estado === 'pending'
-          ? 'pb-[calc(15rem+env(safe-area-inset-bottom))]'
-          : 'pb-3 sm:pb-4'
+      <div className={`revision-body ${
+        mobileDetail && selected?.estado === 'pending' ? 'revision-body--mobile-decision' : ''
       }`}>
-        {error && (
-          <div className="mb-3 shrink-0 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
-            <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
+        <aside className={`revision-inbox ${mobileDetail && selected ? 'hidden md:flex' : ''}`}>
+          <div className="revision-inbox__head">
+            <span className="w-8 h-8 rounded-lg bg-white/15 grid place-items-center">
+              <Inbox size={15} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-black leading-tight">Bandeja</p>
+              <p className="text-[10px] text-white/80 font-medium truncate">Elige un caso para revisar</p>
+            </div>
+            {!loading && (
+              <span className="ml-auto text-xs font-black bg-white/20 rounded-full px-2.5 py-0.5 tabular-nums">
+                {list.length}
+              </span>
+            )}
           </div>
-        )}
-        {alertsOpen && (
-          <div className="mb-3 shrink-0 max-h-[40vh] overflow-y-auto revision-detail-scroll">
-            <ReviewerEmailsBox onClose={() => setAlertsOpen(false)} />
-          </div>
-        )}
-
-        <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4 shrink-0 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
-          <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="inline-flex p-1 rounded-2xl bg-white border border-slate-200/80 shadow-sm min-w-min">
+          <div className="revision-inbox__tools">
+            <div className="inline-flex p-0.5 rounded-xl bg-white border border-slate-200">
               {filterTabs.map(({ key, label }) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setFilter(key)}
-                  className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all min-h-[44px] touch-manipulation whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 min-h-[36px] ${
                     filter === key
-                      ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25'
-                      : 'text-slate-600 hover:text-indigo-900 hover:bg-slate-50'
+                      ? 'bg-[#0F1A5A] text-white'
+                      : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  {key === 'pending' && <Inbox size={12} />}
-                  {key === 'history' && <History size={12} />}
+                  {key === 'pending' && <Inbox size={11} />}
+                  {key === 'history' && <History size={11} />}
                   {label}
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={() => void loadList()}
+              className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-[#0F1A5A] min-h-[36px] px-2"
+            >
+              <RefreshCw size={12} />
+              Actualizar
+            </button>
           </div>
-          <span className="text-xs text-slate-500 font-semibold tabular-nums">
-            {loading ? '…' : `${list.length} registro${list.length === 1 ? '' : 's'}`}
-          </span>
-          <button
-            type="button"
-            onClick={() => void loadList()}
-            className="sm:ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 min-h-[44px] px-3 rounded-xl border border-indigo-100 bg-white hover:bg-indigo-50 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-          >
-            <RefreshCw size={13} />
-            Actualizar
-          </button>
-        </div>
-
-        <div className="revision-grid grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
-          <aside className={`lg:col-span-3 xl:col-span-3 revision-card overflow-hidden flex flex-col min-h-0 h-full ${
-            mobileDetail && selected ? 'hidden lg:flex' : ''
-          }`}
-          >
-            <div className="px-4 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center gap-2.5 shrink-0">
-              <span className="w-8 h-8 rounded-lg bg-white/15 grid place-items-center">
-                <Inbox size={15} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-black leading-tight">Bandeja</p>
-                <p className="text-[10px] text-indigo-100/90 font-medium truncate">Elige un caso para revisar</p>
-              </div>
-              {!loading && (
-                <span className="ml-auto text-xs font-black bg-white/20 rounded-full px-2.5 py-0.5 tabular-nums">
-                  {list.length}
-                </span>
-              )}
+          {error && (
+            <div className="mx-3 mt-2 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 flex items-start gap-2">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {error}
             </div>
-            <div className="revision-inbox-list p-2.5 space-y-1.5 bg-gradient-to-b from-slate-50/80 to-white">
+          )}
+          {alertsOpen && (
+            <div className="mx-3 mt-2 shrink-0 max-h-40 overflow-y-auto revision-detail-scroll">
+              <ReviewerEmailsBox onClose={() => setAlertsOpen(false)} />
+            </div>
+          )}
+          <div className="revision-inbox-list space-y-1.5">
               {loading ? (
                 <div className="py-16 flex justify-center">
                   <Loader2 className="animate-spin text-indigo-600" size={28} />
@@ -1214,17 +1208,17 @@ export function EmisionRevisionPanel() {
             </div>
           </aside>
 
-          <main className={`lg:col-span-9 xl:col-span-9 min-w-0 min-h-0 h-full overflow-y-auto revision-detail-scroll ${
-            !(mobileDetail && selected) ? 'hidden lg:block' : ''
+          <main className={`revision-main revision-detail-scroll ${
+            !(mobileDetail && selected) ? 'hidden md:flex' : ''
           }`}
           >
             {!selected ? (
-              <div className="revision-card p-8 sm:p-12 text-center h-full min-h-0 flex flex-col items-center justify-center">
-                <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-indigo-700">
+              <div className="revision-empty">
+                <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-[#0F1A5A]">
                   <ClipboardList size={36} strokeWidth={1.5} />
                 </span>
                 <h2 className="font-display text-xl font-black text-slate-900 mb-2">Elige un caso de la bandeja</h2>
-                <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
+                <p className="text-sm text-slate-500 max-w-md leading-relaxed">
                   Revisa puntaje, identidad y documentos. Luego autorizas el pago o rechazas la solicitud.
                 </p>
                 <ol className="mt-5 flex flex-wrap justify-center gap-2 text-[11px] font-bold text-slate-500">
@@ -1243,7 +1237,7 @@ export function EmisionRevisionPanel() {
                 <button
                   type="button"
                   onClick={() => setMobileDetail(false)}
-                  className="lg:hidden inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 min-h-[44px] px-1 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 rounded-lg"
+                  className="md:hidden inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 min-h-[44px] px-1"
                 >
                   <ArrowLeft size={16} />
                   Volver al listado
@@ -1414,7 +1408,7 @@ export function EmisionRevisionPanel() {
 
                   <div className="lg:col-span-4 xl:col-span-3 min-w-0">
                     {selected.estado === 'pending' && (
-                      <div className="hidden lg:block lg:sticky lg:top-[7.5rem]">
+                      <div className="hidden md:block md:sticky md:top-4">
                         <DecisionPanel
                           acting={acting}
                           rejectReason={rejectReason}
@@ -1428,7 +1422,7 @@ export function EmisionRevisionPanel() {
                 </div>
 
                 {selected.estado === 'pending' && (
-                  <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_rgba(9,17,51,0.1)]">
+                  <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_rgba(9,17,51,0.1)]">
                     <DecisionPanel
                       compact
                       acting={acting}
@@ -1442,7 +1436,6 @@ export function EmisionRevisionPanel() {
               </div>
             )}
           </main>
-        </div>
       </div>
     </div>
   );
