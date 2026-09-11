@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Check, X, Loader2, ClipboardList, User, AlertTriangle,
   History, ExternalLink, FileDown, ArrowLeft,
@@ -43,6 +44,20 @@ type Submission = {
     funeral?: {
       frecuencia?: string;
       beneficiarios?: Record<string, unknown>[];
+    };
+    reviewAlerts?: {
+      emails?: string[];
+      notifiedAt?: string;
+      warning?: string;
+      results?: Array<{ to: string; sent?: boolean; error?: string }>;
+    };
+    reviewDecision?: {
+      action?: string;
+      reviewedBy?: string;
+      reviewedAt?: string;
+      reason?: string;
+      paymentEmailTo?: string;
+      paymentEmailSent?: boolean;
     };
     documents?: Record<string, {
       ocr?: Record<string, unknown>;
@@ -312,6 +327,33 @@ async function refreshRevisionToken(): Promise<boolean> {
   }
 }
 
+function reviewerLabel(): string {
+  const token = readPanelToken();
+  try {
+    const part = token.split('.')[1];
+    if (part) {
+      const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        reviewerEmail?: string;
+        reviewerNombre?: string;
+        cusuario?: string;
+        empresaNombre?: string;
+      };
+      const fromToken = [
+        payload.reviewerEmail,
+        payload.reviewerNombre,
+        payload.cusuario,
+        payload.empresaNombre,
+      ]
+        .map((v) => String(v || '').trim())
+        .find(Boolean);
+      if (fromToken) return fromToken.slice(0, 128);
+    }
+  } catch {
+    /* ignore */
+  }
+  return String(PANEL.cusuario || PANEL.empresaNombre || 'mesa-tecnica').slice(0, 128);
+}
+
 function authHeaders(): Record<string, string> {
   const token = readPanelToken();
   const h: Record<string, string> = { Accept: 'application/json' };
@@ -324,7 +366,7 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
-function ReviewerEmailsBox() {
+function ReviewerEmailsBox({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -373,47 +415,65 @@ function ReviewerEmailsBox() {
     }
   }
 
-  return (
-    <div className="mb-5 rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
-      <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/40 flex items-start gap-3">
-        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white grid place-items-center shrink-0 shadow-md shadow-indigo-500/25">
-          <Mail size={16} />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-black text-slate-900 leading-tight">Quién recibe las referidas</p>
-          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-            Un correo por línea. Cada solicitud a mesa técnica avisa a esta lista.
-          </p>
-        </div>
-      </div>
-      <div className="px-4 sm:px-5 py-4">
-        <textarea
-          className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 min-h-[4.5rem] outline-none focus:border-indigo-400 bg-slate-50/50"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="autorizador@lamundialdeseguros.com"
-        />
-        <div className="flex flex-wrap items-center gap-2 mt-3">
+  const modal = (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#091133]/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="alerts-title"
+        className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start gap-3">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white grid place-items-center shrink-0">
+            <Mail size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p id="alerts-title" className="text-sm font-black text-slate-900">Quién recibe las referidas</p>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Un correo por línea. Se guarda en la empresa y se avisa a todos cuando una solicitud entra a mesa.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={() => void save()}
-            disabled={saving}
-            className="text-xs font-bold px-4 py-2.5 min-h-[40px] rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 shadow-sm shadow-indigo-600/20"
+            onClick={onClose}
+            className="w-10 h-10 rounded-xl border border-slate-200 grid place-items-center text-slate-500 hover:text-slate-800"
+            aria-label="Cerrar"
           >
-            {saving ? 'Guardando…' : 'Guardar correos'}
+            <X size={16} />
           </button>
-          {msg && (
-            <span className={`text-[11px] font-semibold ${
-              msg.includes('No se') ? 'text-rose-600' : 'text-emerald-700'
-            }`}
+        </div>
+        <div className="px-5 py-4">
+          <textarea
+            className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 min-h-[7rem] outline-none focus:border-indigo-400 bg-slate-50/50"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="autorizador@lamundialdeseguros.com"
+          />
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving}
+              className="text-xs font-bold px-4 py-2.5 min-h-[40px] rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
             >
-              {msg}
-            </span>
-          )}
+              {saving ? 'Guardando…' : 'Guardar correos'}
+            </button>
+            {msg && (
+              <span className={`text-[11px] font-semibold ${
+                msg.includes('No se') ? 'text-rose-600' : 'text-emerald-700'
+              }`}
+              >
+                {msg}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 function formatAnswer(v: unknown): string {
@@ -689,13 +749,49 @@ function CompactSummaryCard({
           </div>
         )}
 
+        {(Array.isArray(selected.snapshot?.reviewAlerts?.results) &&
+          selected.snapshot.reviewAlerts.results.length > 0) ||
+        selected.snapshot?.reviewAlerts?.warning ? (
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Avisos a mesa</p>
+            {selected.snapshot?.reviewAlerts?.warning && (
+              <p className="text-[11px] text-amber-700 mb-1">{selected.snapshot.reviewAlerts.warning}</p>
+            )}
+            {Array.isArray(selected.snapshot?.reviewAlerts?.results) &&
+              selected.snapshot.reviewAlerts.results.length > 0 && (
+              <ul className="flex flex-wrap gap-1">
+                {selected.snapshot.reviewAlerts.results.map((r) => (
+                  <li
+                    key={r.to}
+                    className={`text-[11px] rounded-md px-2 py-0.5 ${
+                      r.sent ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    {r.to}{r.sent ? '' : ' · no enviado'}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        {selected.snapshot?.reviewDecision?.reviewedBy && (
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Quién autorizó</p>
+            <p className="text-[11px] text-slate-700">
+              {selected.snapshot.reviewDecision.reviewedBy}
+              {selected.snapshot.reviewDecision.action === 'rejected' ? ' · rechazó' : ' · aprobó'}
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-100">
           {[
             { label: 'Solicitud', value: formatDate(selected.createdAt) },
             {
               label: 'Revisión',
               value: selected.reviewedAt
-                ? formatDate(selected.reviewedAt)
+                ? `${formatDate(selected.reviewedAt)}${selected.reviewedBy ? ` · ${selected.reviewedBy}` : ''}`
                 : 'Pendiente',
             },
             {
@@ -871,7 +967,9 @@ export function EmisionRevisionPanel() {
       const res = await fetch(`${NEXUS_URL}/api/funeral-submissions/${id}/approve`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewedBy: 'tecnico-panel' }),
+        body: JSON.stringify({
+          reviewedBy: reviewerLabel(),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -891,7 +989,10 @@ export function EmisionRevisionPanel() {
       const res = await fetch(`${NEXUS_URL}/api/funeral-submissions/${id}/reject`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewedBy: 'tecnico-panel', reason: rejectReason }),
+        body: JSON.stringify({
+          reviewedBy: reviewerLabel(),
+          reason: rejectReason,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1005,9 +1106,7 @@ export function EmisionRevisionPanel() {
           </div>
         )}
         {alertsOpen && (
-          <div className={`${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
-            <ReviewerEmailsBox />
-          </div>
+          <ReviewerEmailsBox onClose={() => setAlertsOpen(false)} />
         )}
 
         <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
