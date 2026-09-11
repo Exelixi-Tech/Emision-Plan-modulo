@@ -114,16 +114,17 @@ async function post(endpoint, body, extraHeaders) {
 
 /** Lista de planes funerarios del canal (producto + planes Sis2000, no whitelist). */
 async function getPlanesPer(input) {
-  const ramo = (typeof input === 'number' ? input : input?.cramo) || getConfig().cramo;
   const canal = typeof input === 'object' && input ? input : {};
+  const cproducto = canal.cproducto ? String(canal.cproducto).trim() : '57';
+  const ramo = cproducto === '57'
+    ? 45
+    : ((typeof input === 'number' ? input : input?.cramo) || getConfig().cramo);
   const endpoint = '/planes';
-  const body = { cramo: ramo };
+  const body = { cramo: ramo, cproducto };
   if (canal.citem) body.citem = String(canal.citem).trim();
   if (canal.centidad) body.centidad = String(canal.centidad).trim();
-  if (canal.cproducto) body.cproducto = String(canal.cproducto).trim();
-  if (canal.cproductor != null && String(canal.cproductor).trim() !== '') {
-    body.cproductor = String(canal.cproductor).trim();
-  }
+  const productor = canal.cproductor != null ? String(canal.cproductor).trim() : '';
+  if (productor && productor !== '80080') body.cproductor = productor;
   if (canal.cusuario) body.cusuario = String(canal.cusuario).trim();
   if (canal.cgestor_in) body.cgestor_in = String(canal.cgestor_in).trim();
   if (canal.cgestor) body.cgestor = String(canal.cgestor).trim();

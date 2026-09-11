@@ -97,7 +97,6 @@ function mapAsegurado(a) {
 
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
-  const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
   const meta = funeralCanalMeta(req);
   const rawEntity = resolveEntityContext(meta);
   const sisOk = rawEntity
@@ -108,6 +107,9 @@ router.get('/planes', async (req, res) => {
   const cproducto = meta.cproducto != null && String(meta.cproducto).trim() !== ''
     ? String(meta.cproducto).trim()
     : (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
+  const cramo = cproducto === '57'
+    ? 45
+    : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO);
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
