@@ -9,7 +9,7 @@ import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } fro
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
-import { ageErrorForParentesco, isTitularOnlyPlan } from '../../lib/funeralPlanParentescos';
+import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan } from '../../lib/funeralPlanParentescos';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
 /** SysIP persons-alt: si maplanes_frec no tiene el plan, al menos ANUAL. */
@@ -31,6 +31,8 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
     ],
     sumaAsegurada: 0,
     parentescos: p.parentescos ?? [],
+    nmax_dep: p.nmax_dep ?? null,
+    maxAsegurados: p.maxAsegurados,
   };
 }
 
@@ -115,6 +117,11 @@ export function FuneralPlansStep() {
 
   // ── Cotización contra getCotizacionPer ─────────────────────────────────────
   const planParentescos = selectedPlan?.parentescos ?? [];
+  const planMaxAsegurados = maxAseguradosDelPlan({
+    maxAsegurados: selectedPlan?.maxAsegurados,
+    nmax_dep: selectedPlan?.nmax_dep,
+    parentescos: planParentescos,
+  });
   const aseguradosListos = funeral.asegurados.filter((a, idx) => {
     const idOk = (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim();
     if (!idOk) return false;
@@ -193,6 +200,7 @@ export function FuneralPlansStep() {
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
           <Users size={11} />
           {aseguradosListos.length} asegurado{aseguradosListos.length === 1 ? '' : 's'}
+          {planMaxAsegurados != null ? ` / ${planMaxAsegurados}` : ''}
         </span>
       </div>
 
@@ -220,7 +228,13 @@ export function FuneralPlansStep() {
                 setSelectedPlan(found ?? null);
                 if (found) {
                   const extras = useWizardStore.getState().funeral.asegurados;
-                  const nextAsegurados = isTitularOnlyPlan(found.parentescos)
+                  const max = maxAseguradosDelPlan({
+                    maxAsegurados: found.maxAsegurados,
+                    nmax_dep: found.nmax_dep,
+                    parentescos: found.parentescos,
+                  });
+                  const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
+                  let nextAsegurados = titularOnly
                     ? extras.slice(0, 1)
                     : extras.map((a, idx) => {
                       if (idx === 0) return a;
@@ -229,7 +243,14 @@ export function FuneralPlansStep() {
                       );
                       return allowed ? a : { ...a, parentesco: '' };
                     });
-                  if (isTitularOnlyPlan(found.parentescos) && extras.length > 1) {
+                  if (max != null && nextAsegurados.length > max) {
+                    nextAsegurados = nextAsegurados.slice(0, max);
+                    toast.warning(
+                      'Límite del plan',
+                      `Este plan admite hasta ${max} asegurado${max === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
+                      6000,
+                    );
+                  } else if (titularOnly && extras.length > 1) {
                     toast.warning(
                       'Plan solo titular',
                       'Se quitaron los asegurados adicionales porque este plan no los admite.',
@@ -259,9 +280,19 @@ export function FuneralPlansStep() {
               ) : (
                 <>
                   <option value="" disabled>— Elige un plan —</option>
-                  {apiPlans.map((p) => (
-                    <option key={p.cplan} value={p.cplan ?? ''}>{p.name}</option>
-                  ))}
+                  {apiPlans.map((p) => {
+                    const max = maxAseguradosDelPlan({
+                      maxAsegurados: p.maxAsegurados,
+                      nmax_dep: p.nmax_dep,
+                      parentescos: p.parentescos,
+                    });
+                    const cupo = max == null
+                      ? p.name
+                      : `${p.name} · hasta ${max} asegurado${max === 1 ? '' : 's'}`;
+                    return (
+                      <option key={p.cplan} value={p.cplan ?? ''}>{cupo}</option>
+                    );
+                  })}
                 </>
               )}
             </select>
@@ -306,7 +337,11 @@ export function FuneralPlansStep() {
         </div>
       </div>
 
-      <FuneralInsuredsEditor parentescos={planParentescos} />
+      <FuneralInsuredsEditor
+        parentescos={planParentescos}
+        nmax_dep={selectedPlan?.nmax_dep}
+        maxAsegurados={selectedPlan?.maxAsegurados}
+      />
 
       {/* Detalle del plan + prima */}
       {selectedPlan ? (

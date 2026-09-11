@@ -135,6 +135,10 @@ export interface Plan {
   coberturasAdicionales?: PlanCoberturaAdicional[];
   /** Parentescos admitidos por el plan (personas/planes). */
   parentescos?: PlanParentesco[];
+  /** Máximo de dependientes (maplanes_per.nmax_dep). */
+  nmax_dep?: number | null;
+  /** Tope de personas en la póliza: titular + nmax_dep. */
+  maxAsegurados?: number;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';

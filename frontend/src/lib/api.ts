@@ -631,6 +631,8 @@ export interface PlanPer {
   cplan: string;
   xplan?: string;
   cmoneda?: string;
+  nmax_dep?: number | null;
+  maxAsegurados?: number;
   parentescos?: PlanParentescoPer[];
 }
 

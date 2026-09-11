@@ -10,6 +10,20 @@ export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolea
   return parentescos.length === 1 && Number(parentescos[0].cparen) === 1;
 }
 
+/** Tope de personas del plan: 1 titular + nmax_dep, o 1 si solo admite titular. */
+export function maxAseguradosDelPlan(opts: {
+  maxAsegurados?: number | null;
+  nmax_dep?: number | null;
+  parentescos?: PlanParentesco[] | null;
+}): number | null {
+  const fromApi = Number(opts.maxAsegurados);
+  if (Number.isFinite(fromApi) && fromApi > 0) return fromApi;
+  const nmax = Number(opts.nmax_dep);
+  if (Number.isFinite(nmax)) return Math.max(1, 1 + nmax);
+  if (isTitularOnlyPlan(opts.parentescos)) return 1;
+  return null;
+}
+
 export function additionalParentescos(parentescos?: PlanParentesco[] | null): PlanParentesco[] {
   return (parentescos ?? []).filter((p) => Number(p.cparen) !== 1);
 }

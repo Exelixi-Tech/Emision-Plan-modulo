@@ -10,6 +10,7 @@ import {
   additionalParentescos,
   ageErrorForParentesco,
   isTitularOnlyPlan,
+  maxAseguradosDelPlan,
   type PlanParentesco,
 } from '../../lib/funeralPlanParentescos';
 import { useWizardStore } from '../../store/wizardStore';
@@ -230,15 +231,21 @@ function FuneralExtraPersonForm({
  */
 export function FuneralInsuredsEditor({
   parentescos,
+  nmax_dep,
+  maxAsegurados,
 }: {
   parentescos?: PlanParentesco[] | null;
+  nmax_dep?: number | null;
+  maxAsegurados?: number | null;
 }) {
   const funeral = useWizardStore((s) => s.funeral);
   const setFuneral = useWizardStore((s) => s.setFuneral);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const titularOnly = isTitularOnlyPlan(parentescos);
+  const max = maxAseguradosDelPlan({ maxAsegurados, nmax_dep, parentescos });
+  const titularOnly = max === 1 || isTitularOnlyPlan(parentescos);
   const extras = additionalParentescos(parentescos);
-  const canAdd = extras.length > 0 && !titularOnly;
+  const atLimit = max != null && funeral.asegurados.length >= max;
+  const canAdd = extras.length > 0 && !titularOnly && !atLimit;
   const parentescoOptions = extras.map((p) => ({
     value: String(p.cparen),
     label: p.xparentesco,
@@ -251,6 +258,7 @@ export function FuneralInsuredsEditor({
   };
 
   const add = () => {
+    if (atLimit) return;
     const nextIdx = funeral.asegurados.length;
     setFuneral({ asegurados: [...funeral.asegurados, emptyExtra()] });
     setEditingIdx(nextIdx);
@@ -276,11 +284,13 @@ export function FuneralInsuredsEditor({
           </p>
           <p className="text-xs text-slate-500 mt-1">
             El titular viene del formulario. Agrega aquí los asegurados adicionales con los mismos datos.
-            {!parentescos?.length
-              ? ' Elige un plan para revisar parentescos.'
-              : titularOnly
-                ? ' Este plan no admite adicionales.'
-                : ''}
+            {max != null
+              ? ` Este plan admite hasta ${max} asegurado${max === 1 ? '' : 's'} (titular${max > 1 ? ` + ${max - 1} adicional${max - 1 === 1 ? '' : 'es'}` : ''}).`
+              : !parentescos?.length
+                ? ' Elige un plan para revisar parentescos.'
+                : titularOnly
+                  ? ' Este plan no admite adicionales.'
+                  : ''}
           </p>
         </div>
       </div>
@@ -377,7 +387,13 @@ export function FuneralInsuredsEditor({
           className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl border-2 border-dashed border-indigo-200 text-indigo-600 text-sm font-bold hover:border-indigo-400 hover:bg-indigo-50/50"
         >
           <Plus size={15} /> Agregar asegurado
+          {max != null ? ` (${funeral.asegurados.length}/${max})` : ''}
         </button>
+      )}
+      {!canAdd && max != null && extras.length > 0 && !titularOnly && atLimit && (
+        <p className="text-xs font-semibold text-slate-500">
+          Ya alcanzaste el máximo de {max} asegurados de este plan.
+        </p>
       )}
     </div>
   );
