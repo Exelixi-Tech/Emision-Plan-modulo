@@ -102,6 +102,9 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
     qs.set('citem', String(meta.cproductor).trim());
   }
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    qs.set('cramo', String(meta.cramo).trim());
+  }
 
   return Boolean(
     (centidad && citem)
