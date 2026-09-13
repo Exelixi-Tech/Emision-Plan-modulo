@@ -98,11 +98,22 @@ export type PersonData = {
   ciudad?: string;
   cciudad?: number;
   direccion?: string;
+  /** Peso en kg (maclient.npeso). */
+  peso?: string;
+  /** Estatura en metros (maclient.nestatura). */
+  estatura?: string;
 };
 
 export interface PlanCoberturaAdicional {
   value: string;
   text: string;
+}
+
+export interface PlanParentesco {
+  cparen: number;
+  xparentesco: string;
+  min_edad: number;
+  max_edad: number;
 }
 
 export interface Plan {
@@ -122,6 +133,12 @@ export interface Plan {
   cproducto?: string;
   /** Opciones "Incluir" del plan (CA, PT, PP…) — paridad SysIP xcober */
   coberturasAdicionales?: PlanCoberturaAdicional[];
+  /** Parentescos admitidos por el plan (personas/planes). */
+  parentescos?: PlanParentesco[];
+  /** Máximo de dependientes (maplanes_per.nmax_dep). */
+  nmax_dep?: number | null;
+  /** Tope de personas en la póliza: titular + nmax_dep. */
+  maxAsegurados?: number;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
@@ -139,6 +156,16 @@ export interface FuneralPerson {
   pporcen?: number;
   telefono?: string;
   email?: string;
+  estadoCivil?: string;
+  estado?: string;
+  cestado?: number;
+  ciudad?: string;
+  cciudad?: number;
+  direccion?: string;
+  /** Peso en kg (maclient.npeso). */
+  peso?: string;
+  /** Estatura en metros (maclient.nestatura). */
+  estatura?: string;
 }
 
 /** Datos RCV: frecuencia de pago del plan (ramo 18). */
@@ -168,6 +195,8 @@ export interface FuneralData {
   aceptaTerminos: boolean;
   /** Respuestas completas del cuestionario de salud (por plan). */
   healthAnswers?: Record<string, unknown>;
+  /** Respuestas por asegurado (clave tipoDoc-cedula). */
+  healthAnswersByInsured?: Record<string, Record<string, unknown>>;
   /** true cuando el cuestionario fue completado y guardado en BD. */
   healthQuestionnaireDone?: boolean;
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Check, X, Loader2, ClipboardList, User, AlertTriangle,
   History, ExternalLink, FileDown, ArrowLeft,
@@ -8,6 +9,7 @@ import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext'
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
 import { publicAsset } from '../lib/app-base';
 import { formatHealthScoreNumber, formatHealthScoreSigned } from '../lib/formatHealthScore';
+import { parseFuneralScoringRules } from './FuneralScoringRulesEditor';
 
 const NEXUS_URL = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
 const PANEL = readConfigPanelContext();
@@ -18,6 +20,7 @@ type ScoreLine = {
   label: string;
   answer: unknown;
   points: number;
+  insuredLabel?: string;
 };
 
 type Submission = {
@@ -41,6 +44,20 @@ type Submission = {
     funeral?: {
       frecuencia?: string;
       beneficiarios?: Record<string, unknown>[];
+    };
+    reviewAlerts?: {
+      emails?: string[];
+      notifiedAt?: string;
+      warning?: string;
+      results?: Array<{ to: string; sent?: boolean; error?: string }>;
+    };
+    reviewDecision?: {
+      action?: string;
+      reviewedBy?: string;
+      reviewedAt?: string;
+      reason?: string;
+      paymentEmailTo?: string;
+      paymentEmailSent?: boolean;
     };
     documents?: Record<string, {
       ocr?: Record<string, unknown>;
@@ -310,6 +327,33 @@ async function refreshRevisionToken(): Promise<boolean> {
   }
 }
 
+function reviewerLabel(): string {
+  const token = readPanelToken();
+  try {
+    const part = token.split('.')[1];
+    if (part) {
+      const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        reviewerEmail?: string;
+        reviewerNombre?: string;
+        cusuario?: string;
+        empresaNombre?: string;
+      };
+      const fromToken = [
+        payload.reviewerEmail,
+        payload.reviewerNombre,
+        payload.cusuario,
+        payload.empresaNombre,
+      ]
+        .map((v) => String(v || '').trim())
+        .find(Boolean);
+      if (fromToken) return fromToken.slice(0, 128);
+    }
+  } catch {
+    /* ignore */
+  }
+  return String(PANEL.cusuario || PANEL.empresaNombre || 'mesa-tecnica').slice(0, 128);
+}
+
 function authHeaders(): Record<string, string> {
   const token = readPanelToken();
   const h: Record<string, string> = { Accept: 'application/json' };
@@ -320,6 +364,116 @@ function authHeaders(): Record<string, string> {
   const key = import.meta.env.VITE_NEXUS_API_KEY ?? '';
   if (key) h['x-api-key'] = key;
   return h;
+}
+
+function ReviewerEmailsBox({ onClose }: { onClose: () => void }) {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${NEXUS_URL}/api/config/${EMPRESA_ID}/funerario/emision`);
+        const data = await res.json().catch(() => ({}));
+        const rules = parseFuneralScoringRules(data?.data?.healthScoringRules);
+        setText(rules.reviewerEmails.join('\n'));
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setMsg('');
+    try {
+      const resGet = await fetch(`${NEXUS_URL}/api/config/${EMPRESA_ID}/funerario/emision`);
+      const data = await resGet.json().catch(() => ({}));
+      const rules = parseFuneralScoringRules(data?.data?.healthScoringRules);
+      const emails = text
+        .split(/[\n,;]+/)
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.includes('@'));
+      const put = await fetch(`${NEXUS_URL}/api/config/${EMPRESA_ID}/funerario/emision`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          healthScoringRules: { ...rules, reviewerEmails: emails },
+        }),
+      });
+      if (!put.ok) {
+        setMsg('No se pudo guardar. Reabre el enlace de revisión.');
+        return;
+      }
+      setText(emails.join('\n'));
+      setMsg(emails.length ? `${emails.length} correo(s) guardados.` : 'Lista vacía. No se enviarán alertas.');
+    } catch {
+      setMsg('No se pudo conectar a Nexus.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const modal = (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#091133]/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="alerts-title"
+        className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start gap-3">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white grid place-items-center shrink-0">
+            <Mail size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p id="alerts-title" className="text-sm font-black text-slate-900">Quién recibe las referidas</p>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Un correo por línea. Se guarda en la empresa y se avisa a todos cuando una solicitud entra a mesa.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-10 h-10 rounded-xl border border-slate-200 grid place-items-center text-slate-500 hover:text-slate-800"
+            aria-label="Cerrar"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-5 py-4">
+          <textarea
+            className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 min-h-[7rem] outline-none focus:border-indigo-400 bg-slate-50/50"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="autorizador@lamundialdeseguros.com"
+          />
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving}
+              className="text-xs font-bold px-4 py-2.5 min-h-[40px] rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {saving ? 'Guardando…' : 'Guardar correos'}
+            </button>
+            {msg && (
+              <span className={`text-[11px] font-semibold ${
+                msg.includes('No se') ? 'text-rose-600' : 'text-emerald-700'
+              }`}
+              >
+                {msg}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
 }
 
 function formatAnswer(v: unknown): string {
@@ -352,9 +506,15 @@ function displayScoreTotal(scoreTotal: number, breakdown?: ScoreLine[]): number 
 }
 
 function scoreTone(score: number): string {
-  if (score >= 100) return 'bg-rose-50 text-rose-700 border-rose-200';
-  if (score >= 50) return 'bg-amber-50 text-amber-800 border-amber-200';
+  if (score >= 70) return 'bg-rose-50 text-rose-700 border-rose-200';
+  if (score >= 30) return 'bg-amber-50 text-amber-800 border-amber-200';
   return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+}
+
+function scoreBandHint(score: number): string {
+  if (score >= 70) return 'Alto';
+  if (score >= 30) return 'Medio';
+  return 'Bajo';
 }
 
 function collectOcrBlocks(sub: Submission): { key: string; label: string; ocr: Record<string, unknown> }[] {
@@ -433,17 +593,18 @@ function DocLinkCard({ doc }: { doc: DocLink }) {
 function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine[] }) {
   return (
     <div className="revision-card overflow-hidden min-w-0">
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50/90 border-b border-slate-100">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gradient-to-r from-indigo-50/90 to-white border-b border-slate-100">
         <div className="flex items-center gap-2">
-          <span className="grid place-items-center w-7 h-7 rounded-lg bg-indigo-700 text-white shrink-0">
-            <ClipboardList size={13} />
+          <span className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white shrink-0">
+            <ClipboardList size={14} />
           </span>
-          <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-indigo-900">
-            Scoring salud
-          </h3>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 leading-tight">Puntaje de salud</h3>
+            <p className="text-[10px] text-slate-500">Respuestas que sumaron %</p>
+          </div>
         </div>
-        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(total)}`}>
-          {formatHealthScoreNumber(total)} pts
+        <span className={`text-xs font-black px-2.5 py-1 rounded-lg border ${scoreTone(total)}`}>
+          {formatHealthScoreNumber(total)} pts · {scoreBandHint(total)}
         </span>
       </div>
       <ul className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
@@ -456,7 +617,10 @@ function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine
               className="flex items-start justify-between gap-2 text-xs border-b border-slate-100 pb-1.5"
             >
               <div className="min-w-0">
-                <p className="font-semibold text-slate-800 leading-snug">{line.label}</p>
+                <p className="font-semibold text-slate-800 leading-snug">
+                  {line.insuredLabel ? `${line.insuredLabel} · ` : ''}
+                  {line.label}
+                </p>
                 <p className="text-[10px] text-slate-500">Resp: {formatAnswer(line.answer)}</p>
               </div>
               <span className="font-bold text-indigo-700 shrink-0 tabular-nums">
@@ -585,13 +749,49 @@ function CompactSummaryCard({
           </div>
         )}
 
+        {(Array.isArray(selected.snapshot?.reviewAlerts?.results) &&
+          selected.snapshot.reviewAlerts.results.length > 0) ||
+        selected.snapshot?.reviewAlerts?.warning ? (
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Avisos a mesa</p>
+            {selected.snapshot?.reviewAlerts?.warning && (
+              <p className="text-[11px] text-amber-700 mb-1">{selected.snapshot.reviewAlerts.warning}</p>
+            )}
+            {Array.isArray(selected.snapshot?.reviewAlerts?.results) &&
+              selected.snapshot.reviewAlerts.results.length > 0 && (
+              <ul className="flex flex-wrap gap-1">
+                {selected.snapshot.reviewAlerts.results.map((r) => (
+                  <li
+                    key={r.to}
+                    className={`text-[11px] rounded-md px-2 py-0.5 ${
+                      r.sent ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    {r.to}{r.sent ? '' : ' · no enviado'}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        {selected.snapshot?.reviewDecision?.reviewedBy && (
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Quién autorizó</p>
+            <p className="text-[11px] text-slate-700">
+              {selected.snapshot.reviewDecision.reviewedBy}
+              {selected.snapshot.reviewDecision.action === 'rejected' ? ' · rechazó' : ' · aprobó'}
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-100">
           {[
             { label: 'Solicitud', value: formatDate(selected.createdAt) },
             {
               label: 'Revisión',
               value: selected.reviewedAt
-                ? formatDate(selected.reviewedAt)
+                ? `${formatDate(selected.reviewedAt)}${selected.reviewedBy ? ` · ${selected.reviewedBy}` : ''}`
                 : 'Pendiente',
             },
             {
@@ -694,6 +894,7 @@ export function EmisionRevisionPanel() {
   const [filter, setFilter] = useState<ListFilter>('pending');
   const [showRawSnapshot, setShowRawSnapshot] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   const applyRows = useCallback(
     (raw: Submission[]) => {
@@ -751,6 +952,15 @@ export function EmisionRevisionPanel() {
     return () => window.clearInterval(id);
   }, [loadList]);
 
+  useEffect(() => {
+    document.documentElement.classList.add('revision-page');
+    document.body.classList.add('revision-page');
+    return () => {
+      document.documentElement.classList.remove('revision-page');
+      document.body.classList.remove('revision-page');
+    };
+  }, []);
+
   async function loadDetail(id: string) {
     const res = await fetch(
       `${NEXUS_URL}/api/funeral-submissions/${id}?empresaId=${EMPRESA_ID}`,
@@ -766,7 +976,9 @@ export function EmisionRevisionPanel() {
       const res = await fetch(`${NEXUS_URL}/api/funeral-submissions/${id}/approve`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewedBy: 'tecnico-panel' }),
+        body: JSON.stringify({
+          reviewedBy: reviewerLabel(),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -786,7 +998,10 @@ export function EmisionRevisionPanel() {
       const res = await fetch(`${NEXUS_URL}/api/funeral-submissions/${id}/reject`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewedBy: 'tecnico-panel', reason: rejectReason }),
+        body: JSON.stringify({
+          reviewedBy: reviewerLabel(),
+          reason: rejectReason,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -838,101 +1053,112 @@ export function EmisionRevisionPanel() {
       : null;
 
   return (
-    <div className="revision-shell min-h-screen overflow-x-hidden">
-      <header className={`sticky top-0 z-30 bg-white shadow-sm ${mobileDetail && selected ? 'hidden lg:block' : ''}`}>
+    <div className="revision-shell">
+      <header className={`revision-topbar ${mobileDetail && selected ? 'hidden md:block' : ''}`}>
         <BrandBar />
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10">
-          <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4">
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <span className="sm:hidden"><MundialLogo compact /></span>
-              <span className="hidden sm:inline-flex"><MundialLogo /></span>
-              <div className="hidden sm:block w-px h-11 bg-slate-200 shrink-0" aria-hidden />
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold tracking-[0.18em] text-fuchsia-500 uppercase inline-flex items-center gap-1.5">
-                  <ShieldCheck size={11} />
-                  Mesa técnica · Funerario
-                </p>
-                <h1 className="font-display text-lg sm:text-2xl text-indigo-900 leading-tight">
-                  Autorización de pólizas
-                </h1>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Empresa #{EMPRESA_ID} · {canalDisplayLabel(PANEL.canal)}
-                </p>
-              </div>
+        <div className="revision-topbar__inner">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="md:hidden"><MundialLogo compact /></span>
+            <span className="hidden md:inline-flex"><MundialLogo /></span>
+            <div className="hidden md:block w-px h-10 bg-slate-200 shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold tracking-[0.16em] text-[#E84F51] uppercase inline-flex items-center gap-1.5">
+                <ShieldCheck size={11} />
+                Mesa técnica · Funerario
+              </p>
+              <h1 className="font-display text-lg md:text-xl text-[#0F1A5A] leading-tight">
+                Autorización de pólizas
+              </h1>
+              <p className="text-xs text-slate-500 truncate">
+                Empresa #{EMPRESA_ID} · {canalDisplayLabel(PANEL.canal)}
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAlertsOpen((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold min-h-[40px] ${
+                alertsOpen
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200'
+              }`}
+            >
+              <Mail size={14} />
+              Alertas
+            </button>
             {filter === 'pending' && !loading && (
-              <div className="flex items-center gap-2 rounded-xl sm:rounded-2xl bg-indigo-700 text-white px-3 py-2 sm:px-5 sm:py-3 shadow-lg shadow-indigo-700/20">
-                <div className="text-right">
-                  <p className="text-xl sm:text-3xl font-black tabular-nums leading-none">{pendingCount}</p>
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-indigo-200 mt-0.5 sm:mt-1 font-bold">
-                    Por revisar
-                  </p>
-                </div>
+              <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5">
+                <span className="w-7 h-7 rounded-lg bg-amber-500 text-white grid place-items-center font-black text-sm tabular-nums">
+                  {pendingCount}
+                </span>
+                <span className="hidden sm:block text-left">
+                  <span className="block text-xs font-black text-amber-900 leading-tight">Por revisar</span>
+                  <span className="block text-[10px] text-amber-700 font-medium">Bandeja</span>
+                </span>
               </div>
             )}
           </div>
         </div>
       </header>
 
-      <div className={`max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-4 sm:py-5 lg:pb-8 ${
-        mobileDetail && selected?.estado === 'pending'
-          ? 'pb-[calc(15rem+env(safe-area-inset-bottom))]'
-          : 'pb-8'
+      <div className={`revision-body ${
+        mobileDetail && selected?.estado === 'pending' ? 'revision-body--mobile-decision' : ''
       }`}>
-        {error && (
-          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
-            <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
+        <aside className={`revision-inbox ${mobileDetail && selected ? 'hidden md:flex' : ''}`}>
+          <div className="revision-inbox__head">
+            <span className="w-8 h-8 rounded-lg bg-white/15 grid place-items-center">
+              <Inbox size={15} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-black leading-tight">Bandeja</p>
+              <p className="text-[10px] text-white/80 font-medium truncate">Elige un caso para revisar</p>
+            </div>
+            {!loading && (
+              <span className="ml-auto text-xs font-black bg-white/20 rounded-full px-2.5 py-0.5 tabular-nums">
+                {list.length}
+              </span>
+            )}
           </div>
-        )}
-
-        <div className={`flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 ${mobileDetail && selected ? 'hidden lg:flex' : ''}`}>
-          <div className="w-full sm:w-auto overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="inline-flex p-1 rounded-xl bg-white border border-slate-200 shadow-sm min-w-min">
+          <div className="revision-inbox__tools">
+            <div className="inline-flex p-0.5 rounded-xl bg-white border border-slate-200">
               {filterTabs.map(({ key, label }) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setFilter(key)}
-                  className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all min-h-[44px] touch-manipulation whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 min-h-[36px] ${
                     filter === key
-                      ? 'bg-indigo-700 text-white shadow-md'
-                      : 'text-slate-600 hover:text-indigo-900 hover:bg-slate-50'
+                      ? 'bg-[#0F1A5A] text-white'
+                      : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  {key === 'history' && <History size={12} />}
+                  {key === 'pending' && <Inbox size={11} />}
+                  {key === 'history' && <History size={11} />}
                   {label}
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={() => void loadList()}
+              className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-[#0F1A5A] min-h-[36px] px-2"
+            >
+              <RefreshCw size={12} />
+              Actualizar
+            </button>
           </div>
-          <span className="text-xs text-slate-500 font-semibold tabular-nums">
-            {loading ? '…' : `${list.length} registro${list.length === 1 ? '' : 's'}`}
-          </span>
-          <button
-            type="button"
-            onClick={() => void loadList()}
-            className="sm:ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 min-h-[44px] px-3 rounded-lg border border-indigo-100 bg-white hover:bg-indigo-50 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-          >
-            <RefreshCw size={13} />
-            Actualizar
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
-          <aside className={`lg:col-span-3 xl:col-span-3 revision-card overflow-hidden flex flex-col ${
-            mobileDetail && selected ? 'hidden lg:flex' : ''
-          }`}
-          >
-            <div className="px-4 py-3.5 bg-indigo-700 text-white flex items-center gap-2 shrink-0">
-              <Inbox size={16} />
-              <span className="text-sm font-bold">Bandeja de entrada</span>
-              {!loading && (
-                <span className="ml-auto text-xs font-bold bg-white/15 rounded-full px-2.5 py-0.5 tabular-nums">
-                  {list.length}
-                </span>
-              )}
+          {error && (
+            <div className="mx-3 mt-2 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 flex items-start gap-2">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {error}
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/60 min-h-[200px]">
+          )}
+          {alertsOpen && (
+            <div className="mx-3 mt-2 shrink-0 max-h-40 overflow-y-auto revision-detail-scroll">
+              <ReviewerEmailsBox onClose={() => setAlertsOpen(false)} />
+            </div>
+          )}
+          <div className="revision-inbox-list space-y-1.5">
               {loading ? (
                 <div className="py-16 flex justify-center">
                   <Loader2 className="animate-spin text-indigo-600" size={28} />
@@ -940,17 +1166,19 @@ export function EmisionRevisionPanel() {
               ) : list.length === 0 ? (
                 <p className="py-12 px-4 text-sm text-slate-500 text-center">{emptyMessage}</p>
               ) : (
-                list.map((s) => (
+                list.map((s) => {
+                  const pts = displayScoreTotal(s.scoreTotal, s.scoreBreakdown);
+                  return (
                   <button
                     key={s.id}
                     type="button"
                     onClick={() => openSubmission(s)}
-                    className={`revision-inbox-item w-full text-left rounded-xl p-3 min-h-[72px] touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                    className={`revision-inbox-item w-full text-left rounded-xl p-2.5 min-h-[56px] touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                       selected?.id === s.id ? 'revision-inbox-item--active' : ''
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="grid place-items-center w-11 h-11 rounded-full bg-indigo-100 text-indigo-800 text-xs font-black shrink-0 ring-2 ring-indigo-50">
+                      <span className="grid place-items-center w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-100 to-violet-100 text-indigo-800 text-xs font-black shrink-0">
                         {initials(s.tomadorNombre || s.tomadorRif)}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -967,34 +1195,40 @@ export function EmisionRevisionPanel() {
                         </p>
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <p className="text-[10px] text-slate-400">{formatDate(s.reviewedAt || s.createdAt)}</p>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(displayScoreTotal(s.scoreTotal, s.scoreBreakdown))}`}>
-                            {formatHealthScoreNumber(displayScoreTotal(s.scoreTotal, s.scoreBreakdown))} pts
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${scoreTone(pts)}`}>
+                            {formatHealthScoreNumber(pts)} pts · {scoreBandHint(pts)}
                           </span>
                         </div>
                       </span>
                     </div>
                   </button>
-                ))
+                  );
+                })
               )}
             </div>
           </aside>
 
-          <main className={`lg:col-span-9 xl:col-span-9 min-h-[320px] min-w-0 ${
-            !(mobileDetail && selected) ? 'hidden lg:block' : ''
+          <main className={`revision-main revision-detail-scroll ${
+            !(mobileDetail && selected) ? 'hidden md:flex' : ''
           }`}
           >
             {!selected ? (
-              <div className="revision-card p-10 sm:p-14 text-center h-full flex flex-col items-center justify-center min-h-[360px]">
-                <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-indigo-700">
+              <div className="revision-empty">
+                <span className="revision-empty-icon mx-auto mb-5 grid place-items-center w-20 h-20 rounded-2xl text-[#0F1A5A]">
                   <ClipboardList size={36} strokeWidth={1.5} />
                 </span>
-                <h2 className="font-display text-xl text-indigo-900 mb-2">Selecciona una solicitud</h2>
-                <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
-                  Revisa identidad, scoring y documentos antes de autorizar el enlace de pago al cliente.
+                <h2 className="font-display text-xl font-black text-slate-900 mb-2">Elige un caso de la bandeja</h2>
+                <p className="text-sm text-slate-500 max-w-md leading-relaxed">
+                  Revisa puntaje, identidad y documentos. Luego autorizas el pago o rechazas la solicitud.
                 </p>
+                <ol className="mt-5 flex flex-wrap justify-center gap-2 text-[11px] font-bold text-slate-500">
+                  <li className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">1. Selecciona</li>
+                  <li className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">2. Revisa scoring</li>
+                  <li className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">3. Autoriza o rechaza</li>
+                </ol>
                 {pendingCount > 0 && (
-                  <p className="mt-4 text-xs font-bold text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 rounded-full px-3 py-1.5">
-                    {pendingCount} pendiente{pendingCount === 1 ? '' : 's'} en bandeja
+                  <p className="mt-5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5">
+                    {pendingCount} pendiente{pendingCount === 1 ? '' : 's'} por revisar
                   </p>
                 )}
               </div>
@@ -1003,7 +1237,7 @@ export function EmisionRevisionPanel() {
                 <button
                   type="button"
                   onClick={() => setMobileDetail(false)}
-                  className="lg:hidden inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 min-h-[44px] px-1 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 rounded-lg"
+                  className="md:hidden inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 min-h-[44px] px-1"
                 >
                   <ArrowLeft size={16} />
                   Volver al listado
@@ -1174,7 +1408,7 @@ export function EmisionRevisionPanel() {
 
                   <div className="lg:col-span-4 xl:col-span-3 min-w-0">
                     {selected.estado === 'pending' && (
-                      <div className="hidden lg:block lg:sticky lg:top-[7.5rem]">
+                      <div className="hidden md:block md:sticky md:top-4">
                         <DecisionPanel
                           acting={acting}
                           rejectReason={rejectReason}
@@ -1188,7 +1422,7 @@ export function EmisionRevisionPanel() {
                 </div>
 
                 {selected.estado === 'pending' && (
-                  <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_rgba(9,17,51,0.1)]">
+                  <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_rgba(9,17,51,0.1)]">
                     <DecisionPanel
                       compact
                       acting={acting}
@@ -1202,7 +1436,6 @@ export function EmisionRevisionPanel() {
               </div>
             )}
           </main>
-        </div>
       </div>
     </div>
   );
