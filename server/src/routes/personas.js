@@ -1,7 +1,7 @@
 /**
  * Rutas del producto Funerario (personas) — ramo 9.
  *
- *   GET  /api/personas/planes?cramo=9   → planes vigentes de personas
+ *   GET  /api/personas/planes?cramo=9   → planes del canal SSO (no lista fija)
  *   POST /api/personas/cotizacion       → cotización (getCotizacionPer)
  *   POST /api/personas/validacion       → póliza vigente (paso 4, antes del técnico)
  *   POST /api/personas/emision          → cotiza + valida + emite (pasos 4–6)
@@ -18,7 +18,9 @@ const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterP
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
+const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const { resolveEntityContext } = require('../services/canalClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -63,6 +65,26 @@ const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 
+/** Fusiona metadata JWT con query (mismo criterio que RCV /catalogo/planes). */
+function funeralCanalMeta(req) {
+  const meta = { ...(req.nexusMetadata || {}) };
+  const q = req.query || {};
+  const keys = [
+    'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
+    'cusuario', 'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
+  ];
+  for (const key of keys) {
+    if (q[key] != null && String(q[key]).trim() !== '') {
+      meta[key] = String(q[key]).trim();
+    }
+  }
+  if (q.cramo != null && String(q.cramo).trim() !== '') {
+    const cramo = parseInt(String(q.cramo), 10);
+    if (Number.isFinite(cramo)) meta.cramo = cramo;
+  }
+  return meta;
+}
+
 /**
  * Normaliza un asegurado del front al formato de la API:
  *   { cparen, xrif_asegurado, nedad_asegurado }
@@ -76,14 +98,60 @@ function mapAsegurado(a) {
 
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
-  const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
+  const meta = funeralCanalMeta(req);
+  const rawEntity = resolveEntityContext(meta);
+  const sisOk = rawEntity
+    && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
+  const entity = sisOk ? rawEntity : null;
+  const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
+  const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
+  const cproducto = meta.cproducto != null && String(meta.cproducto).trim() !== ''
+    ? String(meta.cproducto).trim()
+    : (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
+  const cramo = cproducto === '57'
+    ? 45
+    : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO);
   try {
-    const { planes } = await personasClient.getPlanesPer(cramo);
-    res.json({ success: true, planes });
+    const { planes: raw } = await personasClient.getPlanesPer({
+      cramo,
+      citem: entity?.citem || meta.citem,
+      centidad: entity?.centidad || meta.centidad,
+      cproducto,
+      cproductor,
+      cusuario: meta.cusuario,
+      cgestor_in: meta.cgestor_in,
+      cgestor: meta.cgestor,
+    });
+    const planes = Array.isArray(raw) ? raw : [];
+    console.log(
+      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length}`,
+    );
+
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    return res.json({
+      success: true,
+      planes,
+      canal: {
+        centidad: entity?.centidad || meta.centidad || null,
+        citem: entity?.citem || meta.citem || null,
+        cproductor: cproductor,
+        cusuario: meta.cusuario || null,
+        cramo,
+        cproducto,
+        ccanalalt: meta.ccanalalt_in || meta.ccanalalt || null,
+        cscanalalt: meta.cscanalalt_in || meta.cscanalalt || null,
+        cgestor_in: meta.cgestor_in || null,
+        cgestor: meta.cgestor || null,
+      },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[personas/planes]', msg);
-    res.status(502).json({
+    return res.status(err.httpStatus || 502).json({
       success: false,
       code: err.code || 'LAMUNDIAL_PERSON_ERROR',
       message: `No se pudieron obtener los planes de personas: ${msg}`,
@@ -213,7 +281,7 @@ router.post('/emision', async (req, res) => {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
   }
 
-  const ifrecuencia = frecuencia || funeral.frecuencia || 'M';
+  const ifrecuencia = frecuencia || funeral.frecuencia || 'A';
   const asegurados = personasMapper.buildAseguradosForQuote(funeral);
 
   if (asegurados.length === 0) {
@@ -291,6 +359,18 @@ router.post('/emision', async (req, res) => {
       },
     };
     const funeralRefs = resolveFuneralRefs(state);
+    try {
+      await registerIssuedPolicy({
+        empresaId: req.empresa?.id,
+        producto: 'funerario',
+        emission: emissionRecord,
+        state,
+        planNombre: cplan,
+        frecuencia: ifrecuencia,
+      });
+    } catch (feedErr) {
+      console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);
+    }
     try {
       const saved = await recordFuneralEmissionFlexible(funeralRefs, emissionRecord);
       if (!saved) {

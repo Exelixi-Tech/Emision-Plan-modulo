@@ -9,6 +9,11 @@ import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } fro
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan } from '../../lib/funeralPlanParentescos';
+import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
+
+/** SysIP persons-alt: si maplanes_frec no tiene el plan, al menos ANUAL. */
+const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL' }];
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -25,6 +30,9 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
       'Asistencia y traslado',
     ],
     sumaAsegurada: 0,
+    parentescos: p.parentescos ?? [],
+    nmax_dep: p.nmax_dep ?? null,
+    maxAsegurados: p.maxAsegurados,
   };
 }
 
@@ -55,7 +63,11 @@ export function FuneralPlansStep() {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
         setApiPlans(mapped);
-        setSelectedPlan(null);
+        const current = useWizardStore.getState().selectedPlan;
+        const keep = current?.cplan
+          ? mapped.find((p) => p.cplan === current.cplan) ?? null
+          : null;
+        setSelectedPlan(keep);
       })
       .catch(() => {
         if (cancelled) return;
@@ -82,16 +94,20 @@ export function FuneralPlansStep() {
     setFrecLoading(true);
     getFrecuenciasByPlan(planCode, product.cramo)
       .then((items) => {
-        if (!cancelled) {
-          setApiFrecuencias(items);
-          // Si la frecuencia actual no es válida, seleccionar la primera por defecto
-          const currentValid = items.find((i) => String(i.code) === funeral.frecuencia);
-          if (!currentValid && items.length > 0) {
-            setFuneral({ frecuencia: String(items[0].code) });
-          }
+        if (cancelled) return;
+        const list = items.length ? items : FRECUENCIAS_PERSONAS_FALLBACK;
+        setApiFrecuencias(list);
+        const currentValid = list.find((i) => String(i.code) === funeral.frecuencia);
+        if (!currentValid) {
+          setFuneral({ frecuencia: String(list[0].code) });
         }
       })
-      .catch((err) => console.error('Error cargando frecuencias', err))
+      .catch((err) => {
+        console.error('Error cargando frecuencias', err);
+        if (cancelled) return;
+        setApiFrecuencias(FRECUENCIAS_PERSONAS_FALLBACK);
+        if (funeral.frecuencia !== 'A') setFuneral({ frecuencia: 'A' });
+      })
       .finally(() => {
         if (!cancelled) setFrecLoading(false);
       });
@@ -100,13 +116,28 @@ export function FuneralPlansStep() {
   }, [selectedPlan?.cplan, product.cramo, setFuneral, funeral.frecuencia]);
 
   // ── Cotización contra getCotizacionPer ─────────────────────────────────────
-  const aseguradosListos = funeral.asegurados.filter(
-    (a) => (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim(),
-  );
+  const planParentescos = selectedPlan?.parentescos ?? [];
+  const planMaxAsegurados = maxAseguradosDelPlan({
+    maxAsegurados: selectedPlan?.maxAsegurados,
+    nmax_dep: selectedPlan?.nmax_dep,
+    parentescos: planParentescos,
+  });
+  const aseguradosListos = funeral.asegurados.filter((a, idx) => {
+    const idOk = (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim();
+    if (!idOk) return false;
+    if (idx > 0 && !(a.parentesco || '').toString().trim()) return false;
+    return !ageErrorForParentesco(
+      a.fechaNac,
+      idx === 0 ? '1' : a.parentesco,
+      planParentescos,
+    );
+  });
   const planCode = selectedPlan?.cplan ?? '';
+  // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
+  // La frecuencia solo define recibos al emitir.
   const quoteSig = planCode
-    ? `funeral|${planCode}|${funeral.frecuencia}|${aseguradosListos
-        .map((a) => `${a.parentesco}:${a.identificacion}:${a.fechaNac}`)
+    ? `funeral|${planCode}|A|${aseguradosListos
+        .map((a, idx) => `${idx === 0 ? '1' : a.parentesco}:${a.identificacion}:${a.fechaNac}`)
         .join(',')}`
     : '';
 
@@ -124,9 +155,9 @@ export function FuneralPlansStep() {
     personasApi.cotizar({
       cplan: planCode,
       cramo: product.cramo,
-      ifrecuencia: funeral.frecuencia,
-      asegurados: aseguradosListos.map((a) => ({
-        parentesco: a.parentesco,
+      ifrecuencia: 'A',
+      asegurados: aseguradosListos.map((a, idx) => ({
+        parentesco: idx === 0 ? '1' : a.parentesco,
         identificacion: a.identificacion,
         fechaNac: a.fechaNac,
       })),
@@ -169,6 +200,7 @@ export function FuneralPlansStep() {
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
           <Users size={11} />
           {aseguradosListos.length} asegurado{aseguradosListos.length === 1 ? '' : 's'}
+          {planMaxAsegurados != null ? ` / ${planMaxAsegurados}` : ''}
         </span>
       </div>
 
@@ -194,11 +226,42 @@ export function FuneralPlansStep() {
                 const found = apiPlans.find((p) => p.cplan === e.target.value);
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
-                // Nuevo plan → exigir cuestionario de salud de nuevo
                 if (found) {
+                  const extras = useWizardStore.getState().funeral.asegurados;
+                  const max = maxAseguradosDelPlan({
+                    maxAsegurados: found.maxAsegurados,
+                    nmax_dep: found.nmax_dep,
+                    parentescos: found.parentescos,
+                  });
+                  const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
+                  let nextAsegurados = titularOnly
+                    ? extras.slice(0, 1)
+                    : extras.map((a, idx) => {
+                      if (idx === 0) return a;
+                      const allowed = (found.parentescos ?? []).some(
+                        (p) => String(p.cparen) === String(a.parentesco),
+                      );
+                      return allowed ? a : { ...a, parentesco: '' };
+                    });
+                  if (max != null && nextAsegurados.length > max) {
+                    nextAsegurados = nextAsegurados.slice(0, max);
+                    toast.warning(
+                      'Límite del plan',
+                      `Este plan admite hasta ${max} asegurado${max === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
+                      6000,
+                    );
+                  } else if (titularOnly && extras.length > 1) {
+                    toast.warning(
+                      'Plan solo titular',
+                      'Se quitaron los asegurados adicionales porque este plan no los admite.',
+                      6000,
+                    );
+                  }
                   setFuneral({
+                    asegurados: nextAsegurados,
                     healthQuestionnaireDone: false,
                     healthAnswers: {},
+                    healthAnswersByInsured: {},
                     diagnosticoEnfermedad: false,
                     descripcionEnfermedad: '',
                     aceptaTerminos: false,
@@ -217,9 +280,19 @@ export function FuneralPlansStep() {
               ) : (
                 <>
                   <option value="" disabled>— Elige un plan —</option>
-                  {apiPlans.map((p) => (
-                    <option key={p.cplan} value={p.cplan ?? ''}>{p.name}</option>
-                  ))}
+                  {apiPlans.map((p) => {
+                    const max = maxAseguradosDelPlan({
+                      maxAsegurados: p.maxAsegurados,
+                      nmax_dep: p.nmax_dep,
+                      parentescos: p.parentescos,
+                    });
+                    const cupo = max == null
+                      ? p.name
+                      : `${p.name} · hasta ${max} asegurado${max === 1 ? '' : 's'}`;
+                    return (
+                      <option key={p.cplan} value={p.cplan ?? ''}>{cupo}</option>
+                    );
+                  })}
                 </>
               )}
             </select>
@@ -263,6 +336,12 @@ export function FuneralPlansStep() {
           </div>
         </div>
       </div>
+
+      <FuneralInsuredsEditor
+        parentescos={planParentescos}
+        nmax_dep={selectedPlan?.nmax_dep}
+        maxAsegurados={selectedPlan?.maxAsegurados}
+      />
 
       {/* Detalle del plan + prima */}
       {selectedPlan ? (

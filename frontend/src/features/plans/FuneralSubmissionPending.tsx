@@ -3,10 +3,13 @@ import { CheckCircle2, ShieldCheck, Mail } from 'lucide-react';
 type Props = {
   tomadorEmail?: string;
   planName?: string;
+  verdict?: string;
+  message?: string;
 };
 
-export function FuneralSubmissionPending({ tomadorEmail, planName }: Props) {
+export function FuneralSubmissionPending({ tomadorEmail, planName, verdict, message }: Props) {
   const planLabel = planName?.trim() || 'tu plan funerario';
+  const referred = verdict !== 'emit';
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#091133]/50 backdrop-blur-sm">
@@ -19,9 +22,11 @@ export function FuneralSubmissionPending({ tomadorEmail, planName }: Props) {
             ¡Solicitud registrada!
           </h2>
           <p className="text-sm text-slate-600 mt-3 leading-relaxed max-w-md mx-auto">
-            Tu cuestionario de salud se guardó correctamente para{' '}
-            <strong className="text-slate-800">{planLabel}</strong>.
-            Te enviaremos por correo el enlace para completar el pago y activar tu póliza.
+            {message || (
+              referred
+                ? <>Un técnico revisará tu caso de <strong className="text-slate-800">{planLabel}</strong> antes del pago.</>
+                : <>Tu cuestionario de <strong className="text-slate-800">{planLabel}</strong> permite continuar. Te enviaremos el enlace de pago.</>
+            )}
           </p>
         </div>
 
