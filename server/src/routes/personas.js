@@ -18,6 +18,7 @@ const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterP
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
+const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 
@@ -358,6 +359,18 @@ router.post('/emision', async (req, res) => {
       },
     };
     const funeralRefs = resolveFuneralRefs(state);
+    try {
+      await registerIssuedPolicy({
+        empresaId: req.empresa?.id,
+        producto: 'funerario',
+        emission: emissionRecord,
+        state,
+        planNombre: cplan,
+        frecuencia: ifrecuencia,
+      });
+    } catch (feedErr) {
+      console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);
+    }
     try {
       const saved = await recordFuneralEmissionFlexible(funeralRefs, emissionRecord);
       if (!saved) {
