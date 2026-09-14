@@ -103,6 +103,14 @@ router.get('/planes', async (req, res) => {
   const sisOk = rawEntity
     && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
   const entity = sisOk ? rawEntity : null;
+  if (!entity) {
+    return res.status(400).json({
+      success: false,
+      code: 'FUNERAL_CANAL_REQUIRED',
+      message:
+        'Falta el canal SSO (centidad y citem). Abra funerario desde Nexus o La Mundial; no se puede listar planes sin canal.',
+    });
+  }
   const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
   const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
   const cproducto = meta.cproducto != null && String(meta.cproducto).trim() !== ''
