@@ -288,7 +288,9 @@ export function FuneralPlansStep() {
                     });
                     const cupo = max == null
                       ? p.name
-                      : `${p.name} · hasta ${max} asegurado${max === 1 ? '' : 's'}`;
+                      : p.nmax_dep != null
+                        ? `${p.name} · hasta ${max} (dep. ${p.nmax_dep})`
+                        : `${p.name} · hasta ${max} asegurado${max === 1 ? '' : 's'}`;
                     return (
                       <option key={p.cplan} value={p.cplan ?? ''}>{cupo}</option>
                     );
@@ -354,6 +356,20 @@ export function FuneralPlansStep() {
                   {selectedPlan.tag}
                 </span>
                 <h3 className="font-display font-black text-slate-900 text-xl sm:text-2xl leading-tight break-words">{selectedPlan.name}</h3>
+                {(planMaxAsegurados != null || selectedPlan.nmax_dep != null) && (
+                  <p className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-[0.7rem] font-bold text-indigo-800">
+                    <Users size={12} className="text-indigo-500 shrink-0" />
+                    {planMaxAsegurados != null
+                      ? `Hasta ${planMaxAsegurados} asegurado${planMaxAsegurados === 1 ? '' : 's'}`
+                      : null}
+                    {selectedPlan.nmax_dep != null && (
+                      <span className="font-semibold text-indigo-600/80">
+                        {planMaxAsegurados != null ? ' · ' : ''}
+                        {selectedPlan.nmax_dep} dependiente{Number(selectedPlan.nmax_dep) === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </p>
+                )}
                 <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-md">{selectedPlan.desc}</p>
                 {quoteState === 'error' && (
                   <p className="mt-3 text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-2 rounded-md border border-rose-200 leading-relaxed normal-case">
