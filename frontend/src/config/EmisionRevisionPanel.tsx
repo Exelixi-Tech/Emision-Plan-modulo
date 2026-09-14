@@ -248,18 +248,22 @@ function readPanelToken(): string {
   try {
     const fromUrl = new URL(window.location.href).searchParams.get('token')?.trim();
     if (fromUrl) {
+      const clean = fromUrl.replace(/^Bearer\s+/i, '').replace(/\s+/g, '');
       try {
-        sessionStorage.setItem(PANEL_TOKEN_KEY, fromUrl);
+        sessionStorage.setItem(PANEL_TOKEN_KEY, clean);
       } catch {
         /* ignore */
       }
-      return fromUrl;
+      return clean;
     }
   } catch {
     /* ignore */
   }
   try {
-    return sessionStorage.getItem(PANEL_TOKEN_KEY)?.trim() || '';
+    return (sessionStorage.getItem(PANEL_TOKEN_KEY) || '')
+      .replace(/^Bearer\s+/i, '')
+      .replace(/\s+/g, '')
+      .trim();
   } catch {
     return '';
   }
