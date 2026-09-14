@@ -13,6 +13,15 @@ function fieldEq(a: unknown, b: unknown): boolean {
   return String(a ?? '').trim() === String(b ?? '').trim();
 }
 
+function extraMetrics(p: unknown): { peso?: string; estatura?: string } {
+  if (!p || typeof p !== 'object') return {};
+  const o = p as Record<string, unknown>;
+  return {
+    peso: metricStr(o.peso),
+    estatura: metricStr(o.estatura),
+  };
+}
+
 /**
  * Copia al titular (primer asegurado) los datos del formulario:
  * tomador si es la misma persona, o el asegurado si el pagador es otro.
@@ -25,9 +34,11 @@ export function syncTitularFromTomador(): void {
   const titular = lista[0];
   if (!titular || !src) return;
 
-  const peso = metricStr(asegurado.peso) || metricStr(src.peso) || metricStr(titular.peso);
-  const estatura =
-    metricStr(asegurado.estatura) || metricStr(src.estatura) || metricStr(titular.estatura);
+  const fromAseg = extraMetrics(asegurado);
+  const fromSrc = extraMetrics(src);
+  const fromTitular = extraMetrics(titular);
+  const peso = fromAseg.peso || fromSrc.peso || fromTitular.peso;
+  const estatura = fromAseg.estatura || fromSrc.estatura || fromTitular.estatura;
 
   const next: FuneralPerson = {
     ...titular,
