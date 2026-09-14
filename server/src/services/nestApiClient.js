@@ -287,6 +287,8 @@ async function createEmissionAutoViaNestApi(payload) {
       message: result.message,
       fanopol: result.fanopol,
       fmespol: result.fmespol,
+      cpoliza: result.cpoliza != null ? Number(result.cpoliza) : undefined,
+      casegurado: result.casegurado != null ? Number(result.casegurado) : undefined,
       _raw: body,
     };
   }
