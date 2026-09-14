@@ -22,6 +22,8 @@ function toClientQuestion(q) {
     required: q.required,
     showIf: q.showIf,
     options: q.options,
+    blockIfFalse: q.blockIfFalse === true,
+    blockReason: q.blockReason,
   };
 }
 

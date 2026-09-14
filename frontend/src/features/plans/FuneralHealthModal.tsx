@@ -57,6 +57,12 @@ function withBooleanDefaults(
   return next;
 }
 
+function requiresYes(q: HealthQuestion): boolean {
+  if (q.type !== 'boolean') return false;
+  if (q.blockIfFalse === true) return true;
+  return q.id === 'aceptaTerminos';
+}
+
 function validateAnswers(
   questions: HealthQuestion[],
   answers: Record<string, unknown>,
@@ -64,9 +70,14 @@ function validateAnswers(
   const errors: Record<string, string> = {};
   for (const q of questions) {
     if (!isVisible(q, answers)) continue;
-    if (!q.required) continue;
     const val = answers[q.id];
-    if (q.type === 'boolean') continue;
+    if (q.type === 'boolean') {
+      if (requiresYes(q) && val !== true) {
+        errors[q.id] = q.blockReason || 'Debes responder Sí para continuar.';
+      }
+      continue;
+    }
+    if (!q.required) continue;
     if (q.type === 'text') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {
@@ -131,6 +142,10 @@ export function FuneralHealthModal({
   }, [open, plan.cplan, initialByInsured, tabs.map((t) => t.key).join('|')]);
 
   const answers = byInsured[activeKey] ?? {};
+  const liveErrors = useMemo(
+    () => validateAnswers(questions, withBooleanDefaults(questions, answers)),
+    [questions, answers],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -316,7 +331,7 @@ export function FuneralHealthModal({
           ) : (
             visibleQuestions.map((q, idx) => {
               const nested = Boolean(q.showIf?.field);
-              const err = errors[q.id];
+              const err = errors[q.id] || liveErrors[q.id];
               const label = (q.label || '').trim() || 'Pregunta';
               return (
               <div

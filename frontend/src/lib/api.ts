@@ -791,6 +791,9 @@ export interface HealthQuestion {
   plans: string[];
   showIf?: { field: string; equals: boolean | string };
   options?: { value: string; label: string }[];
+  /** Si true, la respuesta debe ser Sí (p. ej. términos). Destildar deja el cuestionario incompleto. */
+  blockIfFalse?: boolean;
+  blockReason?: string;
 }
 
 export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
