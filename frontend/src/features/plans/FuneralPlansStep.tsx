@@ -346,7 +346,9 @@ export function FuneralPlansStep() {
                     });
                     const cupo = nmax == null
                       ? p.name
-                      : `${p.name} · hasta ${nmax}`;
+                      : nmax === 0
+                        ? `${p.name} · sin dependientes`
+                        : `${p.name} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
                     return (
                       <option key={p.cplan} value={p.cplan ?? ''}>{cupo}</option>
                     );
