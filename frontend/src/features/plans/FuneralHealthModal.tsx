@@ -46,7 +46,7 @@ function withBooleanDefaults(
   while (changed) {
     changed = false;
     for (const q of questions) {
-      if (q.enabled === false || q.type !== 'boolean') continue;
+      if (q.type !== 'boolean') continue;
       if (!isVisible(q, next)) continue;
       if (typeof next[q.id] !== 'boolean') {
         next[q.id] = false;
