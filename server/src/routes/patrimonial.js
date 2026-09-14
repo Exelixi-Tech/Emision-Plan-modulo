@@ -331,3 +331,5 @@ router.post('/emision', handleEmit);
 router.post('/generalRisks', handleEmit);
 
 module.exports = router;
+module.exports.handleEmit = handleEmit;
+module.exports.handleQuote = handleQuote;

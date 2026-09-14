@@ -24,7 +24,7 @@ import {
   getNexusTokenFromUrl,
 } from './nexus-token-client';
 import { canNavigateToStep, getDefaultRequiredDocs } from './wizard-navigation';
-import { getProductConfig } from './product';
+import { getProductConfig, isPatrimonial } from './product';
 import { BUILDER_PRODUCT_STORAGE_KEY, isExelixiCatalogFlow, ensureExelixiFlowQueryParam } from './exelixi-catalog';
 import { ensureCotizadorFlowQueryParam, isCotizadorFlow } from './cotizador-flow';
 import { applyWizardStepFromUrl, defaultStepForModule, stepToModuleOrder } from './wizard-step';
@@ -228,12 +228,17 @@ function makeBridge(): BridgeAPI {
     }
     // Limpieza de datos fantasma — no aplicar en flujo catálogo Exélixi
     const isCatalogFlow = isExelixiCatalogFlow();
-    const prod = sessionStorage.getItem('exelixi_product') || 'rcv';
+    const prod = sessionStorage.getItem('exelixi_product') || (isPatrimonial() ? 'patrimonial' : 'rcv');
     if (!isCatalogFlow) {
       if (prod === 'funerario') {
         delete out.vehicle;
+        delete out.patrimoniales;
+      } else if (prod === 'patrimonial') {
+        delete out.vehicle;
+        delete out.funeral;
       } else if (prod === 'rcv') {
         delete out.funeral;
+        delete out.patrimoniales;
       }
     }
     out.product = prod;
