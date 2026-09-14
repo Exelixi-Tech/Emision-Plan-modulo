@@ -9,7 +9,7 @@ import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } fro
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
-import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan } from '../../lib/funeralPlanParentescos';
+import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { syncTitularFromTomador } from '../../lib/funeral-sync';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
@@ -167,9 +167,9 @@ export function FuneralPlansStep() {
 
   // ── Cotización contra getCotizacionPer ─────────────────────────────────────
   const planParentescos = selectedPlan?.parentescos ?? [];
-  const planMaxAsegurados = maxAseguradosDelPlan({
-    maxAsegurados: selectedPlan?.maxAsegurados,
+  const planNmaxDep = nmaxDepDelPlan({
     nmax_dep: selectedPlan?.nmax_dep,
+    maxAsegurados: selectedPlan?.maxAsegurados,
     parentescos: planParentescos,
   });
   const titularSrc = sameInsured !== false ? tomador : asegurado;
@@ -254,7 +254,6 @@ export function FuneralPlansStep() {
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
           <Users size={11} />
           {aseguradosListos.length} asegurado{aseguradosListos.length === 1 ? '' : 's'}
-          {planMaxAsegurados != null ? ` / ${planMaxAsegurados}` : ''}
         </span>
       </div>
 
@@ -287,6 +286,11 @@ export function FuneralPlansStep() {
                     nmax_dep: found.nmax_dep,
                     parentescos: found.parentescos,
                   });
+                  const nmax = nmaxDepDelPlan({
+                    nmax_dep: found.nmax_dep,
+                    maxAsegurados: found.maxAsegurados,
+                    parentescos: found.parentescos,
+                  });
                   const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
                   let nextAsegurados = titularOnly
                     ? extras.slice(0, 1)
@@ -301,7 +305,7 @@ export function FuneralPlansStep() {
                     nextAsegurados = nextAsegurados.slice(0, max);
                     toast.warning(
                       'Límite del plan',
-                      `Este plan admite hasta ${max} asegurado${max === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
+                      `Este plan admite hasta ${nmax ?? 0} dependiente${nmax === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
                       6000,
                     );
                   } else if (titularOnly && extras.length > 1) {
@@ -335,14 +339,14 @@ export function FuneralPlansStep() {
                 <>
                   <option value="" disabled>— Elige un plan —</option>
                   {apiPlans.map((p) => {
-                    const max = maxAseguradosDelPlan({
-                      maxAsegurados: p.maxAsegurados,
+                    const nmax = nmaxDepDelPlan({
                       nmax_dep: p.nmax_dep,
+                      maxAsegurados: p.maxAsegurados,
                       parentescos: p.parentescos,
                     });
-                    const cupo = max == null
+                    const cupo = nmax == null
                       ? p.name
-                      : `${p.name} · hasta ${max}`;
+                      : `${p.name} · hasta ${nmax}`;
                     return (
                       <option key={p.cplan} value={p.cplan ?? ''}>{cupo}</option>
                     );
@@ -408,10 +412,10 @@ export function FuneralPlansStep() {
                   {selectedPlan.tag}
                 </span>
                 <h3 className="font-display font-black text-slate-900 text-xl sm:text-2xl leading-tight break-words">{selectedPlan.name}</h3>
-                {planMaxAsegurados != null && (
+                {planNmaxDep != null && (
                   <p className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-[0.7rem] font-bold text-indigo-800">
                     <Users size={12} className="text-indigo-500 shrink-0" />
-                    Hasta {planMaxAsegurados} asegurado{planMaxAsegurados === 1 ? '' : 's'}
+                    Hasta {planNmaxDep} dependiente{planNmaxDep === 1 ? '' : 's'}
                   </p>
                 )}
                 <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-md">{selectedPlan.desc}</p>
