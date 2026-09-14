@@ -294,6 +294,15 @@ export function FuneralHealthModal({
                       label={label}
                       description={q.description}
                     />
+                    <p className="mt-1.5 ml-1 text-[0.72rem] leading-relaxed text-slate-500">
+                      {answers[q.id] === true ? (
+                        <span className="font-semibold text-indigo-700">Respuesta: Sí.</span>
+                      ) : (
+                        <span className="font-semibold text-slate-600">Respuesta: No.</span>
+                      )}
+                      {' '}
+                      Encienda el interruptor solo si la respuesta es sí. Si lo deja apagado, se guarda como no.
+                    </p>
                     {err && (
                       <p className="text-xs text-rose-500 font-medium mt-1.5 ml-1">{err}</p>
                     )}
