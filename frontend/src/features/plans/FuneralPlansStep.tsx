@@ -4,13 +4,46 @@ import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
   Loader2, AlertTriangle, Users, CalendarClock
 } from 'lucide-react';
-import type { Plan } from '../../types';
+import type { FuneralPerson, Plan } from '../../types';
 import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan } from '../../lib/funeralPlanParentescos';
+import { syncTitularFromTomador } from '../../lib/funeral-sync';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
+
+function emptyTitular(): FuneralPerson {
+  return {
+    tipoDoc: 'V',
+    identificacion: '',
+    nombre: '',
+    apellido: '',
+    fechaNac: '',
+    sexo: '',
+    parentesco: '1',
+  };
+}
+
+/** Completa el slot 0 con tomador/asegurado del formulario si llegó vacío del bridge. */
+function mergeTitularFromForm(
+  asegurados: FuneralPerson[],
+  src: { identificacion?: string; fechaNac?: string; tipoDoc?: string; nombre?: string; apellido?: string },
+): FuneralPerson[] {
+  const list = (asegurados.length ? asegurados : [emptyTitular()]).map((a) => ({ ...a }));
+  const titular = list[0];
+  if (!String(titular.identificacion || '').trim()) {
+    titular.identificacion = String(src.identificacion || '').trim();
+    titular.tipoDoc = src.tipoDoc || titular.tipoDoc || 'V';
+  }
+  if (!String(titular.fechaNac || '').trim()) {
+    titular.fechaNac = String(src.fechaNac || '').trim();
+  }
+  if (!String(titular.nombre || '').trim()) titular.nombre = String(src.nombre || '');
+  if (!String(titular.apellido || '').trim()) titular.apellido = String(src.apellido || '');
+  titular.parentesco = '1';
+  return list;
+}
 
 /** SysIP persons-alt: si maplanes_frec no tiene el plan, al menos ANUAL. */
 const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL' }];
@@ -40,6 +73,7 @@ export function FuneralPlansStep() {
   const {
     funeral, selectedPlan, setSelectedPlan, setCategory,
     quote, quoteState, quoteError,
+    tomador, asegurado, sameInsured,
   } = useWizardStore();
 
   const product = getProductConfig();
@@ -115,6 +149,22 @@ export function FuneralPlansStep() {
     return () => { cancelled = true; };
   }, [selectedPlan?.cplan, product.cramo, setFuneral, funeral.frecuencia]);
 
+  useEffect(() => {
+    syncTitularFromTomador();
+  }, [
+    sameInsured,
+    tomador.identificacion,
+    tomador.nombre,
+    tomador.apellido,
+    tomador.fechaNac,
+    tomador.sexo,
+    asegurado.identificacion,
+    asegurado.nombre,
+    asegurado.apellido,
+    asegurado.fechaNac,
+    asegurado.sexo,
+  ]);
+
   // ── Cotización contra getCotizacionPer ─────────────────────────────────────
   const planParentescos = selectedPlan?.parentescos ?? [];
   const planMaxAsegurados = maxAseguradosDelPlan({
@@ -122,22 +172,26 @@ export function FuneralPlansStep() {
     nmax_dep: selectedPlan?.nmax_dep,
     parentescos: planParentescos,
   });
-  const aseguradosListos = funeral.asegurados.filter((a, idx) => {
-    const idOk = (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim();
-    if (!idOk) return false;
-    if (idx > 0 && !(a.parentesco || '').toString().trim()) return false;
-    return !ageErrorForParentesco(
-      a.fechaNac,
-      idx === 0 ? '1' : a.parentesco,
-      planParentescos,
-    );
-  });
+  const titularSrc = sameInsured !== false ? tomador : asegurado;
+  const aseguradosConTitular = mergeTitularFromForm(funeral.asegurados, titularSrc);
+  const aseguradosListos = aseguradosConTitular
+    .map((a, idx) => ({ a, idx }))
+    .filter(({ a, idx }) => {
+      const idOk = (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim();
+      if (!idOk) return false;
+      if (idx > 0 && !(a.parentesco || '').toString().trim()) return false;
+      return !ageErrorForParentesco(
+        a.fechaNac,
+        idx === 0 ? '1' : a.parentesco,
+        planParentescos,
+      );
+    });
   const planCode = selectedPlan?.cplan ?? '';
   // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
   // La frecuencia solo define recibos al emitir.
   const quoteSig = planCode
     ? `funeral|${planCode}|A|${aseguradosListos
-        .map((a, idx) => `${idx === 0 ? '1' : a.parentesco}:${a.identificacion}:${a.fechaNac}`)
+        .map(({ a, idx }) => `${idx === 0 ? '1' : a.parentesco}:${a.identificacion}:${a.fechaNac}`)
         .join(',')}`
     : '';
 
@@ -156,7 +210,7 @@ export function FuneralPlansStep() {
       cplan: planCode,
       cramo: product.cramo,
       ifrecuencia: 'A',
-      asegurados: aseguradosListos.map((a, idx) => ({
+      asegurados: aseguradosListos.map(({ a, idx }) => ({
         parentesco: idx === 0 ? '1' : a.parentesco,
         identificacion: a.identificacion,
         fechaNac: a.fechaNac,

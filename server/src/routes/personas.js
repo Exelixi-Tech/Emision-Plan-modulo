@@ -282,7 +282,11 @@ router.post('/emision', async (req, res) => {
   }
 
   const ifrecuencia = frecuencia || funeral.frecuencia || 'A';
-  const asegurados = personasMapper.buildAseguradosForQuote(funeral);
+  const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
+    tomador: state.tomador,
+    asegurado: state.asegurado,
+    sameInsured: state.sameInsured,
+  });
 
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe registrar al menos un asegurado.' });

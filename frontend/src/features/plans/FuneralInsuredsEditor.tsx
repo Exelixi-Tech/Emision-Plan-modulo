@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { Field, Input, Textarea } from '../../components/ui/FormField';
 import { IdentityInput } from '../../components/ui/IdentityInput';
@@ -14,6 +14,7 @@ import {
   type PlanParentesco,
 } from '../../lib/funeralPlanParentescos';
 import { useWizardStore } from '../../store/wizardStore';
+import { syncTitularFromTomador } from '../../lib/funeral-sync';
 import type { FuneralPerson } from '../../types';
 
 function emptyExtra(): FuneralPerson {
@@ -240,7 +241,24 @@ export function FuneralInsuredsEditor({
 }) {
   const funeral = useWizardStore((s) => s.funeral);
   const setFuneral = useWizardStore((s) => s.setFuneral);
+  const tomador = useWizardStore((s) => s.tomador);
+  const asegurado = useWizardStore((s) => s.asegurado);
+  const sameInsured = useWizardStore((s) => s.sameInsured);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    syncTitularFromTomador();
+  }, [
+    sameInsured,
+    tomador.identificacion,
+    tomador.nombre,
+    tomador.apellido,
+    tomador.fechaNac,
+    asegurado.identificacion,
+    asegurado.nombre,
+    asegurado.apellido,
+    asegurado.fechaNac,
+  ]);
   const max = maxAseguradosDelPlan({ maxAsegurados, nmax_dep, parentescos });
   const titularOnly = max === 1 || isTitularOnlyPlan(parentescos);
   const extras = additionalParentescos(parentescos);

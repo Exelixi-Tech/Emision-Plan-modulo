@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FuneralPlansStep } from '../features/plans/FuneralPlansStep';
 import { FuneralHealthModal } from '../features/plans/FuneralHealthModal';
 import { FuneralSubmissionPending } from '../features/plans/FuneralSubmissionPending';
@@ -16,6 +16,7 @@ import {
 } from '../lib/api';
 import { EmissionPlanShell } from './EmissionPlanShell';
 import { isFuneralInsuredComplete } from '../features/plans/FuneralInsuredsEditor';
+import { syncTitularFromTomador } from '../lib/funeral-sync';
 
 const FREC_LABELS: Record<string, string> = {
   M: 'Pago mensual',
@@ -67,6 +68,36 @@ export default function FuneralPlansApp() {
     documents, metadataCanal, setFuneral,
   } = useWizardStore();
   const product = getProductConfig();
+
+  useEffect(() => {
+    syncTitularFromTomador();
+  }, [
+    sameInsured,
+    tomador.identificacion,
+    tomador.nombre,
+    tomador.apellido,
+    tomador.fechaNac,
+    tomador.sexo,
+    tomador.telefono,
+    tomador.email,
+    tomador.estadoCivil,
+    tomador.cestado,
+    tomador.cciudad,
+    tomador.direccion,
+    asegurado.identificacion,
+    asegurado.nombre,
+    asegurado.apellido,
+    asegurado.fechaNac,
+    asegurado.sexo,
+    asegurado.telefono,
+    asegurado.email,
+    asegurado.estadoCivil,
+    asegurado.cestado,
+    asegurado.cciudad,
+    asegurado.direccion,
+    asegurado.peso,
+    asegurado.estatura,
+  ]);
 
   const [healthModalOpen, setHealthModalOpen] = useState(false);
   const [healthQuestions, setHealthQuestions] = useState<HealthQuestion[]>([]);
