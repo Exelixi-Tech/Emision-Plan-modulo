@@ -51,14 +51,15 @@ function computeHealthScore(questions, answers, rulesRaw) {
     let action = 'score';
 
     if (q.type === 'boolean') {
-      if (answer === true) {
+      const yes = answer === true;
+      if (yes) {
         points = toScore(q.scoreIfTrue);
         action = questionAction(q, 'true');
         const concIds = rules.concurrence.questionIds;
         const counts =
           !concIds.length || concIds.includes(String(q.id));
         if (counts) yesCount += 1;
-      } else if (answer === false) {
+      } else {
         points = toScore(q.scoreIfFalse);
         action = questionAction(q, 'false');
       }

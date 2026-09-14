@@ -37,6 +37,26 @@ function isVisible(q: HealthQuestion, answers: Record<string, unknown>): boolean
   return String(actual ?? '') === String(expected);
 }
 
+function withBooleanDefaults(
+  questions: HealthQuestion[],
+  answers: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...answers };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const q of questions) {
+      if (q.enabled === false || q.type !== 'boolean') continue;
+      if (!isVisible(q, next)) continue;
+      if (typeof next[q.id] !== 'boolean') {
+        next[q.id] = false;
+        changed = true;
+      }
+    }
+  }
+  return next;
+}
+
 function validateAnswers(
   questions: HealthQuestion[],
   answers: Record<string, unknown>,
@@ -46,9 +66,8 @@ function validateAnswers(
     if (!isVisible(q, answers)) continue;
     if (!q.required) continue;
     const val = answers[q.id];
-    if (q.type === 'boolean') {
-      if (typeof val !== 'boolean') errors[q.id] = 'Responde sí o no';
-    } else if (q.type === 'text') {
+    if (q.type === 'boolean') continue;
+    if (q.type === 'text') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Selecciona una opción';
@@ -135,15 +154,18 @@ export function FuneralHealthModal({
   };
 
   const handleSubmit = () => {
+    const filled: Record<string, Record<string, unknown>> = {};
     for (const t of tabs) {
-      const nextErrors = validateAnswers(questions, byInsured[t.key] ?? {});
+      filled[t.key] = withBooleanDefaults(questions, byInsured[t.key] ?? {});
+      const nextErrors = validateAnswers(questions, filled[t.key]);
       if (Object.keys(nextErrors).length > 0) {
+        setByInsured(filled);
         setActiveKey(t.key);
         setErrors(nextErrors);
         return;
       }
     }
-    onConfirm(byInsured);
+    onConfirm(filled);
   };
 
   const activeIdx = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
@@ -173,7 +195,7 @@ export function FuneralHealthModal({
               Cuestionario de salud
             </h2>
             <p className="hidden [@media(min-height:700px)]:block text-xs text-slate-500 mt-1 leading-relaxed">
-              Declara la salud de cada asegurado. Los campos con * son obligatorios.
+              Declara la salud de cada asegurado. En Sí/No, si no marcas el interruptor cuenta como No.
             </p>
           </div>
           <button
@@ -269,7 +291,7 @@ export function FuneralHealthModal({
                     <ToggleSwitch
                       checked={answers[q.id] === true}
                       onChange={(v) => setAnswer(q.id, v)}
-                      label={`${label}${q.required ? ' *' : ''}`}
+                      label={label}
                       description={q.description}
                     />
                     {err && (
