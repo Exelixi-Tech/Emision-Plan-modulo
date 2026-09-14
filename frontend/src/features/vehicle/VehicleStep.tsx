@@ -925,11 +925,11 @@ export function VehicleStep() {
               <Field label="Dirección *" error={errors.cond_direccion} full>
                 <Textarea value={conductor.direccion ?? ''} onChange={(e) => setConductor({ direccion: e.target.value })} placeholder="Dirección completa" rows={2} />
               </Field>
-              <Field label="Número de licencia de conducir *" error={errors.cond_licencia} hint="Máx. 20 caracteres alfanuméricos" full>
+              <Field label="Número de licencia de conducir *" error={errors.cond_licencia} hint="Ingreso manual. Formato nuevo: Nro. de Verificación (frontal). Antiguo: reverso. Máx. 20 caracteres." full>
                 <Input
                   value={conductor.licencia ?? ''}
                   onChange={(e) => setConductor({ licencia: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20) })}
-                  placeholder="Ej. LIC-0234567"
+                  placeholder="Ej. 190203935943"
                   className="uppercase font-mono tracking-wider"
                   maxLength={20}
                 />
