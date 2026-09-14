@@ -5,7 +5,7 @@ import {
   Loader2, AlertTriangle, Users, CalendarClock
 } from 'lucide-react';
 import type { Plan } from '../../types';
-import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem, hasFuneralCanalMeta } from '../../lib/api';
+import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
@@ -42,8 +42,6 @@ export function FuneralPlansStep() {
     quote, quoteState, quoteError,
   } = useWizardStore();
 
-  const metadataCanal = useWizardStore((s) => s.metadataCanal);
-  const canalReady = hasFuneralCanalMeta();
   const product = getProductConfig();
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
@@ -57,12 +55,6 @@ export function FuneralPlansStep() {
   // ── Carga de planes de personas (ramo 9) ──────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    if (!hasFuneralCanalMeta()) {
-      setPlansLoading(false);
-      setPlansError(false);
-      setApiPlans([]);
-      return;
-    }
     setPlansLoading(true);
     setPlansError(false);
 
@@ -88,7 +80,7 @@ export function FuneralPlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metadataCanal, canalReady]);
+  }, []);
 
   // ── Carga de frecuencias ──────────────────────────────────────────────────
   useEffect(() => {
@@ -283,8 +275,6 @@ export function FuneralPlansStep() {
                 <option value="">Cargando planes...</option>
               ) : plansError ? (
                 <option value="">Error al cargar planes</option>
-              ) : !canalReady ? (
-                <option value="">Esperando canal SSO…</option>
               ) : apiPlans.length === 0 ? (
                 <option value="">Sin planes disponibles</option>
               ) : (
@@ -443,11 +433,7 @@ export function FuneralPlansStep() {
             <Shield size={22} className="text-slate-500" />
           </div>
           <p className="text-sm text-slate-500 font-medium">
-            {plansLoading
-              ? 'Cargando planes disponibles...'
-              : !canalReady
-                ? 'Abra el módulo desde Nexus (SSO) para cargar los planes del canal.'
-                : 'Elige un plan en el selector para ver la cotización.'}
+            {plansLoading ? 'Cargando planes disponibles...' : 'Elige un plan en el selector para ver la cotización.'}
           </p>
         </div>
       )}

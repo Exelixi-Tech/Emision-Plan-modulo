@@ -117,12 +117,6 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   );
 }
 
-/** Hay canal SSO (C/P/G) para listar planes funerarios. */
-export function hasFuneralCanalMeta(): boolean {
-  const qs = new URLSearchParams();
-  return appendFuneralCanalQuery(qs);
-}
-
 function shouldUseBridgeRules(): boolean {
   if (typeof window === 'undefined') return false;
   const qs = new URLSearchParams(window.location.search);
