@@ -303,7 +303,7 @@ export function FuneralInsuredsEditor({
           <p className="text-xs text-slate-500 mt-1">
             El titular viene del formulario. Agrega aquí los asegurados adicionales con los mismos datos.
             {max != null
-              ? ` Este plan admite hasta ${max} asegurado${max === 1 ? '' : 's'} (titular${max > 1 ? ` + ${max - 1} adicional${max - 1 === 1 ? '' : 'es'}` : ''}).`
+              ? ` Este plan admite hasta ${max} asegurado${max === 1 ? '' : 's'}.`
               : !parentescos?.length
                 ? ' Elige un plan para revisar parentescos.'
                 : titularOnly
