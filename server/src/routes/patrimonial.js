@@ -96,12 +96,21 @@ async function handleQuote(req, res) {
     'A',
   ).trim();
 
+  const ptasamon = body.ptasamon != null
+    ? Number(body.ptasamon)
+    : (body.ptasa != null ? Number(body.ptasa) : (body.state?.ptasamon != null ? Number(body.state.ptasamon) : 500));
+
+  const cuotas = body.cuotas != null
+    ? Number(body.cuotas)
+    : (body.ncuota != null ? Number(body.ncuota) : (body.state?.cuotas != null ? Number(body.state.cuotas) : 1));
+
   const pdescuento = Number(body.pdescuento ?? 0);
   const precargo = Number(body.precargo ?? 0);
 
   if (!cplan) {
     return res.status(400).json({
       success: false,
+      status: false,
       code: 'MISSING_PLAN',
       message: 'cplan es obligatorio para cotizar.',
     });
@@ -111,6 +120,8 @@ async function handleQuote(req, res) {
     const quote = await patrimonialClient.quoteGeneralRisks({
       cramo,
       cplan,
+      ptasamon,
+      cuotas,
       ifrecuencia,
       pdescuento,
       precargo,
@@ -118,10 +129,15 @@ async function handleQuote(req, res) {
 
     return res.json({
       success: true,
+      status: true,
       mprima: quote.mprima,
       mprimaext: quote.mprimaext,
       ptasa: quote.ptasa,
+      ptasamon: quote.ptasa,
+      sumaAsegurada: quote.sumaAsegurada,
       coberturas: quote.coberturas,
+      data: quote.data,
+      recordset: quote.recordset,
       metadata: {
         cramo,
         cplan,
@@ -133,6 +149,7 @@ async function handleQuote(req, res) {
     console.error('[patrimonial/cotizacion]', msg);
     return res.status(err.httpStatus || 502).json({
       success: false,
+      status: false,
       code: err.code || 'PATRIMONIAL_QUOTE_ERROR',
       message: `No se pudo cotizar el plan patrimonial: ${msg}`,
       stage: 'quote',
@@ -155,12 +172,21 @@ async function handleEmit(req, res) {
         const emitted = await patrimonialClient.createEmissionGeneralRisk(req.body);
         return res.status(201).json({
           success: true,
-          message: 'Póliza patrimonial emitida exitosamente.',
+          status: true,
+          message: emitted.message || 'Póliza generada exitosamente',
+          cnpoliza: emitted.cnpoliza,
+          urlpoliza: emitted.urlpoliza,
+          lapso: emitted.lapso,
+          mes: emitted.mes,
+          cnrecibo: emitted.cnrecibo,
+          ncuota: emitted.ncuota,
           policy: {
             number: emitted.cnpoliza,
             cnpoliza: emitted.cnpoliza,
             cnrecibo: emitted.cnrecibo,
             urlpoliza: emitted.urlpoliza,
+            lapso: emitted.lapso,
+            mes: emitted.mes,
             ncuota: emitted.ncuota,
             emittedAt: new Date().toISOString(),
           },
@@ -168,6 +194,7 @@ async function handleEmit(req, res) {
       } catch (directErr) {
         return res.status(directErr.httpStatus || 502).json({
           success: false,
+          status: false,
           code: directErr.code || 'PATRIMONIAL_EMIT_ERROR',
           message: directErr.message,
           stage: 'emit',
@@ -177,26 +204,31 @@ async function handleEmit(req, res) {
 
     return res.status(400).json({
       success: false,
+      status: false,
       code: 'MISSING_STATE',
-      message: 'state.tomador requerido para emitir la póliza.',
+      message: 'state.tomador o payload generalRisks (keys, tomador, bien_asegurado) requerido para emitir la póliza.',
     });
   }
 
   const cplan = bodyPlan || state.selectedPlan?.cplan || state.cplan || 'RCE9';
   const cramo = state.cramo != null ? Number(state.cramo) : DEFAULT_RAMO;
   const ifrecuencia = frecuencia || state.rcv?.frecuencia || state.frecuencia || 'A';
+  const ptasamon = state.ptasamon != null ? Number(state.ptasamon) : 500;
+  const cuotas = state.cuotas != null ? Number(state.cuotas) : 1;
 
   try {
     // 1. Cotiza para autorizar prima y tasa
     const cotizacion = await patrimonialClient.quoteGeneralRisks({
       cramo,
       cplan,
+      ptasamon,
+      cuotas,
       ifrecuencia,
       pdescuento: 0,
       precargo: 0,
     });
 
-    // 2. Construye el payload generalRisks con las 3 partes de bien_asegurado
+    // 2. Construye el payload generalRisks
     const { payload, metadata } = mapWizardToGeneralRisksEmitDto(state, cotizacion, {
       plan: cplan,
       frecuencia: ifrecuencia,
@@ -232,6 +264,9 @@ async function handleEmit(req, res) {
       cnrecibo: emitted.cnrecibo,
       urlpoliza: emitted.urlpoliza,
       url_ingreso_caja,
+      lapso: emitted.lapso,
+      mes: emitted.mes,
+      ncuota: emitted.ncuota,
       emittedAt: new Date().toISOString(),
       quote: {
         mprima: cotizacion.mprima,
@@ -250,16 +285,25 @@ async function handleEmit(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: 'Póliza patrimonial emitida exitosamente.',
+      status: true,
+      message: emitted.message || 'Póliza generada exitosamente',
+      cnpoliza: emitted.cnpoliza,
+      urlpoliza: emitted.urlpoliza,
+      lapso: emitted.lapso,
+      mes: emitted.mes,
+      cnrecibo: emitted.cnrecibo,
+      ncuota: emitted.ncuota,
       policy: {
         number: emitted.cnpoliza,
         cnpoliza: emitted.cnpoliza,
         cnrecibo: emitted.cnrecibo,
         urlpoliza: emitted.urlpoliza,
         url_ingreso_caja,
+        lapso: emitted.lapso,
+        mes: emitted.mes,
         ncuota: emitted.ncuota,
         internalPolicyId: metadata.internalPolicyId,
-        emittedAt: new Date().toISOString(),
+        emittedAt: emissionRecord.emittedAt,
         quote: {
           mprima: cotizacion.mprima,
           mprimaext: cotizacion.mprimaext,
@@ -267,6 +311,7 @@ async function handleEmit(req, res) {
         },
         metadata: emitMetadata,
       },
+      emission: emissionRecord,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -221,9 +221,13 @@ export interface VehicleData {
 export interface PolicyCoverageLine {
   ccobertura?: number | string;
   name: string;
+  xcobertura?: string;
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
+  msuma?: number | null;
+  msumamax?: number | null;
+  msumamin?: number | null;
 }
 
 export interface PolicyQuote {

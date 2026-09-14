@@ -795,12 +795,97 @@ export async function validateFuneralEmission(payload: {
 //  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
 // ──────────────────────────────────────────────────────────────────────
 
-export interface CotizacionPatrimonialPayload {
+export interface QuoteGeneralRisksDto {
+  cramo: number;
   cplan: string;
-  cramo?: number;
+  ptasamon?: number;
+  cuotas?: number;
   ifrecuencia?: string;
   pdescuento?: number;
   precargo?: number;
+}
+
+export type CotizacionPatrimonialPayload = Partial<QuoteGeneralRisksDto> & {
+  cplan: string;
+};
+
+export interface QuoteGeneralRisksResponse extends QuotePolicyResponse {
+  status: boolean;
+  data: Array<{
+    ccobertura: number | string;
+    xcobertura: string;
+    msuma: number;
+    mprima: number;
+    mprimaext: number;
+  }>;
+  recordset?: unknown[];
+}
+
+export interface CreateEmissionGeneralRiskDto {
+  keys: {
+    cnpoliza_rel: string | null;
+    cplan: string;
+    cramo: number;
+  };
+  tomador: {
+    tipo_tomador: string;
+    rif_tomador: number;
+    nombre_tomador: string;
+    apellido_tomador: string;
+    sexo_tomador: string;
+    estado_civil_tomador: string;
+    fnac_tomador: string;
+    telefono_tomador: string;
+    correo_tomador: string;
+    estado_tomador: string;
+    ciudad_tomador: string;
+    direccion_tomador: string;
+  };
+  asegurado: {
+    tipo_asegurado: string;
+    rif_asegurado: number;
+    nombre_asegurado: string;
+    apellido_asegurado: string;
+    sexo_asegurado: string;
+    estado_civil_asegurado: string;
+    fnac_asegurado: string;
+    telefono_asegurado: string;
+    correo_asegurado: string;
+    estado_asegurado: string;
+    ciudad_asegurado: string;
+    direccion_asegurado: string;
+  };
+  bien_asegurado: {
+    xdescrip1: string;
+    xdescrip2: string;
+    xdescrip3: string;
+    xdescrip4: string;
+  };
+  suma_asegurada: number;
+  prima: number;
+  ptasamon: number;
+  femision: string;
+  fdesde: string;
+  fhasta: string;
+  dec_persona_politica: number;
+  dec_term_y_cod: number;
+  cproductor: number;
+  ifrecuencia: string;
+  ctipocanal: string | null;
+  ccanalalt: string | null;
+  cscanalalt: string | null;
+  xfuente: string;
+}
+
+export interface EmissionGeneralRiskResponse extends EmitPolicyResponse {
+  status: boolean;
+  message: string;
+  cnpoliza: string;
+  urlpoliza: string;
+  lapso: number;
+  mes: string;
+  cnrecibo: string;
+  ncuota: number;
 }
 
 export const patrimonialApi = {
@@ -808,19 +893,21 @@ export const patrimonialApi = {
   planes: (cramo = 20) =>
     api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?cramo=${cramo}`),
 
-  /** Cotización vía quote-generalRisks ({ cramo, cplan, ifrecuencia, pdescuento, precargo }). */
+  /** Cotización vía quote-generalRisks ({ cramo, cplan, ptasamon, cuotas, ifrecuencia, pdescuento, precargo }). */
   cotizar: (payload: CotizacionPatrimonialPayload) =>
-    api.post<QuotePolicyResponse>('/patrimonial/cotizacion', {
+    api.post<QuoteGeneralRisksResponse>('/patrimonial/cotizacion', {
       cramo: payload.cramo ?? 20,
       cplan: payload.cplan,
+      ptasamon: payload.ptasamon ?? 500,
+      cuotas: payload.cuotas ?? 1,
       ifrecuencia: payload.ifrecuencia || 'A',
       pdescuento: payload.pdescuento ?? 0,
       precargo: payload.precargo ?? 0,
     }),
 
   /** Emisión vía generalRisks. */
-  emitir: (payload: EmitPolicyPayload) =>
-    api.post<EmitPolicyResponse>('/patrimonial/emision', payload),
+  emitir: (payload: EmitPolicyPayload | CreateEmissionGeneralRiskDto) =>
+    api.post<EmissionGeneralRiskResponse>('/patrimonial/emision', payload),
 };
 
 export interface SubmitPatrimonialReviewPayload {

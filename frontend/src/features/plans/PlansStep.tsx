@@ -23,13 +23,13 @@ const RCV_BENEFITS = [
 
 function apiPlanToWizardPlan(p: PlanRcv, categoryLabel: string): Plan {
   return {
-    cplan:     p.cplan,
-    name:      ((p.xplan ?? '').trim() || (p.xplan_c ?? '').trim() || p.cplan),
-    price:     'Tarifa La Mundial',
-    priceNum:  0,
-    tag:       categoryLabel,
-    desc:      ((p.xplan ?? '').trim() || 'Cobertura de Responsabilidad Civil Vehicular conforme a la Ley.'),
-    benefits:  RCV_BENEFITS,
+    cplan: p.cplan,
+    name: ((p.xplan ?? '').trim() || (p.xplan_c ?? '').trim() || p.cplan),
+    price: 'Tarifa La Mundial',
+    priceNum: 0,
+    tag: categoryLabel,
+    desc: ((p.xplan ?? '').trim() || 'Cobertura de Responsabilidad Civil Vehicular conforme a la Ley.'),
+    benefits: RCV_BENEFITS,
     sumaAsegurada: 0,
     cproducto: p.cproducto,
     coberturasAdicionales: p.coberturasAdicionales,
@@ -254,13 +254,13 @@ export function PlansStep() {
     if (code && ['CA', 'PT', 'PP'].includes(code)) {
       setRcv({ coberAdicional: 'RC', coberAdicionales: [] });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOptionalCober]);
   const selectedCoberturaCode = selectedOptionalCober
     ? String(selectedOptionalCober).toUpperCase()
     : '';
   const isLoadingQuote = quoteState === 'loading';
-  const hasRealQuote   = quoteState === 'ready' && Boolean(quote);
+  const hasRealQuote = quoteState === 'ready' && Boolean(quote);
 
   const frecuenciaLabel =
     apiFrecuencias.find((f) => String(f.code) === rcv.frecuencia)?.label
@@ -319,11 +319,10 @@ export function PlansStep() {
             Plan de cobertura
           </label>
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              selectedPlan
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${selectedPlan
                 ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_14px_rgba(46,109,191,0.3)]'
                 : 'bg-slate-100 text-slate-500'
-            }`}>
+              }`}>
               {plansLoading
                 ? <Loader2 size={14} className="animate-spin" />
                 : <Check size={15} strokeWidth={2.5} />}
@@ -367,11 +366,10 @@ export function PlansStep() {
             Frecuencia de pago
           </label>
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              rcv.frecuencia
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${rcv.frecuencia
                 ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
                 : 'bg-slate-100 text-slate-500'
-            }`}>
+              }`}>
               {frecLoading ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={15} strokeWidth={2.5} />}
             </div>
             <select
@@ -618,11 +616,10 @@ function PlanDetailCard({
                       type="button"
                       disabled={isLoadingQuote}
                       onClick={() => onSelectCobertura(selected ? null : code)}
-                      className={`px-3 py-1.5 rounded-full text-[0.68rem] font-bold border transition-all ${
-                        selected
+                      className={`px-3 py-1.5 rounded-full text-[0.68rem] font-bold border transition-all ${selected
                           ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
-                      } disabled:opacity-50`}
+                        } disabled:opacity-50`}
                     >
                       {selected && <Check size={11} className="inline mr-1 -mt-px" />}
                       {cober.text}
@@ -798,11 +795,11 @@ function PrimaCard({
 
                 return (
                   <div
-                    key={`${c.ccobertura ?? c.name}`}
+                    key={`${c.ccobertura ?? c.name ?? c.xcobertura}`}
                     className="py-2.5 first:pt-0 last:pb-0 md:py-1 md:grid md:grid-cols-[minmax(0,1fr)_4.5rem_3.5rem] md:gap-x-2 md:items-start"
                   >
                     <p className="text-[0.68rem] sm:text-xs text-white/90 font-medium leading-snug break-words min-w-0">
-                      {c.name}
+                      {c.name || c.xcobertura || (c as unknown as Record<string, string>).xdescripcion || (c as unknown as Record<string, string>).xdescripcion_l || ''}
                     </p>
                     <div className="mt-1.5 flex items-center justify-between gap-3 md:hidden text-[0.68rem] tabular-nums">
                       <span className="text-white/55">

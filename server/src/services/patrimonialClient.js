@@ -146,74 +146,95 @@ async function getPlanes(cramo) {
 /**
  * Normaliza y agrega las coberturas retornadas por spCalculoRiesgoGeneral / quote-generalRisks.
  * @param {Array<object>|object} rawData
- * @returns {{ mprima: number, mprimaext: number, ptasa: number, coberturas: Array<object> }}
+ * @param {number} [ptasamonFallback=1]
+ * @returns {{ mprima: number, mprimaext: number, ptasa: number, sumaAsegurada: number, coberturas: Array<object> }}
  */
-function aggregateQuoteData(rawData) {
+function aggregateQuoteData(rawData, ptasamonFallback = 1) {
   if (!rawData) {
-    return { mprima: 0, mprimaext: 0, ptasa: 1, coberturas: [] };
+    return { mprima: 0, mprimaext: 0, ptasa: ptasamonFallback || 1, sumaAsegurada: 0, coberturas: [] };
+  }
+
+  console.log('rawDAta', rawData)
+
+  function normalizeItem(row) {
+    const primaExt = Number(row.mprimaext ?? row.prima ?? 0);
+    const primaBs = Number(row.mprima ?? 0);
+    const suma = Number(row.msuma ?? row.msumaasegext ?? row.msumaaseg ?? row.sumaAsegurada ?? row.msumamax ?? 0);
+    const name = String(row.xcobertura ?? row.name ?? row.xdescripcion_l ?? row.xdescripcion ?? '').trim();
+
+    return {
+      ccobertura: row.ccobertura != null ? String(row.ccobertura).trim() : undefined,
+      name,
+      xcobertura: name,
+      prima: primaExt,
+      mprima: primaBs,
+      mprimaext: primaExt,
+      sumaAsegurada: suma || null,
+      msuma: suma || null,
+      msumamax: row.msumamax != null ? Number(row.msumamax) : undefined,
+      msumamin: row.msumamin != null ? Number(row.msumamin) : undefined,
+      cproducto: row.cproducto != null ? String(row.cproducto).trim() : undefined,
+    };
   }
 
   // Si ya viene pre-calculado con mprima / mprimaext
   if (!Array.isArray(rawData) && (rawData.mprima != null || rawData.mprimaext != null)) {
+    const rawCob = Array.isArray(rawData.coberturas) ? rawData.coberturas : (Array.isArray(rawData.data) ? rawData.data : []);
+    const normalizedCoberturas = rawCob.map(normalizeItem);
     return {
       mprima: Number(rawData.mprima ?? 0),
       mprimaext: Number(rawData.mprimaext ?? 0),
-      ptasa: Number(rawData.ptasa ?? 1),
-      coberturas: Array.isArray(rawData.coberturas) ? rawData.coberturas : [],
+      ptasa: Number(rawData.ptasa ?? rawData.ptasamon ?? ptasamonFallback ?? 1),
+      sumaAsegurada: Number(rawData.sumaAsegurada ?? rawData.msuma ?? 0),
+      coberturas: normalizedCoberturas,
     };
   }
 
-  const items = Array.isArray(rawData) ? rawData : (rawData.recordset ?? rawData.coberturas ?? []);
+  const items = Array.isArray(rawData) ? rawData : (rawData.data ?? rawData.recordset ?? rawData.coberturas ?? []);
   let totalPrimaExt = 0;
   let totalPrimaBs = 0;
   let maxSuma = 0;
-  let ptasa = 0;
+  let ptasa = ptasamonFallback || 0;
 
   const coberturas = items.map((row) => {
-    const primaExt = Number(row.mprimaext ?? row.prima ?? 0);
-    const primaBs = Number(row.mprima ?? 0);
-    const suma = Number(row.msumaasegext ?? row.msumaaseg ?? row.sumaAsegurada ?? 0);
-    if (suma > maxSuma) maxSuma = suma;
-    totalPrimaExt += primaExt;
-    totalPrimaBs += primaBs;
+    const mapped = normalizeItem(row);
+    if (mapped.sumaAsegurada && mapped.sumaAsegurada > maxSuma) maxSuma = mapped.sumaAsegurada;
+    totalPrimaExt += mapped.mprimaext;
+    totalPrimaBs += mapped.mprima;
     if (row.ptasa != null && !ptasa) ptasa = Number(row.ptasa);
     if (row.ptasamon != null && !ptasa) ptasa = Number(row.ptasamon);
-
-    return {
-      ccobertura: row.ccobertura != null ? String(row.ccobertura).trim() : undefined,
-      name: String(row.xdescripcion_l ?? row.xdescripcion ?? row.xcobertura ?? row.name ?? '').trim(),
-      prima: primaExt,
-      sumaAsegurada: suma || null,
-      cproducto: row.cproducto != null ? String(row.cproducto).trim() : undefined,
-    };
+    return mapped;
   });
 
   return {
     mprima: totalPrimaBs || (totalPrimaExt * (ptasa || 1)),
     mprimaext: totalPrimaExt,
     ptasa: ptasa || 1,
+    sumaAsegurada: maxSuma || 0,
     coberturas,
   };
 }
 
 /**
  * Cotiza un plan de Riesgos Generales / Patrimonial.
- * POST /api/v1/emissions/quote-generalRisks
- * @param {{ cramo?: number, cplan: string, ifrecuencia?: string, pdescuento?: number, precargo?: number }} params
+ * POST /api/v1/partner/starter/patrimonial/quote (QuoteGeneralRisksDto)
+ * @param {{ cramo?: number, cplan: string, ptasamon?: number, cuotas?: number, ifrecuencia?: string, pdescuento?: number, precargo?: number }} params
  */
-async function quoteGeneralRisks({ cramo = DEFAULT_RAMO, cplan, ifrecuencia = 'A', pdescuento = 0, precargo = 0 }) {
+async function quoteGeneralRisks({ cramo = DEFAULT_RAMO, cplan, ptasamon = 500, cuotas = 1, ifrecuencia = 'A', pdescuento = 0, precargo = 0 }) {
   const base = getBaseUrl();
-  const url = `${base}/api/v1/emissions/quote-generalRisks`;
+  const url = `${base}/api/v1/partner/starter/patrimonial/quote`;
   const payload = {
     cramo: Number(cramo || DEFAULT_RAMO),
     cplan: String(cplan).trim(),
+    ptasamon: Number(ptasamon || 0),
+    cuotas: Number(cuotas || 1),
     ifrecuencia: String(ifrecuencia || 'A').trim().toUpperCase(),
     pdescuento: Number(pdescuento || 0),
     precargo: Number(precargo || 0),
   };
 
   const ts = new Date().toISOString();
-  console.log(`[Patrimonial][${ts}] -> quote-generalRisks ${JSON.stringify(payload)}`);
+  console.log(`[Patrimonial][${ts}] -> quote ${JSON.stringify(payload)}`);
   const t0 = Date.now();
 
   const response = trackResponse(
@@ -223,31 +244,34 @@ async function quoteGeneralRisks({ cramo = DEFAULT_RAMO, cplan, ifrecuencia = 'A
 
   const data = response.data;
   const ok = response.status >= 200 && response.status < 300 && data?.status !== false;
-  console.log(`[Patrimonial][${ts}] <- quote-generalRisks ${response.status} ${ok ? 'ok' : 'FAIL'} in ${elapsed}ms`);
+  console.log(`[Patrimonial][${ts}] <- quote ${response.status} ${ok ? 'ok' : 'FAIL'} in ${elapsed}ms`);
 
   if (ok) {
     const rawResult = data?.data ?? data?.recordset ?? data;
-    const aggregated = aggregateQuoteData(rawResult);
+    const aggregated = aggregateQuoteData(rawResult, payload.ptasamon);
     return {
+      status: true,
+      data: Array.isArray(data?.data) ? data.data : aggregated.coberturas,
+      recordset: data?.recordset ?? (Array.isArray(data?.data) ? data.data : []),
       ...aggregated,
       raw: data,
     };
   }
 
-  throw buildError(response.status, data, '/quote-generalRisks');
+  throw buildError(response.status, data, '/quote');
 }
 
 /**
  * Emite una póliza de Riesgos Generales / Patrimonial.
- * POST /api/v1/emissions/generalRisks
- * @param {object} payload - Payload formateado con keys, tomador, asegurado, bien_asegurado, etc.
+ * POST /api/v1/partner/starter/patrimonial/emit (CreateEmissionGeneralRiskDto)
+ * @param {object} payload - Payload formateado con keys, tomador, asegurado, bien_asegurado, suma_asegurada, etc.
  */
 async function createEmissionGeneralRisk(payload) {
   const base = getBaseUrl();
-  const url = `${base}/api/v1/emissions/generalRisks`;
+  const url = `${base}/api/v1/partner/starter/patrimonial/emit`;
 
   const ts = new Date().toISOString();
-  console.log(`[Patrimonial][${ts}] -> generalRisks emision cplan=${payload.keys?.cplan ?? '?'} cramo=${payload.keys?.cramo ?? '?'}`);
+  console.log(`[Patrimonial][${ts}] -> generalRisks emit cplan=${payload.keys?.cplan ?? '?'} cramo=${payload.keys?.cramo ?? '?'}`);
   const t0 = Date.now();
 
   const response = trackResponse(
@@ -257,31 +281,38 @@ async function createEmissionGeneralRisk(payload) {
 
   const data = response.data;
   const ok = response.status >= 200 && response.status < 300 && data?.status !== false;
-  console.log(`[Patrimonial][${ts}] <- generalRisks ${response.status} ${ok ? 'ok' : 'FAIL'} in ${elapsed}ms`);
+  console.log(`[Patrimonial][${ts}] <- emit ${response.status} ${ok ? 'ok' : 'FAIL'} in ${elapsed}ms`);
 
   if (ok) {
     const result = data?.result ?? data?.data ?? data;
     const cnpoliza = String(result.cnpoliza ?? result.number ?? '').trim();
     const cnrecibo = String(result.cnrecibo ?? '').trim();
     const urlpoliza = String(result.urlpoliza ?? result.documentUrl ?? '').trim();
+    const lapso = Number(result.lapso ?? result.fanopol ?? new Date().getFullYear());
+    const mes = String(result.mes ?? result.fmespol ?? String(new Date().getMonth() + 1).padStart(2, '0'));
+    const ncuota = Number(result.ncuota ?? 1);
+    const message = String(result.message ?? data?.message ?? 'Póliza generada exitosamente');
 
     if (!cnpoliza && !cnrecibo && !urlpoliza) {
-      throw buildError(response.status, { message: 'Respuesta de emisión inválida: cnpoliza/cnrecibo faltantes' }, '/generalRisks');
+      throw buildError(response.status, { message: 'Respuesta de emisión inválida: cnpoliza/cnrecibo faltantes' }, '/emit');
     }
 
     return {
+      status: true,
+      message,
       cnpoliza,
-      cnrecibo,
       urlpoliza,
-      ncuota: result.ncuota ?? 1,
-      fanopol: result.lapso ?? result.fanopol,
-      fmespol: result.mes ?? result.fmespol,
-      message: result.message ?? 'Póliza generada exitosamente',
+      lapso,
+      mes,
+      cnrecibo,
+      ncuota,
+      fanopol: lapso,
+      fmespol: mes,
       raw: data,
     };
   }
 
-  throw buildError(response.status, data, '/generalRisks');
+  throw buildError(response.status, data, '/emit');
 }
 
 module.exports = {

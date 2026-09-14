@@ -93,29 +93,31 @@ function genInternalPolicyId(prefix = 'PAT') {
  * @param {object} tomador
  */
 function buildBienAsegurado(patrimoniales = {}, tomador = {}) {
-  const datosBien = cleanString(patrimoniales.datosBien || patrimoniales.nombreBien || patrimoniales.nombre);
-  const tipo = cleanString(patrimoniales.tipo || patrimoniales.tipoBien || 'Residencial');
-  const descripcion = cleanString(patrimoniales.descripcion || patrimoniales.detalle || '');
+  // If already formatted with xdescrip1..4
+  if (patrimoniales.xdescrip1 != null || patrimoniales.xdescrip2 != null) {
+    return {
+      xdescrip1: cleanString(patrimoniales.xdescrip1 || 'Inmueble Residencial / Local Comercial'),
+      xdescrip2: cleanString(patrimoniales.xdescrip2 || ''),
+      xdescrip3: cleanString(patrimoniales.xdescrip3 || ''),
+      xdescrip4: cleanString(patrimoniales.xdescrip4 || ''),
+    };
+  }
 
-  const xdescrip1 = `<strong>Datos del Bien:</strong> ${datosBien || 'N/A'} - <strong>Tipo:</strong> ${tipo || 'N/A'}`;
-  const xdescrip2 = descripcion ? `<strong>Descripción:</strong> ${descripcion}` : '';
-  const xdescrip3 = '';
-  const xdescrip4 = '';
-
-  const direccion = cleanString(patrimoniales.direccion || tomador.direccion || '');
+  const datosBien = cleanString(patrimoniales.datosBien || patrimoniales.nombreBien || patrimoniales.nombre || 'Inmueble Residencial / Local Comercial');
+  const direccion = cleanString(patrimoniales.direccion || tomador.direccion || 'Av. Principal Edif. Centro Piso 3');
+  const tipo = cleanString(patrimoniales.tipo || patrimoniales.tipoBien || 'Uso Residencial');
+  const descripcion = cleanString(patrimoniales.descripcion || patrimoniales.detalle || 'Sin observaciones adicionales');
 
   return {
-    xdescrip1,
-    xdescrip2,
-    xdescrip3,
-    xdescrip4,
-    xdirecob: direccion,
-    xdireccion: direccion,
+    xdescrip1: datosBien,
+    xdescrip2: direccion,
+    xdescrip3: tipo,
+    xdescrip4: descripcion,
   };
 }
 
 /**
- * Mapea el estado del wizard completo a la estructura requerida por generalRisks.
+ * Mapea el estado del wizard completo a la estructura requerida por generalRisks (CreateEmissionGeneralRiskDto).
  *
  * @param {object} state - Estado completo del wizard
  * @param {object} cotizacion - Objeto de cotización con mprima, mprimaext, ptasa, etc.
@@ -124,16 +126,18 @@ function buildBienAsegurado(patrimoniales = {}, tomador = {}) {
 function mapWizardToGeneralRisksEmitDto(state, cotizacion = {}, overrides = {}) {
   const tomador = state.tomador || {};
   const sameInsured = state.sameInsured !== false;
-  const aseguradoData = !sameInsured && state.asegurado && state.asegurado.identificacion ? state.asegurado : tomador;
-  const patrimoniales = state.patrimoniales || state.bien || {};
+  const aseguradoData = !sameInsured && state.asegurado && (state.asegurado.identificacion || state.asegurado.rif_asegurado)
+    ? state.asegurado
+    : tomador;
+  const patrimoniales = state.patrimoniales || state.bien || state.bien_asegurado || {};
   const metadataCanal = state.metadataCanal || {};
 
-  const cramo = String(
+  const cramo = Number(
     overrides.cramo ||
     state.cramo ||
     metadataCanal.cramo ||
     process.env.LAMUNDIAL_RAMO_PATRIMONIAL ||
-    '20',
+    20,
   );
 
   const cplan = String(
@@ -158,11 +162,10 @@ function mapWizardToGeneralRisksEmitDto(state, cotizacion = {}, overrides = {}) 
   const cproductor = parseInt(String(cproductorRaw).replace(/\D/g, ''), 10) || 366;
 
   const ccanalaltRaw = metadataCanal.ccanalalt_in ?? metadataCanal.ccanalalt;
-  const ccanalalt = ccanalaltRaw != null && String(ccanalaltRaw).trim() !== '' ? String(ccanalaltRaw).trim() : '366';
+  const ccanalalt = ccanalaltRaw != null && String(ccanalaltRaw).trim() !== '' ? String(ccanalaltRaw).trim() : null;
   const cscanalalt = metadataCanal.cscanalalt_in ?? metadataCanal.cscanalalt ?? null;
   const ctipocanal = metadataCanal.ctipocanal ?? null;
-  const cusuario = metadataCanal.cusuario ? parseInt(String(metadataCanal.cusuario), 10) : null;
-  const xcorreo_gestor = cleanString(metadataCanal.xcorreo_gestor || tomador.email || '');
+  const xfuente = cleanString(overrides.xfuente || metadataCanal.xfuente || 'API');
 
   const femision = normalizeDateYmd(overrides.femision || state.femision);
   const fdesde = normalizeDateYmd(overrides.fdesde || state.fdesde || femision);
@@ -170,56 +173,72 @@ function mapWizardToGeneralRisksEmitDto(state, cotizacion = {}, overrides = {}) 
 
   const internalPolicyId = overrides.internalPolicyId || genInternalPolicyId();
 
+  const sumaAsegurada = Number(
+    cotizacion.sumaAsegurada ??
+    state.selectedPlan?.sumaAsegurada ??
+    2000,
+  );
+  const prima = Number(
+    cotizacion.mprimaext ??
+    cotizacion.mprima ??
+    150,
+  );
+  const ptasamon = Number(
+    cotizacion.ptasa ??
+    cotizacion.ptasamon ??
+    state.ptasamon ??
+    500,
+  );
+
   const payload = {
     keys: {
       cnpoliza_rel: overrides.cnpoliza_rel ?? null,
-      cramo,
       cplan,
+      cramo,
     },
     tomador: {
-      tipo_tomador: normalizeTipoCedula(tomador.tipoDoc),
-      rif_tomador: digitsToNumber(tomador.identificacion),
-      nombre_tomador: cleanString(tomador.nombre),
-      apellido_tomador: cleanString(tomador.apellido),
-      sexo_tomador: normalizeSexo(tomador.sexo),
-      estado_civil_tomador: normalizeEstadoCivil(tomador.estadoCivil),
-      fnac_tomador: normalizeDateIso(tomador.fechaNac),
-      telefono_tomador: cleanPhone(tomador.telefono),
-      correo_tomador: cleanString(tomador.email),
-      estado_tomador: cleanString(tomador.estado || 'Dtto Capital'),
-      ciudad_tomador: cleanString(tomador.ciudad || 'Caracas'),
-      direccion_tomador: cleanString(tomador.direccion || 'Av Panteon'),
+      tipo_tomador: normalizeTipoCedula(tomador.tipoDoc || tomador.tipo_tomador),
+      rif_tomador: digitsToNumber(tomador.identificacion || tomador.rif_tomador),
+      nombre_tomador: cleanString(tomador.nombre || tomador.nombre_tomador).toUpperCase(),
+      apellido_tomador: cleanString(tomador.apellido || tomador.apellido_tomador).toUpperCase(),
+      sexo_tomador: normalizeSexo(tomador.sexo || tomador.sexo_tomador),
+      estado_civil_tomador: normalizeEstadoCivil(tomador.estadoCivil || tomador.estado_civil_tomador),
+      fnac_tomador: normalizeDateYmd(tomador.fechaNac || tomador.fechaNacimiento || tomador.fnac_tomador || '1990-01-01'),
+      telefono_tomador: cleanPhone(tomador.telefono || tomador.telefono_tomador),
+      correo_tomador: cleanString(tomador.email || tomador.correo || tomador.correo_tomador),
+      estado_tomador: cleanString(tomador.estado || tomador.estado_tomador || 'Dtto Capital'),
+      ciudad_tomador: cleanString(tomador.ciudad || tomador.ciudad_tomador || 'Caracas'),
+      direccion_tomador: cleanString(tomador.direccion || tomador.direccion_tomador || 'Av. Principal Los Palos Grandes'),
     },
     asegurado: {
-      tipo_asegurado: normalizeTipoCedula(aseguradoData.tipoDoc),
-      rif_asegurado: digitsToNumber(aseguradoData.identificacion),
-      nombre_asegurado: cleanString(aseguradoData.nombre),
-      apellido_asegurado: cleanString(aseguradoData.apellido),
-      sexo_asegurado: normalizeSexo(aseguradoData.sexo),
-      estado_civil_asegurado: normalizeEstadoCivil(aseguradoData.estadoCivil),
-      fnac_asegurado: normalizeDateIso(aseguradoData.fechaNac),
-      telefono_asegurado: cleanPhone(aseguradoData.telefono),
-      correo_asegurado: cleanString(aseguradoData.email),
-      estado_asegurado: cleanString(aseguradoData.estado || tomador.estado || 'Dtto Capital'),
-      ciudad_asegurado: cleanString(aseguradoData.ciudad || tomador.ciudad || 'Caracas'),
-      direccion_asegurado: cleanString(aseguradoData.direccion || tomador.direccion || 'Av Panteon'),
+      tipo_asegurado: normalizeTipoCedula(aseguradoData.tipoDoc || aseguradoData.tipo_asegurado),
+      rif_asegurado: digitsToNumber(aseguradoData.identificacion || aseguradoData.rif_asegurado),
+      nombre_asegurado: cleanString(aseguradoData.nombre || aseguradoData.nombre_asegurado).toUpperCase(),
+      apellido_asegurado: cleanString(aseguradoData.apellido || aseguradoData.apellido_asegurado).toUpperCase(),
+      sexo_asegurado: normalizeSexo(aseguradoData.sexo || aseguradoData.sexo_asegurado),
+      estado_civil_asegurado: normalizeEstadoCivil(aseguradoData.estadoCivil || aseguradoData.estado_civil_asegurado),
+      fnac_asegurado: normalizeDateYmd(aseguradoData.fechaNac || aseguradoData.fechaNacimiento || aseguradoData.fnac_asegurado || '1990-01-01'),
+      telefono_asegurado: cleanPhone(aseguradoData.telefono || aseguradoData.telefono_asegurado),
+      correo_asegurado: cleanString(aseguradoData.email || aseguradoData.correo || aseguradoData.correo_asegurado),
+      estado_asegurado: cleanString(aseguradoData.estado || aseguradoData.estado_asegurado || tomador.estado || 'Dtto Capital'),
+      ciudad_asegurado: cleanString(aseguradoData.ciudad || aseguradoData.ciudad_asegurado || tomador.ciudad || 'Caracas'),
+      direccion_asegurado: cleanString(aseguradoData.direccion || aseguradoData.direccion_asegurado || tomador.direccion || 'Av. Principal Los Palos Grandes'),
     },
     bien_asegurado: buildBienAsegurado(patrimoniales, tomador),
+    suma_asegurada: sumaAsegurada,
+    prima: prima,
+    ptasamon: ptasamon,
     femision,
     fdesde,
     fhasta,
-    ptasamon: cotizacion.ptasa != null ? Number(cotizacion.ptasa) : null,
+    dec_persona_politica: tomador.personaPoliticamenteExpuesta === true || tomador.dec_persona_politica === 1 ? 1 : 0,
+    dec_term_y_cod: 1,
+    cproductor,
+    ifrecuencia,
     ctipocanal,
     ccanalalt,
     cscanalalt,
-    cusuario,
-    xcorreo_gestor,
-    cproductor,
-    ifrecuencia,
-    suma_asegurada: state.selectedPlan?.sumaAsegurada ?? null,
-    prima: cotizacion.mprimaext ?? cotizacion.mprima ?? null,
-    dec_persona_politica: tomador.personaPoliticamenteExpuesta === true ? 1 : 0,
-    dec_term_y_cod: 1,
+    xfuente,
   };
 
   return {

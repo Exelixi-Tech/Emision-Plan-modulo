@@ -180,11 +180,10 @@ export function PatrimonialPlansStep() {
             Plan patrimonial
           </label>
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              selectedPlan
-                ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_4px_14px_rgba(99,102,241,0.3)]'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${selectedPlan
+              ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_4px_14px_rgba(99,102,241,0.3)]'
+              : 'bg-slate-100 text-slate-500'
+              }`}>
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
             <select
@@ -223,11 +222,10 @@ export function PatrimonialPlansStep() {
             Frecuencia de pago
           </label>
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              activeFrecuencia
-                ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${activeFrecuencia
+              ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
+              : 'bg-slate-100 text-slate-500'
+              }`}>
               {frecLoading ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={15} strokeWidth={2.5} />}
             </div>
             <select
@@ -307,21 +305,25 @@ export function PatrimonialPlansStep() {
 
             {quote?.coberturas && quote.coberturas.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {quote.coberturas.map((c, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 border border-slate-100 text-xs">
-                    <span className="font-semibold text-slate-800 flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
-                        <Check size={9} strokeWidth={3.5} />
+                {quote.coberturas.map((c, i) => {
+                  const coverageName = (c.name || c.xcobertura || (c as unknown as Record<string, string>).xdescripcion || (c as unknown as Record<string, string>).xdescripcion_l || '').trim();
+                  const suma = c.sumaAsegurada ?? c.msuma ?? c.msumamax ?? 0;
+                  return (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 border border-slate-100 text-xs">
+                      <span className="font-semibold text-slate-800 flex items-center gap-2">
+                        <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
+                          <Check size={9} strokeWidth={3.5} />
+                        </span>
+                        {coverageName || `Cobertura ${c.ccobertura || i + 1}`}
                       </span>
-                      {c.name}
-                    </span>
-                    {c.sumaAsegurada != null && c.sumaAsegurada > 0 && (
-                      <span className="font-bold text-indigo-700 ml-2">
-                        ${c.sumaAsegurada.toLocaleString('en-US')}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                      {suma != null && suma > 0 && (
+                        <span className="font-bold text-indigo-700 ml-2">
+                          ${suma.toLocaleString('en-US')}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
