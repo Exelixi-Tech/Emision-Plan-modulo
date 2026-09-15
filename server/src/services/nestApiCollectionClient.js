@@ -20,6 +20,7 @@ const { buildAuthHeaders, trackResponse } = require('./nestTokenService');
  *   telefono_dest?: string,
  *   cci_rif?: string,
  *   cbanco_dest_ref?: string,
+ *   origen_pago?: 'farmacia' | 'mobile',
  * }} params
  */
 async function activateReceiptAfterPayment(params) {
@@ -50,6 +51,7 @@ async function activateReceiptAfterPayment(params) {
       ...(params.telefono_dest ? { telefono_dest: params.telefono_dest } : {}),
       ...(params.cci_rif ? { cci_rif: params.cci_rif } : {}),
       ...(params.cbanco_dest_ref ? { cbanco_dest_ref: params.cbanco_dest_ref } : {}),
+      ...(params.origen_pago ? { origen_pago: params.origen_pago } : {}),
     },
     {
       headers: await buildAuthHeaders(),

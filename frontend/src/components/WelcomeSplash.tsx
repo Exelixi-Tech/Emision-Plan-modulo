@@ -2,6 +2,7 @@
 import { publicAsset } from '../lib/app-base';
 import { isExelixiCatalogFlow } from '../lib/exelixi-catalog';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
+import { isTarjetaRcvFlow } from '../lib/rcv-tarjeta-flow';
 
 const VISIBLE_MS = 2400;
 const FADE_MS = 700;
@@ -22,6 +23,7 @@ function shouldSkipSplash(): boolean {
   try {
     if (isExelixiCatalogFlow()) return true;
     if (isCotizadorFlow()) return true;
+    if (isTarjetaRcvFlow()) return true;
     const p = new URLSearchParams(window.location.search);
     if (p.get('sid')) return true;
     if (p.get('wizardStep') === '4') return true;

@@ -25,6 +25,9 @@ export interface HealthQuestionDraft {
   blockIfTrue?: boolean;
   blockIfFalse?: boolean;
   blockReason?: string;
+  /** score = solo % · refer = mesa técnica · reject = rechazo inmediato */
+  actionIfTrue?: 'score' | 'refer' | 'reject';
+  actionIfFalse?: 'score' | 'refer' | 'reject';
 }
 
 export type PlanOption = { code: string; label: string };
@@ -236,6 +239,7 @@ export function FuneralHealthQuestionsEditor({
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [previewPlan, setPreviewPlan] = useState('');
+  const [showFullCatalog, setShowFullCatalog] = useState(false);
 
   const planOptions = useMemo(
     () => (planOptionsProp?.length ? planOptionsProp : FALLBACK_FUNERAL_PLAN_OPTIONS),
@@ -246,6 +250,12 @@ export function FuneralHealthQuestionsEditor({
   const clientPreview = useMemo(
     () => (previewCode ? clientViewForPlan(questions, previewCode) : null),
     [questions, previewCode],
+  );
+  const listed = useMemo(
+    () => questions
+      .map((q, idx) => ({ q, idx }))
+      .filter(({ q }) => showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
+    [questions, showFullCatalog, previewCode],
   );
 
   const update = (idx: number, patch: Partial<HealthQuestionDraft>) => {
@@ -280,12 +290,15 @@ export function FuneralHealthQuestionsEditor({
     setOpenId(id);
   };
 
-  const move = (idx: number, dir: -1 | 1) => {
-    const to = idx + dir;
-    if (to < 0 || to >= questions.length) return;
+  const moveListed = (listedPos: number, dir: -1 | 1) => {
+    const other = listed[listedPos + dir];
+    if (!other) return;
+    const fromIdx = listed[listedPos].idx;
+    const toIdx = other.idx;
     const next = [...questions];
-    const [row] = next.splice(idx, 1);
-    next.splice(to, 0, row);
+    const tmp = next[fromIdx];
+    next[fromIdx] = next[toIdx];
+    next[toIdx] = tmp;
     onChange(next);
   };
 
@@ -363,7 +376,8 @@ export function FuneralHealthQuestionsEditor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
-            Preguntas · {questions.length}
+            Preguntas · {listed.length}
+            {listed.length !== questions.length ? ` de ${questions.length}` : ''}
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
             Pulsa una fila para editarla. El <strong className="font-semibold text-slate-600">%</strong> lo
@@ -415,7 +429,7 @@ export function FuneralHealthQuestionsEditor({
             {clientPreview.otherPlans.length > 0
               ? ` · ${clientPreview.otherPlans.length} no aplica${clientPreview.otherPlans.length === 1 ? '' : 'n'} a este plan`
               : ''}
-            . El panel lista {questions.length}; el cliente nunca las ve todas de golpe.
+            .
           </p>
           {clientPreview.otherPlans.length > 0 && (
             <p className="text-[11px] text-indigo-800">
@@ -423,6 +437,15 @@ export function FuneralHealthQuestionsEditor({
               {clientPreview.otherPlans.map((q) => q.label || q.id).join(' · ')}
             </p>
           )}
+          <label className="flex items-center gap-2 text-[11px] font-semibold text-indigo-800">
+            <input
+              type="checkbox"
+              className="rounded text-indigo-600"
+              checked={showFullCatalog}
+              onChange={(e) => setShowFullCatalog(e.target.checked)}
+            />
+            Ver catálogo completo ({questions.length})
+          </label>
         </div>
       )}
       <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 leading-relaxed space-y-0.5">
@@ -446,9 +469,14 @@ export function FuneralHealthQuestionsEditor({
           No hay preguntas. Pulsa Nueva o Defaults. Luego Guardar.
         </div>
       )}
+      {questions.length > 0 && listed.length === 0 && (
+        <div className="text-center py-8 text-slate-500 text-sm rounded-xl border border-dashed border-slate-200 bg-slate-50">
+          Ninguna pregunta aplica a este plan. Activa “Ver catálogo completo” para editarlas.
+        </div>
+      )}
 
       <ul className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
-        {questions.map((q, idx) => {
+        {listed.map(({ q, idx }, listedPos) => {
           const open = openId === q.id;
           const isChild = Boolean(q.showIf?.field);
           const isActive = q.enabled !== false;
@@ -468,7 +496,7 @@ export function FuneralHealthQuestionsEditor({
                     {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </span>
                   <span className="w-5 text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
-                    {idx + 1}
+                    {listedPos + 1}
                   </span>
                   <span
                     className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
@@ -516,8 +544,8 @@ export function FuneralHealthQuestionsEditor({
                 <div className="flex flex-col justify-center border-l border-slate-100">
                   <button
                     type="button"
-                    onClick={() => move(idx, -1)}
-                    disabled={idx === 0}
+                    onClick={() => moveListed(listedPos, -1)}
+                    disabled={listedPos === 0}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
                     title="Subir en el orden que ve el cliente"
                   >
@@ -525,8 +553,8 @@ export function FuneralHealthQuestionsEditor({
                   </button>
                   <button
                     type="button"
-                    onClick={() => move(idx, 1)}
-                    disabled={idx === questions.length - 1}
+                    onClick={() => moveListed(listedPos, 1)}
+                    disabled={listedPos === listed.length - 1}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
                     title="Bajar en el orden que ve el cliente"
                   >
@@ -920,37 +948,58 @@ export function FuneralHealthQuestionsEditor({
                     {q.type === 'boolean' && (
                       <div className="pt-1 border-t border-indigo-100 space-y-2">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                          Bloquear el envío
+                          Qué hace esta respuesta
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          Si se cumple, el cliente no puede continuar. El caso no llega a mesa técnica.
+                          Además del %, puedes mandar el caso a revisión o rechazarlo al instante.
                         </p>
-                        <div className="flex flex-wrap gap-3">
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfTrue}
-                              onChange={(e) => update(idx, { blockIfTrue: e.target.checked || undefined })}
-                            />
-                            Bloquear si Sí
-                          </label>
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfFalse}
-                              onChange={(e) => update(idx, { blockIfFalse: e.target.checked || undefined })}
-                            />
-                            Bloquear si No
-                          </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className={lbl}>Si responde Sí</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfTrue = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfTrue,
+                                  blockIfTrue: actionIfTrue === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className={lbl}>Si responde No</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfFalse = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfFalse,
+                                  blockIfFalse: actionIfFalse === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
                         </div>
-                        {(q.blockIfTrue || q.blockIfFalse) && (
+                        {((q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')) === 'reject' ||
+                          (q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')) === 'reject' ||
+                          q.actionIfTrue === 'refer' ||
+                          q.actionIfFalse === 'refer') && (
                           <input
                             className={inp}
                             value={q.blockReason ?? ''}
                             onChange={(e) => update(idx, { blockReason: e.target.value || undefined })}
-                            placeholder="Mensaje que verá el cliente si se bloquea"
+                            placeholder="Mensaje que verá el cliente (rechazo o revisión)"
                           />
                         )}
                       </div>

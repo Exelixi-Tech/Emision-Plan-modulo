@@ -5,7 +5,8 @@
  */
 const express = require('express');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
-const { computeHealthScore } = require('../lib/funeralHealthScoring');
+const { computePolicyHealthScore, insuredKey, insuredLabel } = require('../lib/funeralHealthScoring');
+const { parseScoringRules } = require('../lib/funeralScoringRules');
 const { upsertHealthAnswers } = require('../services/healthDb');
 const { createFuneralSubmission } = require('../services/nexusFuneralSubmission');
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
@@ -90,25 +91,64 @@ router.post('/submissions', async (req, res) => {
       { plan: cplan },
     );
 
-    const { questions } = await resolveQuestionsForPlan(cplan, {
+    const { questions, scoringRules } = await resolveQuestionsForPlan(cplan, {
       empresaId,
       metadata,
     });
+    const rules = parseScoringRules(scoringRules);
 
-    const scoring = computeHealthScore(questions, answers);
+    const funeral = body.funeral && typeof body.funeral === 'object' ? body.funeral : {};
+    const rawAsegurados = Array.isArray(funeral.asegurados) ? funeral.asegurados : [];
+    const byInsuredIn =
+      answers && answers.byInsured && typeof answers.byInsured === 'object'
+        ? answers.byInsured
+        : funeral.healthAnswersByInsured && typeof funeral.healthAnswersByInsured === 'object'
+          ? funeral.healthAnswersByInsured
+          : null;
 
-    if (scoring.blocked) {
+    const insureds = (rawAsegurados.length ? rawAsegurados : [body.tomador || {}]).map(
+      (person, idx) => {
+        const key = insuredKey(person, idx);
+        const packed = byInsuredIn && byInsuredIn[key];
+        const personAnswers =
+          packed && typeof packed === 'object' && packed.answers
+            ? packed.answers
+            : packed && typeof packed === 'object' && !packed.answers
+              ? packed
+              : idx === 0 && (!byInsuredIn || !Object.keys(byInsuredIn).length)
+                ? answers
+                : {};
+        return {
+          key,
+          label: insuredLabel(person, idx),
+          person,
+          answers: personAnswers && typeof personAnswers === 'object' ? personAnswers : {},
+        };
+      },
+    );
+
+    const scoring = computePolicyHealthScore(questions, insureds, rules);
+
+    if (scoring.verdict === 'reject') {
       return res.status(422).json({
         success: false,
         code: 'HEALTH_BLOCKED',
         message:
+          scoring.verdictMessage ||
           scoring.blockReason ||
           'La solicitud no cumple los criterios del cuestionario de salud.',
         scoring: {
           total: scoring.total,
           breakdown: scoring.breakdown,
           blocked: true,
-          blockReason: scoring.blockReason,
+          verdict: 'reject',
+          verdictMessage: scoring.verdictMessage,
+          perInsured: scoring.perInsured?.map((p) => ({
+            key: p.key,
+            label: p.label,
+            total: p.scoring.total,
+            verdict: p.scoring.verdict,
+          })),
         },
       });
     }
@@ -149,8 +189,28 @@ router.post('/submissions', async (req, res) => {
       cramo,
       scoreTotal: scoring.total,
       scoreBreakdown: scoring.breakdown,
-      healthAnswers: answers,
-      snapshot,
+      healthAnswers: {
+        byInsured: Object.fromEntries(
+          (scoring.perInsured || []).map((p) => [
+            p.key,
+            { label: p.label, answers: p.answers, total: p.scoring.total, verdict: p.scoring.verdict },
+          ]),
+        ),
+      },
+      snapshot: {
+        ...snapshot,
+        healthVerdict: scoring.verdict,
+        healthByInsured: (scoring.perInsured || []).map((p) => ({
+          key: p.key,
+          label: p.label,
+          total: p.scoring.total,
+          verdict: p.scoring.verdict,
+        })),
+      },
+      verdict: scoring.verdict,
+      reviewerEmails: rules.reviewerEmails,
+      notifyReviewers: scoring.verdict === 'referred',
+      autoApprove: scoring.verdict === 'emit',
     });
 
     return res.status(201).json({
@@ -160,10 +220,16 @@ router.post('/submissions', async (req, res) => {
         total: scoring.total,
         breakdown: scoring.breakdown,
         blocked: scoring.blocked,
-        blockReason: scoring.blockReason,
+        verdict: scoring.verdict,
+        verdictMessage: scoring.verdictMessage,
+        perInsured: scoring.perInsured?.map((p) => ({
+          key: p.key,
+          label: p.label,
+          total: p.scoring.total,
+          verdict: p.scoring.verdict,
+        })),
       },
-      message:
-        'Solicitud registrada. Un técnico revisará tu caso antes de continuar al pago.',
+      message: scoring.verdictMessage,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
