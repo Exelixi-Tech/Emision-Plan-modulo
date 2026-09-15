@@ -7,6 +7,7 @@ import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
 import {
   composeGestorCsubitem,
+  normalizeCentidad,
   readMarketplaceActorSnapshot,
   resolveGestorForQuery,
 } from './sso-metadata';
@@ -17,11 +18,22 @@ const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
 function appendGestorExclusionQuery(qs: URLSearchParams, meta: Record<string, unknown>): void {
-  const cgestor = resolveGestorForQuery(meta);
-  if (cgestor) qs.set('cgestor', cgestor);
+  const parent = String(meta.citem ?? meta.cproductor ?? '').trim();
+  const scrubbed = { ...meta };
+  const rawSub = scrubbed.csubitem != null ? String(scrubbed.csubitem).trim() : '';
+  if (rawSub && parent && rawSub === parent) {
+    delete scrubbed.csubitem;
+  }
 
-  const csubitem = composeGestorCsubitem(meta);
-  if (csubitem) qs.set('csubitem', csubitem);
+  const csubitem = composeGestorCsubitem(scrubbed);
+  if (csubitem) {
+    qs.set('csubitem', csubitem);
+    qs.set('cgestor', csubitem);
+    return;
+  }
+
+  const cgestor = resolveGestorForQuery(scrubbed);
+  if (cgestor) qs.set('cgestor', cgestor);
 }
 
 /** centidad/citem del JWT SSO, snapshot bridge o metadataCanal (flujo tarjeta). */
@@ -40,7 +52,7 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
     ...storeMeta,
   };
 
-  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const centidad = normalizeCentidad(meta);
   const citemRaw = meta.citem
     ?? (centidad === 'P' ? meta.cproductor : null)
     ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
