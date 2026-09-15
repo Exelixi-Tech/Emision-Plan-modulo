@@ -49,6 +49,7 @@ export function PlansStep() {
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState(false);
+  const [plansEmptyMessage, setPlansEmptyMessage] = useState<string | null>(null);
   const [apiFrecuencias, setApiFrecuencias] = useState<CatalogItem[]>([]);
   const [frecLoading, setFrecLoading] = useState(false);
   /** Fallback si xcober no viene en catálogo pero calculate-plan habilita CA/PT/PP */
@@ -67,6 +68,7 @@ export function PlansStep() {
 
     setPlansLoading(true);
     setPlansError(false);
+    setPlansEmptyMessage(null);
 
     const ctipo = (vehicle as { ctipo?: number }).ctipo;
     // Sis2000 / spBuscaPlan: iplaca 'B' → bnacional=1 (planes binacionales).
@@ -83,6 +85,11 @@ export function PlansStep() {
         const label = vehicle.xcategoria_uso?.trim() || vehicle.uso || 'RCV';
         const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, label));
         setApiPlans(mapped);
+        setPlansEmptyMessage(
+          mapped.length === 0 && res.data.mensaje?.trim()
+            ? res.data.mensaje.trim()
+            : null,
+        );
         if (res.data.canalVisibility) {
           setCanalVisibility(res.data.canalVisibility);
         }
@@ -94,6 +101,7 @@ export function PlansStep() {
         if (cancelled) return;
         setPlansError(true);
         setApiPlans([]);
+        setPlansEmptyMessage(null);
       })
       .finally(() => {
         if (!cancelled) setPlansLoading(false);
@@ -344,7 +352,7 @@ export function PlansStep() {
               ) : plansError ? (
                 <option value="">Error al cargar planes</option>
               ) : apiPlans.length === 0 ? (
-                <option value="">Sin planes disponibles</option>
+                <option value="">{plansEmptyMessage ?? 'Sin planes disponibles'}</option>
               ) : (
                 <>
                   <option value="" disabled>— Elige un plan —</option>
