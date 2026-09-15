@@ -188,25 +188,43 @@ function parseCscanalalt(meta = {}) {
 }
 
 /**
+ * Arma csubitem compuesto estilo Sis2000 (ej. productor 348 + gestor 342 → "348-342").
+ * Paridad remisión/emisión legacy SysIP.
+ * @param {Record<string, unknown>} meta
+ * @returns {string|null}
+ */
+function composeGestorCsubitem(meta = {}) {
+  const explicit = meta.csubitem;
+  if (explicit != null && String(explicit).trim() !== '') {
+    return String(explicit).trim();
+  }
+
+  const cgestorRaw = meta.cgestor != null ? String(meta.cgestor).trim() : '';
+  if (!cgestorRaw || cgestorRaw.includes('@')) return null;
+  if (cgestorRaw.includes('-')) return cgestorRaw;
+
+  const parentRaw =
+    meta.citem
+    ?? meta.cproductor
+    ?? meta.ccanalalt_in
+    ?? meta.ccanalalt;
+  const parent = parentRaw != null ? String(parentRaw).trim() : '';
+  if (parent && parent !== cgestorRaw) {
+    return `${parent}-${cgestorRaw}`;
+  }
+
+  return cgestorRaw;
+}
+
+/**
  * Código gestor para exclusión mausuplan (itipouso=E).
  * Solo se envía cuando hay contexto de actor marketplace; sin match → null (sin filtro).
  * @param {Record<string, unknown>} meta
  * @returns {string|null}
  */
 function resolveCsubitemForExclusion(meta = {}) {
-  const explicit = meta.csubitem;
-  if (explicit != null && String(explicit).trim() !== '') {
-    return String(explicit).trim();
-  }
-
-  const cgestor = meta.cgestor;
-  if (
-    cgestor != null
-    && String(cgestor).trim() !== ''
-    && !String(cgestor).includes('@')
-  ) {
-    return String(cgestor).trim();
-  }
+  const composed = composeGestorCsubitem(meta);
+  if (composed) return composed;
 
   const centidad = meta.centidad != null
     ? String(meta.centidad).trim().toUpperCase()
@@ -216,13 +234,6 @@ function resolveCsubitemForExclusion(meta = {}) {
   const cscanalalt = parseCscanalalt(meta);
   if (centidad === 'C' && cscanalalt != null) {
     return String(cscanalalt);
-  }
-
-  if (centidad === 'P') {
-    const raw = meta.citem ?? meta.cproductor;
-    if (raw != null && String(raw).trim() !== '') {
-      return String(raw).trim();
-    }
   }
 
   if (centidad === 'C') {
@@ -509,6 +520,7 @@ module.exports = {
   resolveCusuarioCoberturas,
   resolvePlanesParams,
   resolveCsubitemForExclusion,
+  composeGestorCsubitem,
   parseCscanalalt,
   buildPlanesV2Body,
   normalizePlanRow,
