@@ -34,15 +34,6 @@ function mergeNexusMetadata(req) {
   if (req.query.cgestor != null && req.query.cgestor !== '') {
     meta.cgestor = String(req.query.cgestor).trim();
   }
-  if (req.query.csub != null && req.query.csub !== '') {
-    meta.csub = String(req.query.csub).trim();
-  }
-  if (req.query.cscanalalt != null && req.query.cscanalalt !== '') {
-    meta.cscanalalt = String(req.query.cscanalalt).trim();
-  }
-  if (req.query.cscanalalt_in != null && req.query.cscanalalt_in !== '') {
-    meta.cscanalalt_in = String(req.query.cscanalalt_in).trim();
-  }
   if (req.query.cproducto != null && req.query.cproducto !== '') {
     meta.cproducto = String(req.query.cproducto).trim();
   }
@@ -253,7 +244,6 @@ router.get('/planes', async (req, res) => {
     res.json({
       success: true,
       planes,
-      ...(result.mensaje ? { mensaje: result.mensaje } : {}),
       source: result.source,
       productor: result.request?.citem ?? result.request?.cproductor,
       ...(applyCanalRules ? { canalVisibility } : {}),

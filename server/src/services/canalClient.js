@@ -4,7 +4,6 @@
  */
 const axios = require('axios');
 const { getBaseUrl, buildAuthHeaders } = require('./nestTokenService');
-const { resolveCsubitemForExclusion } = require('./planesClient');
 
 const TIMEOUT = parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 30_000;
 
@@ -69,19 +68,13 @@ async function fetchPlanesPermitidosProducto(meta = {}, cproducto) {
   const base = getBaseUrl();
   const headers = await buildAuthHeaders();
 
-  const payload = {
-    cproducto: String(cproducto).trim(),
-    centidad: entity.centidad,
-    citem: entity.citem,
-  };
-  const csubitem = resolveCsubitemForExclusion(meta);
-  if (csubitem) {
-    payload.csubitem = csubitem;
-  }
-
   const response = await axios.post(
     `${base}/api/v1/valrep/planes/producto`,
-    payload,
+    {
+      cproducto: String(cproducto).trim(),
+      centidad: entity.centidad,
+      citem: entity.citem,
+    },
     { headers, timeout: TIMEOUT, validateStatus: () => true },
   );
 

@@ -571,12 +571,7 @@ export const catalogoApi = {
     const hasEntity = appendCanalEntityQuery(qs);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
-    return api.get<{
-      success: boolean;
-      planes: PlanRcv[];
-      mensaje?: string;
-      canalVisibility?: CanalVisibility | null;
-    }>(
+    return api.get<{ success: boolean; planes: PlanRcv[]; canalVisibility?: CanalVisibility | null }>(
       `/catalogo/planes${query ? `?${query}` : ''}`,
     );
   },
