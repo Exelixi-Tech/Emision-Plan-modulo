@@ -17,23 +17,27 @@ const api = axios.create({ baseURL: moduleApiBase() });
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
+function scrubActorMetaForExclusion(meta: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...meta };
+  const composed = composeGestorCsubitem(out);
+  if (composed) {
+    out.cgestor = composed;
+    out.csubitem = composed;
+    return out;
+  }
+  delete out.csubitem;
+  delete out.cgestor;
+  delete out.cgestor_in;
+  return out;
+}
+
 function appendGestorExclusionQuery(qs: URLSearchParams, meta: Record<string, unknown>): void {
-  const parent = String(meta.citem ?? meta.cproductor ?? '').trim();
-  const scrubbed = { ...meta };
-  const rawSub = scrubbed.csubitem != null ? String(scrubbed.csubitem).trim() : '';
-  if (rawSub && parent && rawSub === parent) {
-    delete scrubbed.csubitem;
-  }
+  const actor = scrubActorMetaForExclusion(meta);
+  const csubitem = composeGestorCsubitem(actor);
+  if (!csubitem) return;
 
-  const csubitem = composeGestorCsubitem(scrubbed);
-  if (csubitem) {
-    qs.set('csubitem', csubitem);
-    qs.set('cgestor', csubitem);
-    return;
-  }
-
-  const cgestor = resolveGestorForQuery(scrubbed);
-  if (cgestor) qs.set('cgestor', cgestor);
+  qs.set('csubitem', csubitem);
+  qs.set('cgestor', csubitem);
 }
 
 /** centidad/citem del JWT SSO, snapshot bridge o metadataCanal (flujo tarjeta). */
@@ -45,12 +49,19 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
 
+  const snapshot = readMarketplaceActorSnapshot();
   const meta: Record<string, unknown> = {
-    ...readMarketplaceActorSnapshot(),
+    ...snapshot,
     ...(tarjetaMeta || {}),
     ...(tokenMeta || {}),
     ...storeMeta,
   };
+  const gestorHint = resolveGestorForQuery({
+    ...snapshot,
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  });
+  if (gestorHint) meta.cgestor = gestorHint;
 
   const centidad = normalizeCentidad(meta);
   const citemRaw = meta.citem
