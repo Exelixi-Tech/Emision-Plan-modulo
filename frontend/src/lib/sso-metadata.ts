@@ -43,26 +43,48 @@ function isActorValue(val: unknown): boolean {
 
 /** Paridad Sis2000 / planesClient: productor 348 + gestor 342 → "348-342". */
 export function composeGestorCsubitem(meta: Record<string, unknown> = {}): string | null {
-  const explicit = meta.csubitem;
-  if (explicit != null && String(explicit).trim() !== '') {
-    return String(explicit).trim();
-  }
-
-  const cgestorRaw = meta.cgestor != null ? String(meta.cgestor).trim() : '';
-  if (!cgestorRaw || cgestorRaw.includes('@')) return null;
-  if (cgestorRaw.includes('-')) return cgestorRaw;
-
   const parentRaw =
     meta.citem
     ?? meta.cproductor
     ?? meta.ccanalalt_in
     ?? meta.ccanalalt;
   const parent = parentRaw != null ? String(parentRaw).trim() : '';
-  if (parent && parent !== cgestorRaw) {
-    return `${parent}-${cgestorRaw}`;
+
+  const gestorRaw = preferGestorCode(meta.cgestor, meta.cgestor_in);
+  const gestorStr = gestorRaw != null ? String(gestorRaw).trim() : '';
+
+  if (gestorStr.includes('-') && !gestorStr.includes('@')) {
+    return gestorStr;
   }
 
-  return cgestorRaw || null;
+  const explicit = meta.csubitem != null ? String(meta.csubitem).trim() : '';
+  if (explicit.includes('-') && !explicit.includes('@')) {
+    return explicit;
+  }
+
+  if (gestorStr && !gestorStr.includes('@')) {
+    if (parent && parent !== gestorStr) {
+      return `${parent}-${gestorStr}`;
+    }
+    return gestorStr;
+  }
+
+  // Ignorar csubitem plano igual al productor (348) — no es código de gestor.
+  if (explicit && explicit !== parent) {
+    return explicit;
+  }
+
+  return null;
+}
+
+const VALID_CENTIDAD = new Set(['P', 'C', 'G']);
+
+/** Normaliza centidad Sis2000; valores inválidos del JWT → P si hay productor. */
+export function normalizeCentidad(meta: Record<string, unknown> = {}): string {
+  const raw = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  if (VALID_CENTIDAD.has(raw)) return raw;
+  if (meta.cproductor != null || meta.citem != null) return 'P';
+  return raw;
 }
 
 export function resolveGestorForQuery(meta: Record<string, unknown> = {}): string | null {
