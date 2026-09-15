@@ -15,7 +15,6 @@ export function validatePlanReady(
   selectedPlan: Plan | null,
   quoteState: QuoteState,
   quote: PolicyQuote | null,
-  options?: { requireCategory?: boolean },
 ): boolean {
   const hasCategory = shouldUseTarjetaPublicApi()
     ? Boolean(category?.trim()) || Boolean(selectedPlan?.tag?.trim())
