@@ -176,6 +176,66 @@ function resolvePlanesParams(nexusMetadata = {}) {
 }
 
 /**
+ * Sub-canal alterno (cscanalalt) desde metadata SSO / query bridge.
+ * @param {Record<string, unknown>} meta
+ * @returns {number|null}
+ */
+function parseCscanalalt(meta = {}) {
+  const raw = meta.cscanalalt_in ?? meta.cscanalalt ?? meta.csub ?? null;
+  if (raw == null || raw === '') return null;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Código gestor para exclusión mausuplan (itipouso=E).
+ * Solo se envía cuando hay contexto de actor marketplace; sin match → null (sin filtro).
+ * @param {Record<string, unknown>} meta
+ * @returns {string|null}
+ */
+function resolveCsubitemForExclusion(meta = {}) {
+  const explicit = meta.csubitem;
+  if (explicit != null && String(explicit).trim() !== '') {
+    return String(explicit).trim();
+  }
+
+  const cgestor = meta.cgestor;
+  if (
+    cgestor != null
+    && String(cgestor).trim() !== ''
+    && !String(cgestor).includes('@')
+  ) {
+    return String(cgestor).trim();
+  }
+
+  const centidad = meta.centidad != null
+    ? String(meta.centidad).trim().toUpperCase()
+    : '';
+  if (!centidad || centidad === 'G') return null;
+
+  const cscanalalt = parseCscanalalt(meta);
+  if (centidad === 'C' && cscanalalt != null) {
+    return String(cscanalalt);
+  }
+
+  if (centidad === 'P') {
+    const raw = meta.citem ?? meta.cproductor;
+    if (raw != null && String(raw).trim() !== '') {
+      return String(raw).trim();
+    }
+  }
+
+  if (centidad === 'C') {
+    const raw = meta.citem ?? meta.ccanalalt_in ?? meta.ccanalalt;
+    if (raw != null && String(raw).trim() !== '') {
+      return String(raw).trim();
+    }
+  }
+
+  return null;
+}
+
+/**
  * Arma el body para valrep/planes/v2 según contrato La Mundial QA.
  * @param {Record<string, unknown>} nexusMetadata
  * @param {number|null|undefined} ctipoQuery — ?ctipo= del GET /catalogo/planes
@@ -214,6 +274,18 @@ function buildPlanesV2Body(nexusMetadata = {}, ctipoQuery, iplacaQuery) {
 
   if (iplaca === 'B' || iplaca === 'E' || iplaca === 'N') {
     body.iplaca = iplaca;
+  }
+
+  const csubitem = resolveCsubitemForExclusion(nexusMetadata);
+  if (csubitem) {
+    body.csubitem = csubitem;
+  }
+
+  const cproducto = nexusMetadata.cproducto != null
+    ? String(nexusMetadata.cproducto).trim()
+    : '';
+  if (cproducto) {
+    body.cproducto = cproducto;
   }
 
   return body;
@@ -416,9 +488,19 @@ async function fetchPlanesV2(nexusMetadata = {}, ctipoQuery, iplacaQuery) {
     .map((p) => normalizePlanRow(p, body.cramo))
     .filter((p) => p.cplan);
 
+  const mensajeRaw =
+    data?.data?.mensaje
+    ?? data?.data?.message
+    ?? data?.mensaje
+    ?? data?.message
+    ?? '';
+  const mensaje = typeof mensajeRaw === 'string' && mensajeRaw.trim()
+    ? mensajeRaw.trim()
+    : undefined;
+
   logPlanesResponse(source, status, elapsed, planes, data);
 
-  return { planes, source, request: body };
+  return { planes, mensaje, source, request: body };
 }
 
 module.exports = {
@@ -426,6 +508,8 @@ module.exports = {
   resolveCusuarioFromMetadata,
   resolveCusuarioCoberturas,
   resolvePlanesParams,
+  resolveCsubitemForExclusion,
+  parseCscanalalt,
   buildPlanesV2Body,
   normalizePlanRow,
   fetchPlanesV2,
