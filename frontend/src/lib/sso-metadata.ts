@@ -2,6 +2,7 @@
 export const MARKETPLACE_ACTOR_KEYS = [
   'cgestor',
   'cgestor_in',
+  'csubitem',
   'centidad',
   'citem',
   'cproductor',
@@ -38,6 +39,36 @@ function decodeTokenMetadata(token: string): Record<string, unknown> | null {
 
 function isActorValue(val: unknown): boolean {
   return val != null && String(val).trim() !== '';
+}
+
+/** Paridad Sis2000 / planesClient: productor 348 + gestor 342 → "348-342". */
+export function composeGestorCsubitem(meta: Record<string, unknown> = {}): string | null {
+  const explicit = meta.csubitem;
+  if (explicit != null && String(explicit).trim() !== '') {
+    return String(explicit).trim();
+  }
+
+  const cgestorRaw = meta.cgestor != null ? String(meta.cgestor).trim() : '';
+  if (!cgestorRaw || cgestorRaw.includes('@')) return null;
+  if (cgestorRaw.includes('-')) return cgestorRaw;
+
+  const parentRaw =
+    meta.citem
+    ?? meta.cproductor
+    ?? meta.ccanalalt_in
+    ?? meta.ccanalalt;
+  const parent = parentRaw != null ? String(parentRaw).trim() : '';
+  if (parent && parent !== cgestorRaw) {
+    return `${parent}-${cgestorRaw}`;
+  }
+
+  return cgestorRaw || null;
+}
+
+export function resolveGestorForQuery(meta: Record<string, unknown> = {}): string | null {
+  const gestor = preferGestorCode(meta.cgestor, meta.cgestor_in);
+  if (!isActorValue(gestor)) return null;
+  return String(gestor).trim();
 }
 
 function preferGestorCode(a: unknown, b: unknown): unknown {

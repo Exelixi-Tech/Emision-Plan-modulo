@@ -215,7 +215,9 @@ router.get('/canal-visibility', async (req, res) => {
 router.get('/planes', async (req, res) => {
   const meta = mergeNexusMetadata(req);
   const ctipo = req.query.ctipo != null ? parseInt(String(req.query.ctipo), 10) : null;
-  const iplacaRaw = req.query.iplaca != null ? String(req.query.iplaca).trim().toUpperCase() : '';
+  const iplacaRaw = req.query.iplaca != null
+    ? String(req.query.iplaca).trim().toUpperCase()
+    : (req.query.placa != null ? String(req.query.placa).trim().toUpperCase() : '');
   const iplaca = iplacaRaw === 'B' || iplacaRaw === 'E' || iplacaRaw === 'N' ? iplacaRaw : undefined;
 
   const resolved = resolvePlanesParams(meta);
