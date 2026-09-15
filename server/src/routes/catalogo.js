@@ -90,15 +90,20 @@ function mergeNexusMetadata(req) {
   }
 
   const parent = String(meta.citem ?? meta.cproductor ?? '').trim();
-  const rawSub = meta.csubitem != null ? String(meta.csubitem).trim() : '';
-  if (rawSub && parent && rawSub === parent) {
-    delete meta.csubitem;
+  const rawGestor = preferGestorCode(meta.cgestor, meta.cgestor_in);
+  if (rawGestor && parent && rawGestor === parent) {
+    delete meta.cgestor;
+    delete meta.cgestor_in;
   }
 
   const resolvedCsubitem = resolveCsubitemForExclusion(meta) || composeGestorCsubitem(meta);
   if (resolvedCsubitem) {
     meta.csubitem = resolvedCsubitem;
     meta.cgestor = preferGestorCode(meta.cgestor, resolvedCsubitem) || resolvedCsubitem;
+  } else {
+    delete meta.csubitem;
+    delete meta.cgestor;
+    delete meta.cgestor_in;
   }
 
   return meta;

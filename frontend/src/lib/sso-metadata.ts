@@ -41,6 +41,13 @@ function isActorValue(val: unknown): boolean {
   return val != null && String(val).trim() !== '';
 }
 
+function isLikelyGestorCode(code: string, parent: string): boolean {
+  if (!code || code.includes('@')) return false;
+  if (code.includes('-')) return true;
+  if (!/^\d+$/.test(code) || code.length < 3) return false;
+  return !parent || code !== parent;
+}
+
 /** Paridad Sis2000 / planesClient: productor 348 + gestor 342 → "348-342". */
 export function composeGestorCsubitem(meta: Record<string, unknown> = {}): string | null {
   const parentRaw =
@@ -62,15 +69,17 @@ export function composeGestorCsubitem(meta: Record<string, unknown> = {}): strin
     return explicit;
   }
 
-  if (gestorStr && !gestorStr.includes('@')) {
+  if (gestorStr && !gestorStr.includes('@') && isLikelyGestorCode(gestorStr, parent)) {
     if (parent && parent !== gestorStr) {
       return `${parent}-${gestorStr}`;
     }
     return gestorStr;
   }
 
-  // Ignorar csubitem plano igual al productor (348) — no es código de gestor.
-  if (explicit && explicit !== parent) {
+  if (explicit && isLikelyGestorCode(explicit, parent)) {
+    if (parent && parent !== explicit && !explicit.includes('-')) {
+      return `${parent}-${explicit}`;
+    }
     return explicit;
   }
 

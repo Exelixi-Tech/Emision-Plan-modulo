@@ -205,6 +205,14 @@ function preferGestorCode(a, b) {
   return sa;
 }
 
+function isLikelyGestorCode(code, parent) {
+  if (!code || String(code).includes('@')) return false;
+  const value = String(code).trim();
+  if (value.includes('-')) return true;
+  if (!/^\d+$/.test(value) || value.length < 3) return false;
+  return !parent || value !== String(parent).trim();
+}
+
 function composeGestorCsubitem(meta = {}) {
   const parentRaw =
     meta.citem
@@ -223,14 +231,17 @@ function composeGestorCsubitem(meta = {}) {
     return explicit;
   }
 
-  if (gestorStr && !gestorStr.includes('@')) {
+  if (gestorStr && !gestorStr.includes('@') && isLikelyGestorCode(gestorStr, parent)) {
     if (parent && parent !== gestorStr) {
       return `${parent}-${gestorStr}`;
     }
     return gestorStr;
   }
 
-  if (explicit && explicit !== parent) {
+  if (explicit && isLikelyGestorCode(explicit, parent)) {
+    if (parent && parent !== explicit && !explicit.includes('-')) {
+      return `${parent}-${explicit}`;
+    }
     return explicit;
   }
 
