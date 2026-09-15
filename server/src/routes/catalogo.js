@@ -12,7 +12,12 @@ const {
   getCategoriasUso,
   getRecargosRcv,
 } = require('../services/nestApiClient');
-const { fetchPlanesV2, resolvePlanesParams } = require('../services/planesClient');
+const {
+  fetchPlanesV2,
+  resolvePlanesParams,
+  resolveCsubitemForExclusion,
+  composeGestorCsubitem,
+} = require('../services/planesClient');
 const {
   filterPlanesByVisibility,
   resolveEntityContext,
@@ -22,20 +27,50 @@ const {
 
 const router = express.Router();
 
+const VALID_CENTIDAD = new Set(['P', 'C', 'G']);
+
+function pickQueryValue(query, key) {
+  const raw = query[key];
+  if (raw == null || raw === '') return null;
+  const values = Array.isArray(raw) ? raw : [raw];
+  const trimmed = values.map((v) => String(v).trim()).filter(Boolean);
+  if (!trimmed.length) return null;
+  if (key === 'csubitem' || key === 'cgestor') {
+    const hyphenated = trimmed.find((v) => v.includes('-') && !v.includes('@'));
+    if (hyphenated) return hyphenated;
+  }
+  return trimmed[trimmed.length - 1];
+}
+
+function normalizeCentidad(raw, meta = {}) {
+  const v = raw != null ? String(raw).trim().toUpperCase() : '';
+  if (VALID_CENTIDAD.has(v)) return v;
+  const fromMeta = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  if (VALID_CENTIDAD.has(fromMeta)) return fromMeta;
+  if (meta.cproductor != null || meta.citem != null) return 'P';
+  return v;
+}
+
 /** Fusiona metadata JWT con query (fallback cuando el proxy no reenvía el token). */
 function mergeNexusMetadata(req) {
   const meta = { ...(req.nexusMetadata || {}) };
-  if (req.query.centidad != null && req.query.centidad !== '') {
-    meta.centidad = String(req.query.centidad).trim();
+  const centidadQ = pickQueryValue(req.query, 'centidad');
+  if (centidadQ != null) {
+    meta.centidad = normalizeCentidad(centidadQ, meta);
+  } else if (meta.centidad != null) {
+    meta.centidad = normalizeCentidad(meta.centidad, meta);
   }
-  if (req.query.citem != null && req.query.citem !== '') {
-    meta.citem = String(req.query.citem).trim();
+  const citemQ = pickQueryValue(req.query, 'citem');
+  if (citemQ != null) {
+    meta.citem = citemQ;
   }
-  if (req.query.cgestor != null && req.query.cgestor !== '') {
-    meta.cgestor = String(req.query.cgestor).trim();
+  const cgestorQ = pickQueryValue(req.query, 'cgestor');
+  if (cgestorQ != null) {
+    meta.cgestor = cgestorQ;
   }
-  if (req.query.csubitem != null && req.query.csubitem !== '') {
-    meta.csubitem = String(req.query.csubitem).trim();
+  const csubitemQ = pickQueryValue(req.query, 'csubitem');
+  if (csubitemQ != null) {
+    meta.csubitem = csubitemQ;
   }
   if (req.query.csub != null && req.query.csub !== '') {
     meta.csub = String(req.query.csub).trim();
@@ -53,7 +88,32 @@ function mergeNexusMetadata(req) {
     const cramo = parseInt(String(req.query.cramo), 10);
     if (Number.isFinite(cramo)) meta.cramo = cramo;
   }
+
+  const parent = String(meta.citem ?? meta.cproductor ?? '').trim();
+  const rawSub = meta.csubitem != null ? String(meta.csubitem).trim() : '';
+  if (rawSub && parent && rawSub === parent) {
+    delete meta.csubitem;
+  }
+
+  const resolvedCsubitem = resolveCsubitemForExclusion(meta) || composeGestorCsubitem(meta);
+  if (resolvedCsubitem) {
+    meta.csubitem = resolvedCsubitem;
+    meta.cgestor = preferGestorCode(meta.cgestor, resolvedCsubitem) || resolvedCsubitem;
+  }
+
   return meta;
+}
+
+function preferGestorCode(a, b) {
+  const sa = a != null ? String(a).trim() : '';
+  const sb = b != null ? String(b).trim() : '';
+  if (!sa) return sb || null;
+  if (!sb) return sa || null;
+  if (sb.startsWith(`${sa}-`)) return sb;
+  if (sa.startsWith(`${sb}-`)) return sa;
+  if (sa.includes('-') && !sb.includes('-')) return sa;
+  if (sb.includes('-') && !sa.includes('-')) return sb;
+  return sa;
 }
 
 function normCatalogText(s) {

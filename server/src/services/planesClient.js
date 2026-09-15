@@ -193,27 +193,48 @@ function parseCscanalalt(meta = {}) {
  * @param {Record<string, unknown>} meta
  * @returns {string|null}
  */
+function preferGestorCode(a, b) {
+  const sa = a != null ? String(a).trim() : '';
+  const sb = b != null ? String(b).trim() : '';
+  if (!sa) return sb || null;
+  if (!sb) return sa || null;
+  if (sb.startsWith(`${sa}-`)) return sb;
+  if (sa.startsWith(`${sb}-`)) return sa;
+  if (sa.includes('-') && !sb.includes('-')) return sa;
+  if (sb.includes('-') && !sa.includes('-')) return sb;
+  return sa;
+}
+
 function composeGestorCsubitem(meta = {}) {
-  const explicit = meta.csubitem;
-  if (explicit != null && String(explicit).trim() !== '') {
-    return String(explicit).trim();
-  }
-
-  const cgestorRaw = meta.cgestor != null ? String(meta.cgestor).trim() : '';
-  if (!cgestorRaw || cgestorRaw.includes('@')) return null;
-  if (cgestorRaw.includes('-')) return cgestorRaw;
-
   const parentRaw =
     meta.citem
     ?? meta.cproductor
     ?? meta.ccanalalt_in
     ?? meta.ccanalalt;
   const parent = parentRaw != null ? String(parentRaw).trim() : '';
-  if (parent && parent !== cgestorRaw) {
-    return `${parent}-${cgestorRaw}`;
+
+  const gestorStr = preferGestorCode(meta.cgestor, meta.cgestor_in) || '';
+  if (gestorStr.includes('-') && !gestorStr.includes('@')) {
+    return gestorStr;
   }
 
-  return cgestorRaw;
+  const explicit = meta.csubitem != null ? String(meta.csubitem).trim() : '';
+  if (explicit.includes('-') && !explicit.includes('@')) {
+    return explicit;
+  }
+
+  if (gestorStr && !gestorStr.includes('@')) {
+    if (parent && parent !== gestorStr) {
+      return `${parent}-${gestorStr}`;
+    }
+    return gestorStr;
+  }
+
+  if (explicit && explicit !== parent) {
+    return explicit;
+  }
+
+  return null;
 }
 
 /**
