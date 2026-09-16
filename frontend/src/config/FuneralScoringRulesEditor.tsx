@@ -37,7 +37,7 @@ export const DEFAULT_FUNERAL_SCORING_RULES: FuneralScoringRules = {
     reject: {
       min: 70,
       max: 9999,
-      message: 'Según tus respuestas no es posible emitir esta póliza en línea.',
+      message: 'Un técnico revisará tu solicitud porque el puntaje es alto.',
     },
   },
   concurrence: {
@@ -112,8 +112,8 @@ const BAND_UI: Record<BandKey, {
     input: 'focus:border-amber-400',
   },
   reject: {
-    title: 'Rechazo',
-    subtitle: 'No se emite en línea',
+    title: 'Rechazo en línea',
+    subtitle: 'No paga solo: llega a mesa técnica',
     Icon: Ban,
     wrap: 'border-rose-200 bg-gradient-to-br from-rose-50/80 to-white',
     badge: 'bg-rose-600 text-white',

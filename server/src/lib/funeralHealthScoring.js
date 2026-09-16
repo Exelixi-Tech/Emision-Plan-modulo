@@ -190,6 +190,8 @@ function computePolicyHealthScore(questions, insureds, rulesRaw) {
   }
 
   const worst = perInsured.find((r) => r.scoring.verdict === verdict) || perInsured[0];
+  const forcedReject = perInsured.some((r) => r.scoring.forcedReject);
+  const forcedRefer = perInsured.some((r) => r.scoring.forcedRefer);
   const blocked = verdict === 'reject';
   return {
     total,
@@ -200,6 +202,8 @@ function computePolicyHealthScore(questions, insureds, rulesRaw) {
     verdictMessage: worst?.scoring.verdictMessage || messageForVerdict(verdict, rules),
     perInsured,
     rules,
+    forcedReject,
+    forcedRefer,
   };
 }
 
