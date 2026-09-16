@@ -9,7 +9,7 @@ import {
 import type { DocType } from '../types';
 import { shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
 
-/** Validación común antes de confirmar plan (RCV, patrimonial y funerario). */
+/** Validación común antes de confirmar plan (RCV y funerario). */
 export function validatePlanReady(
   category: string,
   selectedPlan: Plan | null,

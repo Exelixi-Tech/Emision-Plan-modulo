@@ -16,7 +16,6 @@ const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
-const { handleEmit: handlePatrimonialEmit, handleQuote: handlePatrimonialQuote } = require('./patrimonial');
 
 const router = express.Router();
 
@@ -155,18 +154,6 @@ function withNexusMetadata(state, nexusMetadata) {
 router.post('/policies/quote', async (req, res) => {
   try {
     const { state, plan } = req.body || {};
-    const isPatrimonial =
-      state?.product === 'patrimonial' ||
-      Boolean(state?.patrimoniales) ||
-      state?.cramo === 20 ||
-      state?.selectedPlan?.tag === 'Patrimonial' ||
-      req.body?.product === 'patrimonial' ||
-      req.body?.cramo === 20;
-
-    if (isPatrimonial) {
-      return handlePatrimonialQuote(req, res);
-    }
-
     if (!state || !state.vehicle) {
       return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.vehicle requerido.' });
     }
@@ -209,19 +196,6 @@ router.post('/policies/clasificar-diligencia', async (req, res) => {
 router.post('/policies/emit', async (req, res) => {
   try {
     const { state, plan, frecuencia, ndias } = req.body || {};
-
-    const isPatrimonial =
-      state?.product === 'patrimonial' ||
-      Boolean(state?.patrimoniales) ||
-      state?.cramo === 20 ||
-      state?.selectedPlan?.tag === 'Patrimonial' ||
-      req.body?.product === 'patrimonial' ||
-      req.body?.cramo === 20;
-
-    if (isPatrimonial) {
-      return handlePatrimonialEmit(req, res);
-    }
-
     if (!state || !state.vehicle || !state.tomador) {
       const { tomador, plan: legacyPlan, payment } = req.body || {};
       if (!tomador || !legacyPlan || !payment) {
