@@ -9,6 +9,8 @@ import { Textarea, Select } from '../../components/ui/FormField';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { Button } from '../../components/ui/Button';
 
+export type HealthInsuredTab = { key: string; label: string };
+
 interface Props {
   open: boolean;
   plan: Plan;
@@ -16,10 +18,11 @@ interface Props {
   frecuenciaLabel: string;
   questions: HealthQuestion[];
   loadingQuestions: boolean;
-  initialAnswers?: Record<string, unknown>;
+  insureds: HealthInsuredTab[];
+  initialByInsured?: Record<string, Record<string, unknown>>;
   saving: boolean;
   onClose: () => void;
-  onConfirm: (answers: Record<string, unknown>) => void;
+  onConfirm: (byInsured: Record<string, Record<string, unknown>>) => void;
 }
 
 function isVisible(q: HealthQuestion, answers: Record<string, unknown>): boolean {
@@ -34,6 +37,32 @@ function isVisible(q: HealthQuestion, answers: Record<string, unknown>): boolean
   return String(actual ?? '') === String(expected);
 }
 
+function withBooleanDefaults(
+  questions: HealthQuestion[],
+  answers: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...answers };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const q of questions) {
+      if (q.type !== 'boolean') continue;
+      if (!isVisible(q, next)) continue;
+      if (typeof next[q.id] !== 'boolean') {
+        next[q.id] = false;
+        changed = true;
+      }
+    }
+  }
+  return next;
+}
+
+function requiresYes(q: HealthQuestion): boolean {
+  if (q.type !== 'boolean') return false;
+  if (q.blockIfFalse === true) return true;
+  return q.id === 'aceptaTerminos';
+}
+
 function validateAnswers(
   questions: HealthQuestion[],
   answers: Record<string, unknown>,
@@ -41,17 +70,36 @@ function validateAnswers(
   const errors: Record<string, string> = {};
   for (const q of questions) {
     if (!isVisible(q, answers)) continue;
-    if (!q.required) continue;
     const val = answers[q.id];
     if (q.type === 'boolean') {
-      if (typeof val !== 'boolean') errors[q.id] = 'Responde sí o no';
-    } else if (q.type === 'text') {
+      if (requiresYes(q) && val !== true) {
+        errors[q.id] = q.blockReason || 'Debes responder Sí para continuar.';
+      }
+      continue;
+    }
+    if (!q.required) continue;
+    if (q.type === 'text') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Selecciona una opción';
     }
   }
   return errors;
+}
+
+function joinInsuredNames(names: string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} y ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
+}
+
+function isInsuredReady(
+  questions: HealthQuestion[],
+  answers: Record<string, unknown>,
+): boolean {
+  const filled = withBooleanDefaults(questions, answers);
+  return Object.keys(validateAnswers(questions, filled)).length === 0;
 }
 
 function questionCardClass(hasError: boolean, filled: boolean): string {
@@ -69,19 +117,35 @@ export function FuneralHealthModal({
   frecuenciaLabel,
   questions,
   loadingQuestions,
-  initialAnswers,
+  insureds,
+  initialByInsured,
   saving,
   onClose,
   onConfirm,
 }: Props) {
-  const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const tabs = insureds.length > 0 ? insureds : [{ key: 'aseg-0', label: 'Asegurado' }];
+  const [activeKey, setActiveKey] = useState(tabs[0].key);
+  const [byInsured, setByInsured] = useState<Record<string, Record<string, unknown>>>({});
+  const [visited, setVisited] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
-    setAnswers(initialAnswers ?? {});
+    const next: Record<string, Record<string, unknown>> = {};
+    for (const t of tabs) {
+      next[t.key] = { ...(initialByInsured?.[t.key] ?? {}) };
+    }
+    setByInsured(next);
+    setActiveKey(tabs[0].key);
+    setVisited({ [tabs[0].key]: true });
     setErrors({});
-  }, [open, initialAnswers, plan.cplan]);
+  }, [open, plan.cplan, initialByInsured, tabs.map((t) => t.key).join('|')]);
+
+  const answers = byInsured[activeKey] ?? {};
+  const liveErrors = useMemo(
+    () => validateAnswers(questions, withBooleanDefaults(questions, answers)),
+    [questions, answers],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -105,15 +169,14 @@ export function FuneralHealthModal({
   if (!open) return null;
 
   const setAnswer = (id: string, value: unknown) => {
-    setAnswers((prev) => {
-      const next = { ...prev, [id]: value };
-      // Si se oculta una hija (showIf), limpiar su respuesta
+    setByInsured((prev) => {
+      const current = { ...(prev[activeKey] ?? {}), [id]: value };
       for (const q of questions) {
-        if (q.showIf?.field === id && !isVisible(q, next)) {
-          delete next[q.id];
+        if (q.showIf?.field === id && !isVisible(q, current)) {
+          delete current[q.id];
         }
       }
-      return next;
+      return { ...prev, [activeKey]: current };
     });
     setErrors((prev) => {
       const next = { ...prev };
@@ -123,20 +186,35 @@ export function FuneralHealthModal({
   };
 
   const handleSubmit = () => {
-    const nextErrors = validateAnswers(questions, answers);
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      return;
+    const filled: Record<string, Record<string, unknown>> = {};
+    for (const t of tabs) {
+      filled[t.key] = withBooleanDefaults(questions, byInsured[t.key] ?? {});
+      const nextErrors = validateAnswers(questions, filled[t.key]);
+      const pending = !visited[t.key] || Object.keys(nextErrors).length > 0;
+      if (pending) {
+        setByInsured(filled);
+        setActiveKey(t.key);
+        setVisited((prev) => ({ ...prev, [t.key]: true }));
+        setErrors(nextErrors);
+        return;
+      }
     }
-    onConfirm(answers);
+    onConfirm(filled);
   };
+
+  const activeIdx = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
+  const pendingTabs = tabs.filter((t) => {
+    if (!visited[t.key]) return true;
+    return !isInsuredReady(questions, byInsured[t.key] ?? {});
+  });
+  const pendingNames = joinInsuredNames(pendingTabs.map((t) => t.label));
 
   const modal = (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="health-modal-title"
-      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[120] flex items-stretch sm:items-center justify-center p-0 sm:p-3"
     >
       <div
         className="absolute inset-0 bg-[#091133]/55 backdrop-blur-sm"
@@ -144,27 +222,26 @@ export function FuneralHealthModal({
         aria-hidden
       />
 
-      <div className="relative w-full sm:max-w-2xl max-h-[92dvh] sm:max-h-[88dvh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-[0_32px_80px_-20px_rgba(9,17,51,0.45)] overflow-hidden animate-spring-in">
+      <div className="relative w-full sm:max-w-2xl h-[100dvh] sm:h-[min(88dvh,40rem)] min-h-0 flex flex-col bg-white rounded-none sm:rounded-3xl shadow-[0_32px_80px_-20px_rgba(9,17,51,0.45)] overflow-hidden animate-spring-in">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 sm:px-7 pt-5 sm:pt-6 pb-4 border-b border-slate-100 bg-gradient-to-br from-indigo-50/80 via-white to-white">
+        <div className="shrink-0 flex items-start justify-between gap-3 px-4 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-5 pb-3 border-b border-slate-100 bg-gradient-to-br from-indigo-50/80 via-white to-white">
           <div className="min-w-0">
-            <p className="text-[0.62rem] font-black tracking-[0.22em] uppercase text-fuchsia-500 mb-1 inline-flex items-center gap-1.5">
+            <p className="text-[0.62rem] font-black tracking-[0.22em] uppercase text-fuchsia-500 mb-0.5 inline-flex items-center gap-1.5">
               <ClipboardList size={11} />
               Confirmación · Salud
             </p>
-            <h2 id="health-modal-title" className="font-display text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+            <h2 id="health-modal-title" className="font-display text-lg sm:text-2xl font-black text-slate-900 leading-tight">
               Cuestionario de salud
             </h2>
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Declara el estado de salud del asegurado para este plan. Los campos con * son obligatorios.
-              Tus respuestas quedan en el expediente; un técnico las revisa antes del pago.
+            <p className="hidden [@media(min-height:700px)]:block text-xs text-slate-500 mt-1 leading-relaxed">
+              Declara la salud de cada asegurado. En Sí/No, si no marcas el interruptor cuenta como No.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="flex-shrink-0 w-11 h-11 rounded-xl bg-white border border-slate-200 grid place-items-center text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-colors disabled:opacity-40 touch-manipulation"
+            className="flex-shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white border border-slate-200 grid place-items-center text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-colors disabled:opacity-40 touch-manipulation"
             aria-label="Cerrar cuestionario y volver al plan"
           >
             <X size={16} />
@@ -172,30 +249,75 @@ export function FuneralHealthModal({
         </div>
 
         {/* Plan preview */}
-        <div className="px-5 sm:px-7 py-4 bg-slate-50/80 border-b border-slate-100">
-          <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="shrink-0 px-4 sm:px-6 py-2.5 sm:py-3 bg-slate-50/80 border-b border-slate-100">
+          <div className="rounded-xl sm:rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 sm:p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[0.6rem] font-black uppercase tracking-wider text-indigo-500 mb-1">
+                <p className="text-[0.6rem] font-black uppercase tracking-wider text-indigo-500">
                   Plan confirmado
                 </p>
-                <p className="font-display font-black text-slate-900 text-lg leading-tight">{plan.name}</p>
-                <p className="text-xs text-slate-500 mt-1">{frecuenciaLabel}</p>
+                <p className="font-display font-black text-slate-900 text-sm sm:text-lg leading-tight truncate">{plan.name}</p>
+                <p className="text-[0.7rem] sm:text-xs text-slate-500 truncate">{frecuenciaLabel}</p>
               </div>
               {quote && (
-                <div className="text-right">
-                  <p className="text-2xl font-display font-black gradient-text-indigo tabular-nums">
+                <div className="text-right shrink-0">
+                  <p className="text-xl sm:text-2xl font-display font-black gradient-text-indigo tabular-nums">
                     ${quote.mprimaext.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                  <p className="text-[0.65rem] text-slate-500 font-semibold uppercase">Prima</p>
+                  <p className="text-[0.6rem] text-slate-500 font-semibold uppercase">Prima</p>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Questions */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-4">
+        {tabs.length > 0 && (
+          <div className="shrink-0 px-4 sm:px-6 pt-2.5 pb-1">
+            <p className="text-[0.65rem] font-bold text-slate-500 mb-1.5">
+              Asegurado {activeIdx + 1} de {tabs.length}
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {tabs.map((t) => {
+                const ready = visited[t.key] && isInsuredReady(questions, byInsured[t.key] ?? {});
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => {
+                      setActiveKey(t.key);
+                      setVisited((prev) => ({ ...prev, [t.key]: true }));
+                      setErrors({});
+                    }}
+                    className={`shrink-0 max-w-[13rem] truncate px-3 py-1.5 rounded-full text-xs font-bold border inline-flex items-center gap-1.5 transition-colors ${
+                      activeKey === t.key
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : ready
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:border-emerald-300'
+                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:border-amber-300'
+                    }`}
+                  >
+                    {ready ? <Check size={12} strokeWidth={2.6} /> : <AlertCircle size={12} strokeWidth={2.4} />}
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+            {questions.length > 0 && tabs.length > 1 && (
+              pendingTabs.length > 0 ? (
+                <p className="mt-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+                  Falta responder las preguntas de {pendingNames}.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 leading-relaxed">
+                  Los {tabs.length} asegurados ya respondieron el cuestionario.
+                </p>
+              )
+            )}
+          </div>
+        )}
+
+        {/* Questions — único tramo con scroll; header/footer fijos */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 sm:px-6 py-3 sm:py-4 space-y-3">
           {loadingQuestions ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
               <Loader2 size={28} className="animate-spin text-indigo-500" />
@@ -209,7 +331,7 @@ export function FuneralHealthModal({
           ) : (
             visibleQuestions.map((q, idx) => {
               const nested = Boolean(q.showIf?.field);
-              const err = errors[q.id];
+              const err = errors[q.id] || liveErrors[q.id];
               const label = (q.label || '').trim() || 'Pregunta';
               return (
               <div
@@ -222,9 +344,18 @@ export function FuneralHealthModal({
                     <ToggleSwitch
                       checked={answers[q.id] === true}
                       onChange={(v) => setAnswer(q.id, v)}
-                      label={`${label}${q.required ? ' *' : ''}`}
+                      label={label}
                       description={q.description}
                     />
+                    <p className="mt-1.5 ml-1 text-[0.72rem] leading-relaxed text-slate-500">
+                      {answers[q.id] === true ? (
+                        <span className="font-semibold text-indigo-700">Respuesta: Sí.</span>
+                      ) : (
+                        <span className="font-semibold text-slate-600">Respuesta: No.</span>
+                      )}
+                      {' '}
+                      Encienda el interruptor solo si la respuesta es sí. Si lo deja apagado, se guarda como no.
+                    </p>
                     {err && (
                       <p className="text-xs text-rose-500 font-medium mt-1.5 ml-1">{err}</p>
                     )}
@@ -273,20 +404,24 @@ export function FuneralHealthModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 sm:px-7 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-md flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex items-center justify-center sm:justify-start gap-2 text-xs text-slate-500 order-2 sm:order-1">
+        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 order-2 sm:order-1 min-w-0">
             <ShieldCheck size={13} className="text-emerald-500 shrink-0" />
-            <span className="font-medium">Respuestas almacenadas de forma segura</span>
+            <span className="font-medium truncate">
+              {pendingTabs.length > 0 && questions.length > 0 && tabs.length > 1
+                ? `Falta: ${pendingNames}`
+                : 'Respuestas almacenadas de forma segura'}
+            </span>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto order-1 sm:order-2">
-            <Button variant="secondary" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none min-w-[7.5rem]">
+            <Button variant="secondary" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none min-w-[6.5rem]">
               Volver
             </Button>
             <Button
               variant="primary"
               onClick={handleSubmit}
               disabled={saving || loadingQuestions || visibleQuestions.length === 0}
-              className="flex-1 sm:flex-none sm:min-w-[11.5rem] btn-shine"
+              className="flex-1 sm:flex-none sm:min-w-[11rem] btn-shine"
             >
               {saving ? (
                 <>

@@ -24,7 +24,7 @@ import {
   getNexusTokenFromUrl,
 } from './nexus-token-client';
 import { canNavigateToStep, getDefaultRequiredDocs } from './wizard-navigation';
-import { getProductConfig } from './product';
+import { getProductConfig, isPatrimonial } from './product';
 import { BUILDER_PRODUCT_STORAGE_KEY, isExelixiCatalogFlow, ensureExelixiFlowQueryParam } from './exelixi-catalog';
 import { ensureCotizadorFlowQueryParam, isCotizadorFlow } from './cotizador-flow';
 import { applyWizardStepFromUrl, defaultStepForModule, stepToModuleOrder } from './wizard-step';
@@ -34,6 +34,7 @@ import {
   extractActorMetadataFromBridgeData,
 } from './sso-metadata';
 import { readFlowHandoff } from './flow-handoff';
+import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
 
 // ── Configuración por puerto (dev local) o hostname (HTTPS sslip.io) ───────
 const PORT_TO_ORDER: Record<string, number> = {
@@ -106,14 +107,9 @@ function getModuleTokenKey(): string {
   return PORT_TO_TOKEN_KEY[window.location.port ?? ''] ?? 'nexus_access_token';
 }
 
-/** Flow (session/save/done) usa /nexus-api de Apache → admin :3091.
- *  No usar /emision/nexus-api (eso es verify en :3092 y no tiene /api/flow). */
-const bridgeHost = () => {
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    return `${window.location.origin}/nexus-api`;
-  }
-  return resolveNexusApiUrl(import.meta.env?.VITE_NEXUS_API_URL as string | undefined);
-};
+/** Flow (session/save/done): misma base que NexusGuard (GCIA → nexus-api.exelixitech.com). */
+const bridgeHost = () =>
+  resolveNexusApiUrl(import.meta.env?.VITE_NEXUS_API_URL as string | undefined);
 const QUERY_KEY   = 'sid';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -228,12 +224,17 @@ function makeBridge(): BridgeAPI {
     }
     // Limpieza de datos fantasma — no aplicar en flujo catálogo Exélixi
     const isCatalogFlow = isExelixiCatalogFlow();
-    const prod = sessionStorage.getItem('exelixi_product') || 'rcv';
+    const prod = sessionStorage.getItem('exelixi_product') || (isPatrimonial() ? 'patrimonial' : 'rcv');
     if (!isCatalogFlow) {
       if (prod === 'funerario') {
         delete out.vehicle;
+        delete out.patrimoniales;
+      } else if (prod === 'patrimonial') {
+        delete out.vehicle;
+        delete out.funeral;
       } else if (prod === 'rcv') {
         delete out.funeral;
+        delete out.patrimoniales;
       }
     }
     out.product = prod;
@@ -261,7 +262,9 @@ function makeBridge(): BridgeAPI {
       out.fraccionado = isFrecuenciaFraccionada(freq);
     }
 
-    return enrichBridgePayloadForSave(out, getModuleTokenKey());
+    const payload = enrichBridgePayloadForSave(out, getModuleTokenKey());
+    persistFlowHandoff(payload);
+    return payload;
   };
 
   // Campos cuyo valor NO debe sobrescribirse durante la hidratación.
@@ -380,12 +383,43 @@ function makeBridge(): BridgeAPI {
             target = url.toString();
           } catch { /* ignore */ }
         }
+        if (shouldUseTarjetaPublicApi()) {
+          target = withTarjetaFlowQuery(target);
+        }
         // Pequeño delay para mostrar el toast de éxito antes de saltar
         setTimeout(() => { window.location.href = target; }, 900);
       }
       return out ?? { finished: true };
     } catch (e) {
       console.warn('[bridge] advance failed', e);
+      if (order === 3) {
+        const pagosBase = (
+          (import.meta.env.VITE_PAGOS_CONTINUE_BASE as string | undefined)?.replace(/\/$/, '')
+          || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5184' : '/pagos')
+        );
+        const params = new URLSearchParams();
+        if (sid) params.set('sid', sid);
+        const token =
+          getNexusTokenFromUrl()
+          || (typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem(getModuleTokenKey())
+            : null);
+        if (token) params.set('nexus_token', token);
+        try {
+          const product = sessionStorage.getItem('exelixi_product') || 'rcv';
+          params.set('product', product);
+        } catch {
+          params.set('product', 'rcv');
+        }
+        if (isExelixiCatalogFlow()) {
+          params.set('flow', 'exelixi-catalog');
+        }
+        if (isCotizadorFlow()) {
+          params.set('flow', 'cotizador');
+        }
+        params.set('wizardStep', '5');
+        window.location.href = `${pagosBase}/?${params.toString()}`;
+      }
       return { finished: true };
     }
   };
