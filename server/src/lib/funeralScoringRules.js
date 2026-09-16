@@ -19,7 +19,7 @@ const DEFAULT_SCORING_RULES = {
     reject: {
       min: 70,
       max: 9999,
-      message: 'Según tus respuestas no es posible emitir esta póliza en línea.',
+      message: 'Un técnico revisará tu solicitud porque el puntaje es alto.',
     },
   },
   concurrence: {
