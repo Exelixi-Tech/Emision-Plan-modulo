@@ -32,7 +32,7 @@ export function isExelixiCatalogFlowHint(hints?: {
   if (hints?.url) {
     try {
       const parsed = new URL(hints.url, window.location.origin);
-      if (parsed.searchParams.get('product') === 'rcv' || parsed.searchParams.get('product') === 'funerario') {
+      if (parsed.searchParams.get('product') === 'rcv' || parsed.searchParams.get('product') === 'funerario' || parsed.searchParams.get('product') === 'patrimoniales') {
         return false;
       }
       const flow = parsed.searchParams.get('flow');
@@ -62,7 +62,7 @@ export function isExelixiCatalogFlow(): boolean {
     const flow = params.get('flow');
     if (flow === 'exelixi-catalog' || flow === 'exelixi') return true;
     const product = params.get('product');
-    if (product === 'rcv' || product === 'funerario') return false;
+    if (product === 'rcv' || product === 'funerario' || product === 'patrimoniales') return false;
     if (isExelixiCatalogEntryPath()) return true;
   } catch {
     /* ignore */
@@ -74,7 +74,7 @@ export function ensureExelixiFlowQueryParam(active: boolean): void {
   if (!active || isExelixiCatalogFlow()) return;
   try {
     const url = new URL(window.location.href);
-    if (url.searchParams.get('product') === 'rcv' || url.searchParams.get('product') === 'funerario') {
+    if (url.searchParams.get('product') === 'rcv' || url.searchParams.get('product') === 'funerario' || url.searchParams.get('product') === 'patrimoniales') {
       return;
     }
     url.searchParams.set('flow', 'exelixi-catalog');
