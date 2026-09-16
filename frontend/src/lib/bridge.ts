@@ -33,7 +33,7 @@ import {
   enrichBridgePayloadForSave,
   extractActorMetadataFromBridgeData,
 } from './sso-metadata';
-import { persistFlowHandoff, readFlowHandoff } from './flow-handoff';
+import { readFlowHandoff } from './flow-handoff';
 import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
 
 // ── Configuración por puerto (dev local) o hostname (HTTPS sslip.io) ───────

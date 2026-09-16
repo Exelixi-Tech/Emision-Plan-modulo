@@ -252,6 +252,10 @@ export interface PolicyCoverageLine {
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
+  /** Alias Sis2000 / quote patrimonial. */
+  xcobertura?: string;
+  msuma?: number;
+  msumamax?: number;
 }
 
 export interface PolicyQuote {
