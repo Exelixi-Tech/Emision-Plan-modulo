@@ -28,9 +28,13 @@
       (function () {
         try {
           var path = location.pathname.replace(/\/+$/, '');
-          if (!/\/config\/preguntas$/i.test(path)) return;
+          var qs = new URLSearchParams(location.search);
+          var inConfig = /\/config$/i.test(path);
+          var inPreguntas = /\/config\/preguntas$/i.test(path);
+          if (!inPreguntas && !(inConfig && qs.get('view') === 'preguntas')) return;
+          var prefix = path.replace(/\/config(\/preguntas)?$/i, '');
           var next = new URL(location.href);
-          next.pathname = path.replace(/\/preguntas$/i, '');
+          next.pathname = (prefix || '') + '/';
           next.searchParams.set('view', 'preguntas');
           location.replace(next.pathname + next.search + next.hash);
         } catch (e) {}
