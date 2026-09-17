@@ -145,16 +145,29 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   );
 }
 
-/** Canal SSO genérico (JWT + sid + snapshot) sin forzar cproducto funerario 57. */
-function appendSsoCanalQuery(qs: URLSearchParams): void {
+/** Metadata del canal SSO: snapshot marketplace → JWT → metadataCanal del wizard. */
+function readSsoCanalMeta(): Record<string, unknown> {
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
   const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
-  const meta: Record<string, unknown> = {
+  return {
     ...readMarketplaceActorSnapshot(),
     ...(tokenMeta || {}),
     ...storeMeta,
   };
+}
+
+/** Ramo enviado por el SSO. `null` si el canal no lo declara. */
+export function resolveSsoCramo(): number | null {
+  const raw = readSsoCanalMeta().cramo;
+  if (raw == null || String(raw).trim() === '') return null;
+  const cramo = parseInt(String(raw).trim(), 10);
+  return Number.isFinite(cramo) && cramo > 0 ? cramo : null;
+}
+
+/** Canal SSO genérico (JWT + sid + snapshot) sin forzar cproducto funerario 57. */
+function appendSsoCanalQuery(qs: URLSearchParams): void {
+  const meta = readSsoCanalMeta();
 
   for (const key of FUNERAL_CANAL_QUERY_KEYS) {
     if (meta[key] != null && String(meta[key]).trim() !== '') {
@@ -793,9 +806,11 @@ export const personasApi = {
 };
 
 export const patrimonialApi = {
-  planes: (cramo = 20) => {
+  /** El ramo del SSO manda; `cramo` solo se usa si el canal no lo declara. */
+  planes: (cramo?: number) => {
     const qs = new URLSearchParams();
-    qs.set('cramo', String(cramo));
+    const ramo = resolveSsoCramo() ?? cramo;
+    if (ramo != null) qs.set('cramo', String(ramo));
     appendSsoCanalQuery(qs);
     return api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?${qs.toString()}`);
   },
@@ -805,7 +820,10 @@ export const patrimonialApi = {
     ifrecuencia?: string;
     pdescuento?: number;
     precargo?: number;
-  }) => api.post<QuotePolicyResponse>('/patrimonial/cotizacion', payload),
+  }) => {
+    const cramo = resolveSsoCramo() ?? payload.cramo;
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────

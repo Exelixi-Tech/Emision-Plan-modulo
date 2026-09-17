@@ -31,9 +31,12 @@ function patrimonialCanalMeta(req) {
       meta[key] = String(q[key]).trim();
     }
   }
-  if (q.cramo != null && String(q.cramo).trim() !== '') {
-    const cramo = parseInt(String(q.cramo), 10);
+  // El ramo del JWT SSO manda; la query solo cubre el caso sin metadata.
+  if (meta.cramo == null || String(meta.cramo).trim() === '') {
+    const cramo = parseInt(String(q.cramo ?? ''), 10);
     if (Number.isFinite(cramo)) meta.cramo = cramo;
+  } else {
+    meta.cramo = Number(meta.cramo);
   }
   return meta;
 }
@@ -82,9 +85,7 @@ function withNexusMetadata(state, nexusMetadata) {
 router.get('/planes', async (req, res) => {
   const meta = patrimonialCanalMeta(req);
   const entity = resolveEntityContext(meta);
-  const cramo = meta.cramo != null
-    ? Number(meta.cramo)
-    : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO);
+  const cramo = Number.isFinite(Number(meta.cramo)) ? Number(meta.cramo) : DEFAULT_RAMO;
   try {
     const { planes } = await patrimonialClient.getPlanesPatrimonial(cramo, {
       ...meta,
@@ -114,9 +115,10 @@ async function handleQuote(req, res) {
     '',
   ).trim();
 
-  const cramo = body.cramo != null
-    ? Number(body.cramo)
-    : (body.state?.cramo != null ? Number(body.state.cramo) : DEFAULT_RAMO);
+  const ssoCramo = patrimonialCanalMeta(req).cramo;
+  const cramo = [body.cramo, body.state?.cramo, body.state?.metadataCanal?.cramo, ssoCramo, DEFAULT_RAMO]
+    .map((v) => Number(v))
+    .find((v) => Number.isFinite(v) && v > 0);
 
   const ifrecuencia = String(
     body.ifrecuencia ||
@@ -251,9 +253,9 @@ async function handleEmit(req, res) {
       message: 'cplan es obligatorio para emitir. Debe venir del plan elegido (SSO/catálogo), no de un valor fijo de laboratorio.',
     });
   }
-  const cramo = state.cramo != null
-    ? Number(state.cramo)
-    : (state.metadataCanal?.cramo != null ? Number(state.metadataCanal.cramo) : DEFAULT_RAMO);
+  const cramo = [state.cramo, state.metadataCanal?.cramo, patrimonialCanalMeta(req).cramo, DEFAULT_RAMO]
+    .map((v) => Number(v))
+    .find((v) => Number.isFinite(v) && v > 0);
   const ifrecuencia = frecuencia || state.rcv?.frecuencia || state.frecuencia || 'A';
   const ptasamon = state.quote?.ptasa != null
     ? Number(state.quote.ptasa)
