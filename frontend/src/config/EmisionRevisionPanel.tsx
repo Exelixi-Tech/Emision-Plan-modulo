@@ -59,6 +59,10 @@ type Submission = {
       reason?: string;
       paymentEmailTo?: string;
       paymentEmailSent?: boolean;
+      paymentEmailError?: string;
+      clientEmailTo?: string;
+      clientEmailSent?: boolean;
+      clientEmailError?: string;
     };
     documents?: Record<string, {
       ocr?: Record<string, unknown>;
@@ -1301,6 +1305,13 @@ export function EmisionRevisionPanel() {
                   <p className="text-xs text-rose-800 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
                     Rechazada{selected.reviewedAt ? ` ${formatDate(selected.reviewedAt)}` : ''}.
                     {selected.rejectReason ? ` Motivo: ${selected.rejectReason}` : ''}
+                    {selected.emailSent
+                      ? ' Correo de rechazo enviado al tomador.'
+                      : selected.emailError
+                        ? ` Correo al tomador no salió: ${selected.emailError}`
+                        : selected.tomadorEmail
+                          ? ' El correo de rechazo no se confirmó.'
+                          : ' Sin correo del tomador: no se envió aviso.'}
                   </p>
                 )}
                 {selected.estado === 'expired' && (
