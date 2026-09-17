@@ -21,6 +21,7 @@ const {
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
+const { isFunerarioCplan } = require('../lib/funerarioPlan');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -122,9 +123,11 @@ router.get('/planes', async (req, res) => {
       cgestor_in: meta.cgestor_in,
       cgestor: meta.cgestor,
     });
-    const planes = Array.isArray(raw) ? raw : [];
+    const planes = (Array.isArray(raw) ? raw : []).filter((p) =>
+      isFunerarioCplan(p?.cplan || p?.CPLAN),
+    );
     console.log(
-      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length}`,
+      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length} (sin alfanuméricos tipo FUNESP)`,
     );
 
     res.set({
@@ -167,6 +170,13 @@ router.post('/cotizacion', async (req, res) => {
 
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'cplan es obligatorio' });
+  }
+  if (!isFunerarioCplan(cplan)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_FUNERARIO',
+      message: `El plan ${cplan} no es funerario individual (cplan 2–12, ramo 9).`,
+    });
   }
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe enviar al menos un asegurado' });
@@ -279,6 +289,13 @@ router.post('/emision', async (req, res) => {
   }
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
+  }
+  if (!isFunerarioCplan(cplan)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_FUNERARIO',
+      message: `El plan ${cplan} no es funerario individual (cplan 2–12, ramo 9).`,
+    });
   }
 
   const ifrecuencia = frecuencia || funeral.frecuencia || 'A';

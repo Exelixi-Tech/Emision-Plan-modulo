@@ -9,7 +9,7 @@ import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } fro
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
-import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
+import { ageErrorForParentesco, isFunerarioCplan, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { syncTitularFromTomador } from '../../lib/funeral-sync';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
@@ -95,7 +95,9 @@ export function FuneralPlansStep() {
     personasApi.planes(product.cramo)
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
+        const mapped = (res.data.planes ?? [])
+          .filter((p) => isFunerarioCplan(p.cplan))
+          .map(apiPlanToWizardPlan);
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
         const keep = current?.cplan
