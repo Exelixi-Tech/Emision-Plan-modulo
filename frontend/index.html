@@ -29,13 +29,15 @@
         try {
           var path = location.pathname.replace(/\/+$/, '');
           var qs = new URLSearchParams(location.search);
-          var inConfig = /\/config$/i.test(path);
           var inPreguntas = /\/config\/preguntas$/i.test(path);
-          if (!inPreguntas && !(inConfig && qs.get('view') === 'preguntas')) return;
-          var prefix = path.replace(/\/config(\/preguntas)?$/i, '');
+          var inConfig = /\/config$/i.test(path);
+          var inRevision = /\/revision$/i.test(path);
+          if (!inPreguntas && !inConfig && !inRevision) return;
+          var view = inPreguntas ? 'preguntas' : inRevision ? 'revision' : (qs.get('view') || 'config');
+          var prefix = path.replace(/\/(config(\/preguntas)?|revision)$/i, '');
           var next = new URL(location.href);
           next.pathname = (prefix || '') + '/';
-          next.searchParams.set('view', 'preguntas');
+          next.searchParams.set('view', view);
           location.replace(next.pathname + next.search + next.hash);
         } catch (e) {}
       })();

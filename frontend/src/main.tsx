@@ -19,10 +19,12 @@ if (isTarjetaRcvFlow()) {
   hydrateTarjetaMetadataCanal();
 }
 
-// /config (dev) o /emision/config (prod) · /config/preguntas = solo cuestionario
+// /config y /revision: index.html redirige a ?view= para que los assets no 404en con base relativa.
+const viewParam = new URL(window.location.href).searchParams.get('view');
 const isConfigRoute = /\/config(\/preguntas)?\/?$/i.test(window.location.pathname)
-  || new URL(window.location.href).searchParams.get('view') === 'preguntas';
-const isRevisionRoute = /\/revision\/?$/.test(window.location.pathname);
+  || viewParam === 'preguntas'
+  || viewParam === 'config';
+const isRevisionRoute = /\/revision\/?$/.test(window.location.pathname) || viewParam === 'revision';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
