@@ -252,6 +252,13 @@ export interface PolicyCoverageLine {
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
+  /** Campos que devuelve el desglose patrimonial (quote-generalRisks). */
+  xcobertura?: string;
+  mprima?: number;
+  mprimaext?: number;
+  msuma?: number | null;
+  msumamax?: number;
+  msumamin?: number;
 }
 
 export interface PolicyQuote {
