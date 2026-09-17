@@ -5,46 +5,65 @@ import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
-import { readMarketplaceActorSnapshot } from './sso-metadata';
+import {
+  composeGestorCsubitem,
+  normalizeCentidad,
+  readMarketplaceActorSnapshot,
+  resolveGestorForQuery,
+} from './sso-metadata';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
-/** centidad/citem del JWT SSO o metadataCanal (flujo tarjeta sin token). */
-function appendCanalEntityQuery(qs: URLSearchParams): boolean {
-  if (shouldUseTarjetaPublicApi()) {
-    const storeMeta = (
-      useWizardStore.getState().metadataCanal as Record<string, unknown> | null
-    ) ?? readTarjetaMetadataCanal();
-    if (storeMeta) {
-      const centidad = storeMeta.centidad != null ? String(storeMeta.centidad).trim().toUpperCase() : '';
-      const citemRaw = storeMeta.citem
-        ?? (centidad === 'P' ? storeMeta.cproductor : null)
-        ?? (centidad === 'C' ? (storeMeta.ccanalalt_in ?? storeMeta.ccanalalt) : null);
-      const citem = citemRaw != null && citemRaw !== '' ? String(citemRaw).trim() : '';
-
-      if (centidad) qs.set('centidad', centidad);
-      if (citem) qs.set('citem', citem);
-      if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
-      if (storeMeta.cramo != null) qs.set('cramo', String(storeMeta.cramo));
-      if (centidad && citem) return true;
-
-      if (storeMeta.cproductor != null) {
-        if (!centidad) qs.set('centidad', 'P');
-        if (!citem) qs.set('citem', String(storeMeta.cproductor));
-        if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
-        return true;
-      }
-    }
+function scrubActorMetaForExclusion(meta: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...meta };
+  const composed = composeGestorCsubitem(out);
+  if (composed) {
+    out.cgestor = composed;
+    out.csubitem = composed;
+    return out;
   }
+  delete out.csubitem;
+  delete out.cgestor;
+  delete out.cgestor_in;
+  return out;
+}
 
+function appendGestorExclusionQuery(qs: URLSearchParams, meta: Record<string, unknown>): void {
+  const actor = scrubActorMetaForExclusion(meta);
+  const csubitem = composeGestorCsubitem(actor);
+  if (!csubitem) return;
+
+  qs.set('csubitem', csubitem);
+  qs.set('cgestor', csubitem);
+}
+
+/** centidad/citem del JWT SSO, snapshot bridge o metadataCanal (flujo tarjeta). */
+function appendCanalEntityQuery(qs: URLSearchParams): boolean {
+  const storeMeta = (
+    useWizardStore.getState().metadataCanal as Record<string, unknown> | null
+  ) ?? {};
+  const tarjetaMeta = shouldUseTarjetaPublicApi() ? readTarjetaMetadataCanal() : null;
   const token = getNexusToken(NEXUS_TOKEN_KEY);
-  const meta = token ? decodeNexusTokenMetadata(token) : null;
-  if (!meta) return false;
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
 
-  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const snapshot = readMarketplaceActorSnapshot();
+  const meta: Record<string, unknown> = {
+    ...snapshot,
+    ...(tarjetaMeta || {}),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+  const gestorHint = resolveGestorForQuery({
+    ...snapshot,
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  });
+  if (gestorHint) meta.cgestor = gestorHint;
+
+  const centidad = normalizeCentidad(meta);
   const citemRaw = meta.citem
     ?? (centidad === 'P' ? meta.cproductor : null)
     ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
@@ -54,8 +73,17 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   if (citem) qs.set('citem', citem);
   if (meta.cproducto != null) qs.set('cproducto', String(meta.cproducto));
   if (meta.cramo != null) qs.set('cramo', String(meta.cramo));
+  appendGestorExclusionQuery(qs, meta);
 
-  return Boolean(centidad && citem);
+  if (centidad && citem) return true;
+
+  if (meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    if (!centidad) qs.set('centidad', 'P');
+    if (!citem) qs.set('citem', String(meta.cproductor).trim());
+    return true;
+  }
+
+  return Boolean(resolveGestorForQuery(meta));
 }
 
 const FUNERAL_CANAL_QUERY_KEYS = [
@@ -659,7 +687,12 @@ export const catalogoApi = {
     const hasEntity = appendCanalEntityQuery(qs);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
-    return api.get<{ success: boolean; planes: PlanRcv[]; canalVisibility?: CanalVisibility | null }>(
+    return api.get<{
+      success: boolean;
+      planes: PlanRcv[];
+      mensaje?: string;
+      canalVisibility?: CanalVisibility | null;
+    }>(
       `/catalogo/planes${query ? `?${query}` : ''}`,
     );
   },
