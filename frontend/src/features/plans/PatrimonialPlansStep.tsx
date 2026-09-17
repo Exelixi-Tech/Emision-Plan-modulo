@@ -5,7 +5,7 @@ import {
   Loader2, AlertTriangle, Building2, CalendarClock
 } from 'lucide-react';
 import type { Plan } from '../../types';
-import { patrimonialApi, type PlanRcv, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import { patrimonialApi, resolveSsoCramo, type PlanRcv, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
@@ -37,6 +37,8 @@ export function PatrimonialPlansStep() {
   } = useWizardStore();
 
   const product = getProductConfig();
+  /** Ramo del SSO; el del producto solo cubre el canal que no lo declara. */
+  const cramo = resolveSsoCramo() ?? product.cramo;
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -47,13 +49,13 @@ export function PatrimonialPlansStep() {
 
   const activeFrecuencia = rcv?.frecuencia || 'A';
 
-  // ── Carga de planes patrimoniales (ramo 20) ──────────────────────────────────
+  // ── Carga de planes patrimoniales del ramo del SSO ──────────────────────────
   useEffect(() => {
     let cancelled = false;
     setPlansLoading(true);
     setPlansError(false);
 
-    patrimonialApi.planes(product.cramo || 20)
+    patrimonialApi.planes(cramo)
       .then((res) => {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
@@ -71,7 +73,7 @@ export function PatrimonialPlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cramo]);
 
   // ── Carga de frecuencias ──────────────────────────────────────────────────
   useEffect(() => {
@@ -83,7 +85,7 @@ export function PatrimonialPlansStep() {
 
     let cancelled = false;
     setFrecLoading(true);
-    getFrecuenciasByPlan(planCode, product.cramo || 20)
+    getFrecuenciasByPlan(planCode, cramo)
       .then((items) => {
         if (!cancelled) {
           setApiFrecuencias(items);
@@ -99,12 +101,12 @@ export function PatrimonialPlansStep() {
       });
 
     return () => { cancelled = true; };
-  }, [selectedPlan?.cplan, product.cramo, setRcv, activeFrecuencia]);
+  }, [selectedPlan?.cplan, cramo, setRcv, activeFrecuencia]);
 
   // ── Cotización contra quote-generalRisks ────────────────────────────────────
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
-    ? `patrimonial|${planCode}|${activeFrecuencia}|${product.cramo || 20}`
+    ? `patrimonial|${planCode}|${activeFrecuencia}|${cramo}`
     : '';
 
   const activeSigRef = useRef('');
@@ -120,7 +122,7 @@ export function PatrimonialPlansStep() {
 
     patrimonialApi.cotizar({
       cplan: planCode,
-      cramo: product.cramo || 20,
+      cramo,
       ifrecuencia: activeFrecuencia,
       pdescuento: 0,
       precargo: 0,

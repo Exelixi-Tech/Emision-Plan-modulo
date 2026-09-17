@@ -20,10 +20,16 @@ export interface ProductConfig {
   builderProductId?: string;
 }
 
+/** Ramo patrimonial por defecto. Solo aplica si el SSO no envía `cramo`. */
+export const PATRIMONIAL_RAMO_DEFAULT = parseInt(
+  import.meta.env.VITE_LAMUNDIAL_RAMO_PATRIMONIAL || '20',
+  10,
+);
+
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
   rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
   funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, hasVehicle: false },
-  patrimoniales: { id: 'patrimoniales', label: 'Patrimoniales', fullLabel: 'Seguro Patrimonial', cramo: 20, hasVehicle: false },
+  patrimoniales: { id: 'patrimoniales', label: 'Patrimoniales', fullLabel: 'Seguro Patrimonial', cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
 };
 
 /** Ramo externo maplanes para BINAC* (confirmado: cramo 28; también existe fila duplicada en 18). */

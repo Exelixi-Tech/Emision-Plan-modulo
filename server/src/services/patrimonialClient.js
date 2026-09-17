@@ -116,14 +116,42 @@ function buildError(httpStatus, data, endpoint) {
 
 /**
  * Consulta la lista de planes vigentes para el canal SSO (cproducto/centidad/citem).
- * @param {number} [cramo=20]
+ * @param {number} [cramo] Ramo del SSO. Sin valor no se filtra por ramo.
  * @param {Record<string, unknown>} [canal]
  */
-async function getPlanesPatrimonial(cramo = DEFAULT_RAMO, canal = {}) {
+async function getPlanesPatrimonial(cramo, canal = {}) {
   return getPlanes(cramo, canal);
 }
 
-async function getPlanes(_cramo, canal = {}) {
+/**
+ * sp_busca_plan_producto_nexus resuelve por cproducto + centidad + citem; el ramo
+ * viaja en cada fila, así que el filtro por ramo se aplica sobre la respuesta.
+ * @param {Array<object>} rows
+ * @param {number|null} cramo
+ * @returns {Array<object>}
+ */
+function filterPlanesByRamo(rows, cramo) {
+  if (!Array.isArray(rows)) return [];
+  if (cramo == null || !Number.isFinite(cramo)) return rows;
+
+  const conRamo = rows.filter((row) => row?.cramo != null || row?.CRAMO != null);
+  if (!conRamo.length) {
+    console.warn(`[Patrimonial] planes sin cramo en la respuesta; no se filtra por ramo ${cramo}`);
+    return rows;
+  }
+
+  const delRamo = conRamo.filter((row) => Number(row.cramo ?? row.CRAMO) === cramo);
+  if (!delRamo.length) {
+    const disponibles = [...new Set(conRamo.map((row) => Number(row.cramo ?? row.CRAMO)))].join(', ');
+    console.warn(`[Patrimonial] el canal no tiene planes del ramo ${cramo} (ramos disponibles: ${disponibles})`);
+  }
+  return delRamo;
+}
+
+async function getPlanes(cramoSso, canal = {}) {
+  const cramo = cramoSso != null && String(cramoSso).trim() !== ''
+    ? Number(cramoSso)
+    : null;
   const entity = resolveEntityContext(canal);
   const cproducto = canal.cproducto != null && String(canal.cproducto).trim() !== ''
     ? String(canal.cproducto).trim()
@@ -147,7 +175,8 @@ async function getPlanes(_cramo, canal = {}) {
     citem: entity.citem,
   });
   if (response.status >= 200 && response.status < 300 && response.data?.status === true) {
-    const planes = response.data.data?.plan ?? [];
+    const rows = response.data.data?.plan ?? [];
+    const planes = filterPlanesByRamo(rows, cramo);
     return { planes, raw: response.data };
   }
   throw buildError(response.status, response.data, endpoint);
