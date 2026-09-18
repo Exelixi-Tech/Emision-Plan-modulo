@@ -37,6 +37,46 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
   };
 }
 
+const FALLBACK_DEV_PLANS: Plan[] = [
+  {
+    cplan: 'PLAN-PROV-01',
+    name: 'Plan Salud y Asistencia Familiar',
+    price: 'Tarifa La Mundial',
+    priceNum: 45,
+    tag: 'Plan con Proveedor',
+    desc: 'Cobertura médica y asistencial completa con red de proveedores calificados.',
+    benefits: [
+      'Atención médica y emergencias 24/7',
+      'Red de clínicas y proveedores autorizados',
+      'Cobertura para el grupo familiar asegurado',
+      'Asistencia médica domiciliaria y traslados',
+    ],
+    sumaAsegurada: 5000,
+  },
+  {
+    cplan: 'PLAN-PROV-02',
+    name: 'Plan Cobertura Integral Plus',
+    price: 'Tarifa La Mundial',
+    priceNum: 80,
+    tag: 'Plan Especial',
+    desc: 'Servicio ampliado con cobertura especializada y atención preferencial.',
+    benefits: [
+      'Acceso a red preferencial de proveedores',
+      'Atención de urgencias ambulatorias y hospitalarias',
+      'Consultas con especialistas y laboratorio',
+      'Asistencia y orientación telefónica 24/7',
+    ],
+    sumaAsegurada: 10000,
+  },
+];
+
+const FALLBACK_FRECUENCIAS: CatalogItem[] = [
+  { code: 'A', label: 'Pago anual' },
+  { code: 'S', label: 'Pago semestral' },
+  { code: 'T', label: 'Pago trimestral' },
+  { code: 'M', label: 'Pago mensual' },
+];
+
 export function ProveedorStep() {
   const {
     funeral,
@@ -75,14 +115,19 @@ export function ProveedorStep() {
     personasApi.planes(product.cramo)
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
-        setApiPlans(mapped);
-        setSelectedPlan(null);
+        const list = res.data?.planes ?? [];
+        if (list.length > 0) {
+          const mapped = list.map(apiPlanToWizardPlan);
+          setApiPlans(mapped);
+        } else {
+          // Fallback para testing sin backend/token
+          setApiPlans(FALLBACK_DEV_PLANS);
+        }
       })
       .catch(() => {
         if (cancelled) return;
-        setPlansError(true);
-        setApiPlans([]);
+        // En caso de error o sin token, cargar planes de desarrollo
+        setApiPlans(FALLBACK_DEV_PLANS);
       })
       .finally(() => {
         if (!cancelled) setPlansLoading(false);
@@ -105,14 +150,20 @@ export function ProveedorStep() {
     getFrecuenciasByPlan(planCode, product.cramo)
       .then((items) => {
         if (!cancelled) {
-          setApiFrecuencias(items);
-          const currentValid = items.find((i) => String(i.code) === funeral.frecuencia);
-          if (!currentValid && items.length > 0) {
-            setFuneral({ frecuencia: String(items[0].code) });
+          const result = items.length > 0 ? items : FALLBACK_FRECUENCIAS;
+          setApiFrecuencias(result);
+          const currentValid = result.find((i) => String(i.code) === funeral.frecuencia);
+          if (!currentValid && result.length > 0) {
+            setFuneral({ frecuencia: String(result[0].code) });
           }
         }
       })
-      .catch((err) => console.error('Error cargando frecuencias', err))
+      .catch(() => {
+        if (!cancelled) {
+          setApiFrecuencias(FALLBACK_FRECUENCIAS);
+          setFuneral({ frecuencia: 'A' });
+        }
+      })
       .finally(() => {
         if (!cancelled) setFrecLoading(false);
       });
