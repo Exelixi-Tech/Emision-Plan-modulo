@@ -12,7 +12,15 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario';
+export type ProductId = 'rcv' | 'funerario' | 'patrimonial' | 'patrimoniales';
+
+export interface PatrimonialesData {
+  datosBien: string;
+  tipo: string;
+  descripcion: string;
+}
+
+export type BienData = PatrimonialesData;
 
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -98,11 +106,22 @@ export type PersonData = {
   ciudad?: string;
   cciudad?: number;
   direccion?: string;
+  /** Peso en kg (maclient.npeso). */
+  peso?: string;
+  /** Estatura en metros (maclient.nestatura). */
+  estatura?: string;
 };
 
 export interface PlanCoberturaAdicional {
   value: string;
   text: string;
+}
+
+export interface PlanParentesco {
+  cparen: number;
+  xparentesco: string;
+  min_edad: number;
+  max_edad: number;
 }
 
 export interface Plan {
@@ -122,6 +141,12 @@ export interface Plan {
   cproducto?: string;
   /** Opciones "Incluir" del plan (CA, PT, PP…) — paridad SysIP xcober */
   coberturasAdicionales?: PlanCoberturaAdicional[];
+  /** Parentescos admitidos por el plan (personas/planes). */
+  parentescos?: PlanParentesco[];
+  /** Máximo de dependientes (maplanes_per.nmax_dep). */
+  nmax_dep?: number | null;
+  /** Tope de personas en la póliza: titular + nmax_dep. */
+  maxAsegurados?: number;
 }
 
 export interface ProveedorItem {
@@ -144,6 +169,16 @@ export interface FuneralPerson {
   pporcen?: number;
   telefono?: string;
   email?: string;
+  estadoCivil?: string;
+  estado?: string;
+  cestado?: number;
+  ciudad?: string;
+  cciudad?: number;
+  direccion?: string;
+  /** Peso en kg (maclient.npeso). */
+  peso?: string;
+  /** Estatura en metros (maclient.nestatura). */
+  estatura?: string;
 }
 
 /** Datos RCV: frecuencia de pago del plan (ramo 18). */
@@ -173,6 +208,8 @@ export interface FuneralData {
   aceptaTerminos: boolean;
   /** Respuestas completas del cuestionario de salud (por plan). */
   healthAnswers?: Record<string, unknown>;
+  /** Respuestas por asegurado (clave tipoDoc-cedula). */
+  healthAnswersByInsured?: Record<string, Record<string, unknown>>;
   /** true cuando el cuestionario fue completado y guardado en BD. */
   healthQuestionnaireDone?: boolean;
 }
@@ -218,9 +255,13 @@ export interface VehicleData {
 export interface PolicyCoverageLine {
   ccobertura?: number | string;
   name: string;
+  xcobertura?: string;
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
+  msuma?: number | null;
+  msumamax?: number | null;
+  msumamin?: number | null;
 }
 
 export interface PolicyQuote {
@@ -268,6 +309,8 @@ export interface WizardState {
   tomador: TomadorData;
   /** Datos del producto Funerario (personas). Solo se usa si product = 'funerario'. */
   funeral: FuneralData;
+  /** Datos del bien asegurado cuando product = 'patrimonial' / 'patrimoniales'. */
+  patrimoniales: PatrimonialesData;
   /** Frecuencia de pago RCV (plan automóvil). */
   rcv: RcvPlanData;
   /** true cuando la frecuencia activa es M/T/S (propaga a Pagos vía bridge). */

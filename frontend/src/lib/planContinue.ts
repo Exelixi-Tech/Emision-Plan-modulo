@@ -7,15 +7,23 @@ import {
   type DiligenciaState,
 } from './diligencia';
 import type { DocType } from '../types';
+import { shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
 
-/** Validación común antes de confirmar plan (RCV y funerario). */
+/** Validación común antes de confirmar plan (RCV, patrimonial y funerario). */
 export function validatePlanReady(
   category: string,
   selectedPlan: Plan | null,
   quoteState: QuoteState,
   quote: PolicyQuote | null,
+  options?: { requireCategory?: boolean },
 ): boolean {
-  if (!category || !selectedPlan) {
+  const hasCategory = shouldUseTarjetaPublicApi()
+    ? Boolean(category?.trim()) || Boolean(selectedPlan?.tag?.trim())
+    : Boolean(category?.trim());
+  const hasPlan = shouldUseTarjetaPublicApi()
+    ? Boolean(selectedPlan?.cplan)
+    : Boolean(selectedPlan);
+  if (!hasCategory || !hasPlan) {
     toast.warning('Selecciona un plan', 'Elige una categoría y un plan para continuar.');
     return false;
   }

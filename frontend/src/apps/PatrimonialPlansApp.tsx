@@ -1,17 +1,16 @@
 import { useEffect } from 'react';
-import { PlansStep } from '../features/plans/PlansStep';
+import { PatrimonialPlansStep } from '../features/plans/PatrimonialPlansStep';
 import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
-import { continueTarjetaToPagos, shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
 import { EmissionPlanShell } from './EmissionPlanShell';
 
 /**
- * Paso 4 — RCV únicamente.
- * Sin imports de funerario, cuestionario de salud ni API /funeral.
+ * Paso 4 — Patrimonial (Riesgos Generales, ramo 20).
+ * Flujo de selección de plan y cotización con quote-generalRisks.
  */
-export default function RcvPlansApp() {
+export default function PatrimonialPlansApp() {
   const {
     category, selectedPlan, quoteState, quote, goTo,
   } = useWizardStore();
@@ -26,7 +25,7 @@ export default function RcvPlansApp() {
       if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
       const usd = quote?.mprimaext ?? quote?.mprima;
       toast.success(
-        'Cotización lista',
+        'Cotización patrimonial lista',
         `${selectedPlan!.name}: ${usd != null ? `$${Number(usd).toFixed(2)} USD` : 'prima calculada'}.`,
       );
       return;
@@ -35,30 +34,26 @@ export default function RcvPlansApp() {
     if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
 
     toast.success(
-      '¡Plan seleccionado!',
-      `Categoría ${category} · Plan ${selectedPlan!.name} listo para emitir.`,
+      '¡Plan patrimonial seleccionado!',
+      `Plan ${selectedPlan!.name} listo para emitir.`,
     );
-    if (shouldUseTarjetaPublicApi()) {
-      continueTarjetaToPagos();
-    } else {
-      window.__bridgeAdvance?.();
-    }
+    window.__bridgeAdvance?.();
   }
 
   return (
     <EmissionPlanShell
       eyebrow={cotizador ? 'Paso 02 · Cotización' : undefined}
-      title={cotizador ? 'Planes RCV disponibles' : undefined}
+      title={cotizador ? 'Planes Patrimoniales disponibles' : undefined}
       subtitle={
         cotizador
-          ? 'Selecciona un plan para ver la prima cotizada en USD y Bs.'
-          : 'Categorías diseñadas para cada perfil de uso del vehículo.'
+          ? 'Selecciona un plan patrimonial para ver la prima cotizada en USD y Bs.'
+          : 'Planes diseñados para proteger tus bienes patrimoniales e inmuebles.'
       }
-      helpSubject="Suscripción RCV - Soporte"
+      helpSubject="Suscripción Patrimonial - Soporte"
       onContinuar={handleContinuar}
       continuarLabel={cotizador ? 'Ver cotización' : undefined}
     >
-      <PlansStep />
+      <PatrimonialPlansStep />
     </EmissionPlanShell>
   );
 }

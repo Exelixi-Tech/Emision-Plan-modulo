@@ -3,14 +3,43 @@ import type { CanalVisibility } from './canal-visibility';
 import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
+import { useWizardStore } from '../store/wizardStore';
+import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
+import { readMarketplaceActorSnapshot } from './sso-metadata';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
-/** centidad/citem del JWT SSO — fallback si el proxy no reenvía metadata completa. */
+/** centidad/citem del JWT SSO o metadataCanal (flujo tarjeta sin token). */
 function appendCanalEntityQuery(qs: URLSearchParams): boolean {
+  if (shouldUseTarjetaPublicApi()) {
+    const storeMeta = (
+      useWizardStore.getState().metadataCanal as Record<string, unknown> | null
+    ) ?? readTarjetaMetadataCanal();
+    if (storeMeta) {
+      const centidad = storeMeta.centidad != null ? String(storeMeta.centidad).trim().toUpperCase() : '';
+      const citemRaw = storeMeta.citem
+        ?? (centidad === 'P' ? storeMeta.cproductor : null)
+        ?? (centidad === 'C' ? (storeMeta.ccanalalt_in ?? storeMeta.ccanalalt) : null);
+      const citem = citemRaw != null && citemRaw !== '' ? String(citemRaw).trim() : '';
+
+      if (centidad) qs.set('centidad', centidad);
+      if (citem) qs.set('citem', citem);
+      if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
+      if (storeMeta.cramo != null) qs.set('cramo', String(storeMeta.cramo));
+      if (centidad && citem) return true;
+
+      if (storeMeta.cproductor != null) {
+        if (!centidad) qs.set('centidad', 'P');
+        if (!citem) qs.set('citem', String(storeMeta.cproductor));
+        if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
+        return true;
+      }
+    }
+  }
+
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const meta = token ? decodeNexusTokenMetadata(token) : null;
   if (!meta) return false;
@@ -27,6 +56,65 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   if (meta.cramo != null) qs.set('cramo', String(meta.cramo));
 
   return Boolean(centidad && citem);
+}
+
+const FUNERAL_CANAL_QUERY_KEYS = [
+  'centidad',
+  'citem',
+  'cgestor',
+  'cgestor_in',
+  'cproducto',
+  'cproductor',
+  'cusuario',
+  'ccanalalt',
+  'ccanalalt_in',
+  'cscanalalt',
+  'cscanalalt_in',
+] as const;
+
+/** Canal SSO del wizard funerario (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+  const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
+  const meta: Record<string, unknown> = {
+    ...readMarketplaceActorSnapshot(),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+
+  for (const key of FUNERAL_CANAL_QUERY_KEYS) {
+    if (meta[key] != null && String(meta[key]).trim() !== '') {
+      qs.set(key, String(meta[key]).trim());
+    }
+  }
+
+  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const citemRaw = meta.citem
+    ?? (centidad === 'P' ? meta.cproductor : null)
+    ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
+  const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
+  if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
+  if (citem && !qs.get('citem')) qs.set('citem', citem);
+  if (!qs.get('centidad') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('centidad', 'P');
+  }
+  if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('citem', String(meta.cproductor).trim());
+  }
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    qs.set('cramo', String(meta.cramo).trim());
+  }
+  if (!qs.get('cproducto')) qs.set('cproducto', '57');
+  if (qs.get('cproducto') === '57') qs.set('cramo', '45');
+  if (qs.get('cproductor') === '80080') qs.delete('cproductor');
+
+  return Boolean(
+    (centidad && citem)
+    || (meta.cproductor != null && String(meta.cproductor).trim() !== '')
+    || (meta.cgestor != null && String(meta.cgestor).trim() !== '')
+    || (meta.cgestor_in != null && String(meta.cgestor_in).trim() !== ''),
+  );
 }
 
 function shouldUseBridgeRules(): boolean {
@@ -592,10 +680,20 @@ export const catalogoApi = {
 //  Personas (producto Funerario, ramo 9) — planes y cotización
 // ──────────────────────────────────────────────────────────────────────
 
+export interface PlanParentescoPer {
+  cparen: number;
+  xparentesco: string;
+  min_edad: number;
+  max_edad: number;
+}
+
 export interface PlanPer {
   cplan: string;
   xplan?: string;
   cmoneda?: string;
+  nmax_dep?: number | null;
+  maxAsegurados?: number;
+  parentescos?: PlanParentescoPer[];
 }
 
 /** Asegurado que se envía a la cotización de personas (formato amigable). */
@@ -614,9 +712,13 @@ export interface CotizacionPerPayload {
 }
 
 export const personasApi = {
-  /** Planes de personas vigentes (ramo 9 = funerario por defecto). */
-  planes: (cramo = 9) =>
-    api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?cramo=${cramo}`),
+  /** Planes funerarios del canal SSO (productor/entidad/gestor), igual criterio que RCV. */
+  planes: (cramo = 9) => {
+    const qs = new URLSearchParams();
+    qs.set('cramo', String(cramo));
+    appendFuneralCanalQuery(qs);
+    return api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?${qs.toString()}`);
+  },
   /** Cotización de personas (getCotizacionPer). */
   cotizar: (payload: CotizacionPerPayload) =>
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
@@ -689,6 +791,9 @@ export interface HealthQuestion {
   plans: string[];
   showIf?: { field: string; equals: boolean | string };
   options?: { value: string; label: string }[];
+  /** Si true, la respuesta debe ser Sí (p. ej. términos). Destildar deja el cuestionario incompleto. */
+  blockIfFalse?: boolean;
+  blockReason?: string;
 }
 
 export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
@@ -738,12 +843,15 @@ export interface SubmitFuneralReviewPayload {
 
 export async function submitFuneralPolicyReview(
   payload: SubmitFuneralReviewPayload,
-): Promise<{ submission: FuneralSubmissionResult; scoring: { total: number } }> {
+): Promise<{
+  submission: FuneralSubmissionResult;
+  scoring: { total: number; verdict?: string; verdictMessage?: string };
+}> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
-      scoring: { total: number };
+      scoring: { total: number; verdict?: string; verdictMessage?: string };
     }>('/funeral/submissions', payload);
     return { submission: data.submission, scoring: data.scoring };
   } catch (err) {
@@ -848,5 +956,161 @@ export async function getProveedores(params: {
   }
 
   return mockItems;
+// ──────────────────────────────────────────────────────────────────────
+//  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
+// ──────────────────────────────────────────────────────────────────────
+
+export interface QuoteGeneralRisksDto {
+  cramo: number;
+  cplan: string;
+  ptasamon?: number;
+  cuotas?: number;
+  ifrecuencia?: string;
+  pdescuento?: number;
+  precargo?: number;
+}
+
+export type CotizacionPatrimonialPayload = Partial<QuoteGeneralRisksDto> & {
+  cplan: string;
+};
+
+export interface QuoteGeneralRisksResponse extends QuotePolicyResponse {
+  status: boolean;
+  data: Array<{
+    ccobertura: number | string;
+    xcobertura: string;
+    msuma: number;
+    mprima: number;
+    mprimaext: number;
+  }>;
+  recordset?: unknown[];
+}
+
+export interface CreateEmissionGeneralRiskDto {
+  keys: {
+    cnpoliza_rel: string | null;
+    cplan: string;
+    cramo: number;
+  };
+  tomador: {
+    tipo_tomador: string;
+    rif_tomador: number;
+    nombre_tomador: string;
+    apellido_tomador: string;
+    sexo_tomador: string;
+    estado_civil_tomador: string;
+    fnac_tomador: string;
+    telefono_tomador: string;
+    correo_tomador: string;
+    estado_tomador: string;
+    ciudad_tomador: string;
+    direccion_tomador: string;
+  };
+  asegurado: {
+    tipo_asegurado: string;
+    rif_asegurado: number;
+    nombre_asegurado: string;
+    apellido_asegurado: string;
+    sexo_asegurado: string;
+    estado_civil_asegurado: string;
+    fnac_asegurado: string;
+    telefono_asegurado: string;
+    correo_asegurado: string;
+    estado_asegurado: string;
+    ciudad_asegurado: string;
+    direccion_asegurado: string;
+  };
+  bien_asegurado: {
+    xdescrip1: string;
+    xdescrip2: string;
+    xdescrip3: string;
+    xdescrip4: string;
+  };
+  suma_asegurada: number;
+  prima: number;
+  ptasamon: number;
+  femision: string;
+  fdesde: string;
+  fhasta: string;
+  dec_persona_politica: number;
+  dec_term_y_cod: number;
+  cproductor: number;
+  ifrecuencia: string;
+  ctipocanal: string | null;
+  ccanalalt: string | null;
+  cscanalalt: string | null;
+  xfuente: string;
+}
+
+export interface EmissionGeneralRiskResponse extends EmitPolicyResponse {
+  status: boolean;
+  message: string;
+  cnpoliza: string;
+  urlpoliza: string;
+  lapso: number;
+  mes: string;
+  cnrecibo: string;
+  ncuota: number;
+}
+
+export const patrimonialApi = {
+  /** Planes vigentes de riesgos generales (default cramo 20). */
+  planes: (cramo = 20) =>
+    api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?cramo=${cramo}`),
+
+  /** Cotización vía quote-generalRisks ({ cramo, cplan, ptasamon, cuotas, ifrecuencia, pdescuento, precargo }). */
+  cotizar: (payload: CotizacionPatrimonialPayload) =>
+    api.post<QuoteGeneralRisksResponse>('/patrimonial/cotizacion', {
+      cramo: payload.cramo ?? 20,
+      cplan: payload.cplan,
+      ptasamon: payload.ptasamon ?? 500,
+      cuotas: payload.cuotas ?? 1,
+      ifrecuencia: payload.ifrecuencia || 'A',
+      pdescuento: payload.pdescuento ?? 0,
+      precargo: payload.precargo ?? 0,
+    }),
+
+  /** Emisión vía generalRisks. */
+  emitir: (payload: EmitPolicyPayload | CreateEmissionGeneralRiskDto) =>
+    api.post<EmissionGeneralRiskResponse>('/patrimonial/emision', payload),
+};
+
+export interface SubmitPatrimonialReviewPayload {
+  sessionId: string;
+  cplan: string;
+  cramo?: number;
+  tomador: Record<string, unknown>;
+  asegurado?: Record<string, unknown>;
+  sameInsured?: boolean;
+  patrimoniales?: Record<string, unknown>;
+  selectedPlan: Record<string, unknown>;
+  quote?: Record<string, unknown> | null;
+  quoteState?: string;
+  documents?: Record<string, unknown>;
+  metadataCanal?: Record<string, unknown> | null;
+}
+
+export async function submitPatrimonialPolicyReview(
+  payload: SubmitPatrimonialReviewPayload,
+): Promise<{ submission: FuneralSubmissionResult }> {
+  try {
+    const { data } = await api.post<{
+      success: boolean;
+      submission: FuneralSubmissionResult;
+    }>('/patrimonial/submissions', payload);
+    return { submission: data.submission };
+  } catch (err) {
+    const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
+    const data = axErr.response?.data;
+    if (data && (data.code || data.message)) {
+      throw new PolicyEmitError({
+        code: data.code ?? 'SUBMISSION_ERROR',
+        message: data.message ?? 'No se pudo registrar la solicitud patrimonial.',
+        httpStatus: axErr.response?.status,
+        stage: 'submission',
+      });
+    }
+    throw err;
+  }
 }
 
