@@ -111,6 +111,7 @@ interface WizardActions {
   setMetadataCanal: (data: Record<string, any> | null) => void;
   setDiligencia: (data: Partial<DiligenciaState> | null) => void;
   setCanalVisibility: (data: CanalVisibility | null) => void;
+  setCproveedor: (cproveedor?: number | string, xproveedor?: string) => void;
   reset: () => void;
 }
 
@@ -142,8 +143,10 @@ const initialState: WizardState = {
   vehicle: defaultVehicle(),
   category: '',
   selectedPlan: null,
-  // 'mobile' (Pago MÃ³vil vÃ­a Banco Activo) es el mÃ©todo activo por defecto.
-  // 'transfer' estÃ¡ oculto en la UI por ahora; se mantendrÃ¡ el tipo para compat.
+  cproveedor: undefined,
+  xproveedor: undefined,
+  // 'mobile' (Pago Móvil vía Banco Activo) es el método activo por defecto.
+  // 'transfer' está oculto en la UI por ahora; se mantendrá el tipo para compat.
   paymentMethod: 'mobile',
   policy: null,
   quote: null,
@@ -294,6 +297,8 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
     }),
 
   setCanalVisibility: (canalVisibility) => set({ canalVisibility }),
+
+  setCproveedor: (cproveedor, xproveedor) => set({ cproveedor, xproveedor }),
 
   reset: () => set(initialState),
 }));

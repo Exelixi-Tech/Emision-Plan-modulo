@@ -146,4 +146,25 @@ router.post('/frecuencia', async (req, res) => {
   }
 });
 
+router.all('/proveedores', async (req, res) => {
+  const cplan = req.query.cplan || req.body?.cplan;
+  const cramo = req.query.cramo || req.body?.cramo;
+  const centidad = req.query.centidad || req.body?.centidad;
+  const citem = req.query.citem || req.body?.citem;
+
+  const items = [
+    { xproveedor: 'Venemergencia', cci_rif: 1152516 },
+    { xproveedor: 'Clinicas del Este', cci_rif: 5521516 },
+  ];
+
+  res.json({
+    ok: true,
+    cplan,
+    cramo,
+    centidad,
+    citem,
+    items,
+  });
+});
+
 module.exports = router;

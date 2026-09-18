@@ -733,6 +733,7 @@ export interface SubmitFuneralReviewPayload {
   healthAnswers: Record<string, unknown>;
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
+  cproveedor?: number | string;
 }
 
 export async function submitFuneralPolicyReview(
@@ -790,3 +791,62 @@ export async function validateFuneralEmission(payload: {
     throw err;
   }
 }
+
+export interface ProveedorItem {
+  xproveedor: string;
+  cci_rif: number | string;
+}
+
+/**
+ * Consulta proveedores de servicio para un plan vía /valrep/proveedores.
+ * Si la API no está disponible o para pruebas, devuelve la lista mock por defecto:
+ * [{ xproveedor: 'Venemergencia', cci_rif: 1152516 }, { xproveedor: 'Clinicas del Este', cci_rif: 5521516 }]
+ */
+export async function getProveedores(params: {
+  cplan: string;
+  cramo?: number | string;
+  centidad?: string;
+  citem?: string;
+}): Promise<ProveedorItem[]> {
+  const mockItems: ProveedorItem[] = [
+    { xproveedor: 'Venemergencia', cci_rif: 1152516 },
+    { xproveedor: 'Clinicas del Este', cci_rif: 5521516 },
+  ];
+
+  try {
+    const qs = new URLSearchParams({
+      cplan: params.cplan,
+      cramo: String(params.cramo ?? 9),
+    });
+    if (params.centidad) qs.set('centidad', params.centidad);
+    if (params.citem) qs.set('citem', params.citem);
+
+    const response = await api.get<{
+      ok?: boolean;
+      items?: ProveedorItem[];
+      data?: ProveedorItem[] | { items?: ProveedorItem[] };
+    }>(`/valrep/proveedores?${qs.toString()}`);
+
+    const resData = response.data;
+    if (resData?.items && Array.isArray(resData.items) && resData.items.length > 0) {
+      return resData.items;
+    }
+    if (Array.isArray(resData?.data) && resData.data.length > 0) {
+      return resData.data;
+    }
+    if (
+      typeof resData?.data === 'object' &&
+      resData.data !== null &&
+      'items' in resData.data &&
+      Array.isArray((resData.data as { items?: ProveedorItem[] }).items) &&
+      (resData.data as { items?: ProveedorItem[] }).items!.length > 0
+    ) {
+      return (resData.data as { items?: ProveedorItem[] }).items!;
+    }
+  } catch (err) {
+    console.warn('[getProveedores] valrep/proveedores fallback to mock items', err);
+  }
+
+  return mockItems;
+}
+
