@@ -129,10 +129,10 @@ function resolveClubArysFallbackUrl(iplaca) {
   const plate = String(iplaca || 'N').trim().toUpperCase();
   const bi =
     process.env.ARYS_AUTO_BI_PDF_URL
-    || 'https://qasys2000.lamundialdeseguros.com/assets/ArysAutoBi.pdf';
+    || 'https://sys2000.lamundialdeseguros.com/assets/ArysAutoBi.pdf';
   const trad =
     process.env.ARYS_TRADICIONAL_PDF_URL
-    || 'https://qasys2000.lamundialdeseguros.com/assets/Arys_Tradicional.pdf';
+    || 'https://sys2000.lamundialdeseguros.com/assets/Arys_Tradicional.pdf';
   return plate === 'B' ? bi : trad;
 }
 
