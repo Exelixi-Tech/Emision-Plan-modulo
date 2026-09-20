@@ -9,6 +9,7 @@ const {
   buildAuthHeaders,
   trackResponse,
 } = require('./nestTokenService');
+const { getNestMonitorAppIdHeader } = require('./monitorReporter');
 
 function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 60_000;
@@ -29,7 +30,10 @@ function buildHeaders(extra = {}) {
 
 async function axiosOpts(extra = {}) {
   return {
-    headers: await buildAuthHeaders(),
+    headers: {
+      ...(await buildAuthHeaders()),
+      ...getNestMonitorAppIdHeader(),
+    },
     timeout: getTimeout(),
     ...extra,
   };
