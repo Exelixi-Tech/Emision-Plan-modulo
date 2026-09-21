@@ -140,10 +140,18 @@ function filterPlanesByRamo(rows, cramo) {
     return rows;
   }
 
+  const ramos = [...new Set(conRamo.map((row) => Number(row.cramo ?? row.CRAMO)))];
+  // Paridad SysIP POST /valrep/planes/producto: el SP devuelve todos los ramos del producto/canal.
+  if (ramos.length > 1) {
+    return conRamo;
+  }
+
   const delRamo = conRamo.filter((row) => Number(row.cramo ?? row.CRAMO) === cramo);
   if (!delRamo.length) {
-    const disponibles = [...new Set(conRamo.map((row) => Number(row.cramo ?? row.CRAMO)))].join(', ');
-    console.warn(`[Patrimonial] el canal no tiene planes del ramo ${cramo} (ramos disponibles: ${disponibles})`);
+    console.warn(
+      `[Patrimonial] sin planes del ramo SSO ${cramo} (disponible: ${ramos.join(', ')}); se devuelven todos los del producto`,
+    );
+    return conRamo;
   }
   return delRamo;
 }

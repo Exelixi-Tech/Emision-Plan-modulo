@@ -119,6 +119,8 @@ export interface PlanParentesco {
 export interface Plan {
   /** Código del plan en Sis2000 (ej. "RCVBAS", "Auto"). Se envía al backend en quote/emit. */
   cplan?: string;
+  /** Ramo Sis2000 del plan (puede diferir del cramo SSO en productos multi-ramo). */
+  cramo?: number;
   name: string;
   price: string;
   priceNum: number;

@@ -13,8 +13,10 @@ import { toast } from '../../store/toastStore';
 /** Convierte un PlanRcv de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanRcv): Plan {
   const label = ((p.xplan ?? '').trim() || (p.xplan_c ?? '').trim() || p.cplan);
+  const cramoPlan = p.cramo != null && !Number.isNaN(Number(p.cramo)) ? Number(p.cramo) : undefined;
   return {
     cplan: p.cplan,
+    cramo: cramoPlan,
     name: label,
     price: 'Tarifa La Mundial',
     priceNum: 0,
@@ -39,7 +41,7 @@ export function PatrimonialPlansStep() {
 
   const product = getProductConfig();
   /** Ramo del SSO; el del producto solo cubre el canal que no lo declara. */
-  const cramo = resolveSsoCramo() ?? product.cramo;
+  const ssoCramo = resolveSsoCramo() ?? product.cramo;
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -56,7 +58,7 @@ export function PatrimonialPlansStep() {
     setPlansLoading(true);
     setPlansError(false);
 
-    patrimonialApi.planes(cramo)
+    patrimonialApi.planes(ssoCramo)
       .then((res) => {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
@@ -74,7 +76,9 @@ export function PatrimonialPlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cramo]);
+  }, [ssoCramo]);
+
+  const activeCramo = selectedPlan?.cramo ?? ssoCramo;
 
   // ── Carga de frecuencias ──────────────────────────────────────────────────
   useEffect(() => {
@@ -86,7 +90,7 @@ export function PatrimonialPlansStep() {
 
     let cancelled = false;
     setFrecLoading(true);
-    getFrecuenciasByPlan(planCode, cramo)
+    getFrecuenciasByPlan(planCode, activeCramo)
       .then((items) => {
         if (!cancelled) {
           setApiFrecuencias(items);
@@ -102,12 +106,12 @@ export function PatrimonialPlansStep() {
       });
 
     return () => { cancelled = true; };
-  }, [selectedPlan?.cplan, cramo, setRcv, activeFrecuencia]);
+  }, [selectedPlan?.cplan, selectedPlan?.cramo, activeCramo, setRcv, activeFrecuencia]);
 
   // ── Cotización contra quote-generalRisks ────────────────────────────────────
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
-    ? `patrimonial|${planCode}|${activeFrecuencia}|${cramo}`
+    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}`
     : '';
 
   const activeSigRef = useRef('');
@@ -123,7 +127,7 @@ export function PatrimonialPlansStep() {
 
     patrimonialApi.cotizar({
       cplan: planCode,
-      cramo,
+      cramo: activeCramo,
       ifrecuencia: activeFrecuencia,
       pdescuento: 0,
       precargo: 0,
