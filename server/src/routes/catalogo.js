@@ -349,4 +349,18 @@ router.get('/recargos-rcv', async (_req, res) => {
   }
 });
 
+/** Tasa BCV USD para una fecha de pago (mavamonedas / mavamoneda). */
+router.get('/tasa-bcv', async (req, res) => {
+  const fecha = String(req.query.fecha ?? req.query.fmoneda ?? '').trim();
+  try {
+    const { getPtasamonUsdForDate } = require('../services/bcvRate');
+    const row = await getPtasamonUsdForDate(fecha);
+    res.json({ success: true, ptasa: row.ptasa, fecha: row.fecha, source: row.source });
+  } catch (err) {
+    const code = err.code || 'BCV_RATE_ERROR';
+    const status = code === 'BCV_INVALID_DATE' ? 400 : code === 'BCV_RATE_NOT_FOUND' ? 404 : 502;
+    res.status(status).json({ success: false, code, message: err.message });
+  }
+});
+
 module.exports = router;
