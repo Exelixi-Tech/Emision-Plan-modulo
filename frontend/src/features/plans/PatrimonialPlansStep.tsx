@@ -12,13 +12,14 @@ import { toast } from '../../store/toastStore';
 
 /** Convierte un PlanRcv de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanRcv): Plan {
+  const label = ((p.xplan ?? '').trim() || (p.xplan_c ?? '').trim() || p.cplan);
   return {
     cplan: p.cplan,
-    name: (p.xplan_c || p.xplan || '').trim() || p.cplan,
+    name: label,
     price: 'Tarifa La Mundial',
     priceNum: 0,
     tag: 'Patrimonial',
-    desc: 'Cobertura de responsabilidad civil y daños a bienes patrimoniales e inmuebles.',
+    desc: (p.xplan ?? '').trim() || 'Cobertura patrimonial La Mundial de Seguros.',
     benefits: [
       'Protección integral contra riesgos generales',
       'Cobertura patrimonial y de responsabilidad civil',
