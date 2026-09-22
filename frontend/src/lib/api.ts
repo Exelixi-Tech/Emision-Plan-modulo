@@ -771,6 +771,7 @@ export interface PlanParentescoPer {
 export interface PlanPer {
   cplan: string;
   xplan?: string;
+  cramo?: number;
   cmoneda?: string;
   nmax_dep?: number | null;
   maxAsegurados?: number;

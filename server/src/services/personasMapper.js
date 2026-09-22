@@ -1,3 +1,5 @@
+const { resolvePersonasCramo } = require('../lib/funerarioPlan');
+
 /**
  * Mapper del producto Funerario (personas): estado del wizard (frontend) ->
  * payload que espera nest-api (CreateEmissionPersonDto, ramo 9).
@@ -183,7 +185,11 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
 
   const metadata = state.metadataCanal || {};
 
-  const cramo = metadata.cramo ? parseInt(metadata.cramo, 10) : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state.selectedPlan,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  });
   const productor = metadata.cproductor ? parseInt(metadata.cproductor, 10) : (parseInt(process.env.LAMUNDIAL_PRODUCTOR, 10) || 80080);
   const ctipocanal = metadata.ctipocanal !== undefined && String(metadata.ctipocanal).trim() !== ''
     ? metadata.ctipocanal
@@ -323,9 +329,11 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
   const titular = asegurados[0] || {};
   const metadata = state.metadataCanal || {};
 
-  const cramo = metadata.cramo
-    ? parseInt(metadata.cramo, 10)
-    : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state.selectedPlan,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  });
   const plan = overrides.plan || state.selectedPlan?.cplan || '';
   const femision = overrides.fechaEmision || todayYmd();
 

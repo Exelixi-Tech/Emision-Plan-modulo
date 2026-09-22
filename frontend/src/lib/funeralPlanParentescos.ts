@@ -5,12 +5,9 @@ export interface PlanParentesco {
   max_edad: number;
 }
 
-/** Planes funerarios Exélixi: cplan numérico 2–12 (ramo 9). Excluye FUNESP (ramo 45). */
+/** Plan devuelto por valrep/planes/producto (numérico o alfanumérico). */
 export function isFunerarioCplan(cplan?: string | null): boolean {
-  const code = String(cplan || '').trim();
-  if (!/^\d+$/.test(code)) return false;
-  const n = parseInt(code, 10);
-  return n >= 2 && n <= 12;
+  return String(cplan || '').trim().length > 0;
 }
 
 export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolean {

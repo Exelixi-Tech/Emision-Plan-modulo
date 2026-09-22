@@ -21,7 +21,7 @@ const {
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
-const { isFunerarioCplan } = require('../lib/funerarioPlan');
+const { isFunerarioCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -123,11 +123,9 @@ router.get('/planes', async (req, res) => {
       cgestor_in: meta.cgestor_in,
       cgestor: meta.cgestor,
     });
-    const planes = (Array.isArray(raw) ? raw : []).filter((p) =>
-      isFunerarioCplan(p?.cplan || p?.CPLAN),
-    );
+    const planes = Array.isArray(raw) ? raw : [];
     console.log(
-      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length} (sin alfanuméricos tipo FUNESP)`,
+      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length}`,
     );
 
     res.set({
@@ -165,7 +163,11 @@ router.get('/planes', async (req, res) => {
 // ── POST /cotizacion ──────────────────────────────────────────────────────────
 router.post('/cotizacion', async (req, res) => {
   const { cplan, ifrecuencia } = req.body || {};
-  const cramo = req.body?.cramo ? parseInt(req.body.cramo, 10) : DEFAULT_RAMO;
+  const cramo = resolvePersonasCramo({
+    bodyCramo: req.body?.cramo,
+    metadataCanal: req.nexusMetadata,
+    cproducto: req.nexusMetadata?.cproducto,
+  });
   const asegurados = Array.isArray(req.body?.asegurados) ? req.body.asegurados.map(mapAsegurado) : [];
 
   if (!cplan) {
@@ -175,7 +177,7 @@ router.post('/cotizacion', async (req, res) => {
     return res.status(400).json({
       success: false,
       code: 'PLAN_NOT_FUNERARIO',
-      message: `El plan ${cplan} no es funerario individual (cplan 2–12, ramo 9).`,
+      message: `El plan ${cplan} no es válido para el producto personas.`,
     });
   }
   if (asegurados.length === 0) {
@@ -282,7 +284,11 @@ router.post('/emision', async (req, res) => {
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
   const cplan = state?.selectedPlan?.cplan;
-  const cramo = DEFAULT_RAMO;
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state?.selectedPlan,
+    metadataCanal: state?.metadataCanal,
+    cproducto: state?.metadataCanal?.cproducto,
+  });
 
   if (!state || !state.tomador) {
     return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.tomador requerido.' });
@@ -294,7 +300,7 @@ router.post('/emision', async (req, res) => {
     return res.status(400).json({
       success: false,
       code: 'PLAN_NOT_FUNERARIO',
-      message: `El plan ${cplan} no es funerario individual (cplan 2–12, ramo 9).`,
+      message: `El plan ${cplan} no es válido para el producto personas.`,
     });
   }
 

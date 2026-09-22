@@ -9,7 +9,7 @@ import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } fro
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
-import { ageErrorForParentesco, isFunerarioCplan, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
+import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { syncTitularFromTomador } from '../../lib/funeral-sync';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
@@ -63,10 +63,16 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
       'Asistencia y traslado',
     ],
     sumaAsegurada: 0,
+    cramo: p.cramo,
     parentescos: p.parentescos ?? [],
     nmax_dep: p.nmax_dep ?? null,
     maxAsegurados: p.maxAsegurados,
   };
+}
+
+function planCramo(plan: Plan | null | undefined, fallback: number): number {
+  const n = Number(plan?.cramo);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 export function FuneralPlansStep() {
@@ -95,9 +101,7 @@ export function FuneralPlansStep() {
     personasApi.planes(product.cramo)
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? [])
-          .filter((p) => isFunerarioCplan(p.cplan))
-          .map(apiPlanToWizardPlan);
+        const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
         const keep = current?.cplan
@@ -128,7 +132,7 @@ export function FuneralPlansStep() {
 
     let cancelled = false;
     setFrecLoading(true);
-    getFrecuenciasByPlan(planCode, product.cramo)
+    getFrecuenciasByPlan(planCode, planCramo(selectedPlan, product.cramo))
       .then((items) => {
         if (cancelled) return;
         const list = items.length ? items : FRECUENCIAS_PERSONAS_FALLBACK;
@@ -149,7 +153,7 @@ export function FuneralPlansStep() {
       });
 
     return () => { cancelled = true; };
-  }, [selectedPlan?.cplan, product.cramo, setFuneral, funeral.frecuencia]);
+  }, [selectedPlan?.cplan, selectedPlan?.cramo, product.cramo, setFuneral, funeral.frecuencia]);
 
   useEffect(() => {
     syncTitularFromTomador();
@@ -208,9 +212,10 @@ export function FuneralPlansStep() {
     activeSigRef.current = quoteSig;
     snap.setQuoteState('loading');
 
+    const snapPlan = useWizardStore.getState().selectedPlan;
     personasApi.cotizar({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: planCramo(snapPlan, product.cramo),
       ifrecuencia: 'A',
       asegurados: aseguradosListos.map(({ a, idx }) => ({
         parentesco: idx === 0 ? '1' : a.parentesco,
