@@ -514,13 +514,13 @@ export async function verifyMobilePayment(
       baCode?: string | null;
       baMessage?: string | null;
     }>;
-    const data   = axErr.response?.data;
+    const data = axErr.response?.data;
     const status = axErr.response?.status;
     throw new MobilePaymentVerifyError({
-      message   : data?.message ?? axErr.message ?? 'Error verificando el pago.',
-      code      : data?.code    ?? 'MERITOP_ERROR',
-      baCode    : data?.baCode,
-      baMessage : data?.baMessage,
+      message: data?.message ?? axErr.message ?? 'Error verificando el pago.',
+      code: data?.code ?? 'MERITOP_ERROR',
+      baCode: data?.baCode,
+      baMessage: data?.baMessage,
       httpStatus: status,
     });
   }
@@ -529,48 +529,48 @@ export async function verifyMobilePayment(
 // ── SyPago — Débito OTP ───────────────────────────────────────────────────
 
 export interface SypagoOtpRequestPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  amount         : number;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  amount: number;
 }
 
 export interface SypagoOtpConfirmPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  debtorName     : string;
-  amount         : number;
-  otp            : string;
-  concept?       : string;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  debtorName: string;
+  amount: number;
+  otp: string;
+  concept?: string;
 }
 
 export interface SypagoOtpConfirmResponse {
-  success          : boolean;
-  transaction_id   : string;
-  operation_secret : string;
-  mock?            : boolean;
+  success: boolean;
+  transaction_id: string;
+  operation_secret: string;
+  mock?: boolean;
 }
 
 export interface SypagoTransactionStatus {
-  success        : boolean;
-  transaction_id : string;
-  status         : string;
-  mock?          : boolean;
-  [key: string]  : unknown;
+  success: boolean;
+  transaction_id: string;
+  status: string;
+  mock?: boolean;
+  [key: string]: unknown;
 }
 
 export class SypagoError extends Error {
-  code       : string;
+  code: string;
   sypagoCode?: string | null;
   httpStatus?: number;
 
   constructor(payload: { message: string; code: string; sypagoCode?: string | null; httpStatus?: number }) {
     super(payload.message);
-    this.name       = 'SypagoError';
-    this.code       = payload.code;
+    this.name = 'SypagoError';
+    this.code = payload.code;
     this.sypagoCode = payload.sypagoCode;
     this.httpStatus = payload.httpStatus;
   }
@@ -578,11 +578,11 @@ export class SypagoError extends Error {
 
 function _throwSypago(err: unknown): never {
   const axErr = err as AxiosError<{ code?: string; message?: string; sypagoCode?: string | null }>;
-  const data   = axErr.response?.data;
+  const data = axErr.response?.data;
   const status = axErr.response?.status;
   throw new SypagoError({
-    message   : data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
-    code      : data?.code    ?? 'SYPAGO_ERROR',
+    message: data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
+    code: data?.code ?? 'SYPAGO_ERROR',
     sypagoCode: data?.sypagoCode ?? null,
     httpStatus: status,
   });
@@ -624,8 +624,8 @@ export async function sypagoGetStatus(transactionId: string): Promise<SypagoTran
 
 // ── Catálogo INMA ──────────────────────────────────────────────────────────
 
-export interface InmaMarca   { cmarca: string; xmarca: string; }
-export interface InmaModelo  { cmodelo: string; xmodelo: string; }
+export interface InmaMarca { cmarca: string; xmarca: string; }
+export interface InmaModelo { cmodelo: string; xmodelo: string; }
 export interface InmaVersion {
   cversion: string;
   xversion: string;
@@ -649,10 +649,10 @@ export interface ResolverResult {
 }
 
 export interface PlanRcv {
-  cplan:   string;
-  xplan?:  string;
+  cplan: string;
+  xplan?: string;
   xplan_c?: string;
-  cramo?:  number;
+  cramo?: number;
   cmoneda?: string;
   cproducto?: string;
   coberturasAdicionales?: { value: string; text: string }[];
@@ -793,12 +793,21 @@ export const personApiV2 = {
       ...(params?.cproducto != null && String(params.cproducto).trim() !== '' ? { cproducto: String(params.cproducto).trim() } : {}),
     };
 
+    const apiKey =
+      import.meta.env.VITE_NEXUS_API_KEY ||
+      '';
+
     const response = await axios.post<{
       status?: boolean;
       success?: boolean;
       data?: { planes?: PlanPer[] } | PlanPer[];
       planes?: PlanPer[];
-    }>('https://nexusqa.exelixitech.com/nest-api-docs/api/v1/personas/planes', body);
+    }>('https://nexusqa.exelixitech.com/nest-api-docs/api/v1/personas/planes', body, {
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: apiKey,
+      },
+    });
 
     const rawData = response.data;
     let planes: PlanPer[] = [];
