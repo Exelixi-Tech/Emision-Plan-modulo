@@ -3,23 +3,25 @@
  * Solo ramo funerario — no usar en RCV.
  */
 
+/** Sis2000 cproducto 57 · cversion_matriz 4 (maproductos_reglas_riesgo). */
 const DEFAULT_SCORING_RULES = {
-  rangesEnabled: false,
+  rangesEnabled: true,
   ranges: {
     emit: {
       min: 0,
-      max: 29,
-      message: 'Tus respuestas permiten continuar con la contratación.',
+      max: 25,
+      message: 'Puede emitir sin inconvenientes.',
     },
     referred: {
-      min: 30,
-      max: 69,
-      message: 'Un técnico revisará tu solicitud antes de continuar al pago.',
+      min: 26,
+      max: 39,
+      message: 'Comunicarse con el corredor de seguro.',
     },
     reject: {
-      min: 70,
-      max: 9999,
-      message: 'Un técnico revisará tu solicitud porque el puntaje es alto.',
+      min: 40,
+      max: 1000,
+      message:
+        'Se han detectado varios factores de riesgo inhabilitantes, no es posible continuar con el proceso.',
     },
   },
   concurrence: {

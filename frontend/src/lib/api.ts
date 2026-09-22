@@ -882,7 +882,7 @@ export async function getFrecuenciasByPlan(cplan: string, cramo: number = 9): Pr
 //  Cuestionario de salud funerario (preguntas Exélixi + persistencia BD)
 // ──────────────────────────────────────────────────────────────────────
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestion {
   id: string;
