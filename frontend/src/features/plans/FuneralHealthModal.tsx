@@ -37,6 +37,32 @@ function isVisible(q: HealthQuestion, answers: Record<string, unknown>): boolean
   return String(actual ?? '') === String(expected);
 }
 
+function withBooleanDefaults(
+  questions: HealthQuestion[],
+  answers: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...answers };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const q of questions) {
+      if (q.type !== 'boolean') continue;
+      if (!isVisible(q, next)) continue;
+      if (typeof next[q.id] !== 'boolean') {
+        next[q.id] = false;
+        changed = true;
+      }
+    }
+  }
+  return next;
+}
+
+function requiresYes(q: HealthQuestion): boolean {
+  if (q.type !== 'boolean') return false;
+  if (q.blockIfFalse === true) return true;
+  return q.id === 'aceptaTerminos';
+}
+
 function validateAnswers(
   questions: HealthQuestion[],
   answers: Record<string, unknown>,
@@ -44,17 +70,36 @@ function validateAnswers(
   const errors: Record<string, string> = {};
   for (const q of questions) {
     if (!isVisible(q, answers)) continue;
-    if (!q.required) continue;
     const val = answers[q.id];
     if (q.type === 'boolean') {
-      if (typeof val !== 'boolean') errors[q.id] = 'Responde sí o no';
-    } else if (q.type === 'text') {
+      if (requiresYes(q) && val !== true) {
+        errors[q.id] = q.blockReason || 'Debes responder Sí para continuar.';
+      }
+      continue;
+    }
+    if (!q.required) continue;
+    if (q.type === 'text') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Selecciona una opción';
     }
   }
   return errors;
+}
+
+function joinInsuredNames(names: string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} y ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
+}
+
+function isInsuredReady(
+  questions: HealthQuestion[],
+  answers: Record<string, unknown>,
+): boolean {
+  const filled = withBooleanDefaults(questions, answers);
+  return Object.keys(validateAnswers(questions, filled)).length === 0;
 }
 
 function questionCardClass(hasError: boolean, filled: boolean): string {
@@ -81,6 +126,7 @@ export function FuneralHealthModal({
   const tabs = insureds.length > 0 ? insureds : [{ key: 'aseg-0', label: 'Asegurado' }];
   const [activeKey, setActiveKey] = useState(tabs[0].key);
   const [byInsured, setByInsured] = useState<Record<string, Record<string, unknown>>>({});
+  const [visited, setVisited] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -91,10 +137,15 @@ export function FuneralHealthModal({
     }
     setByInsured(next);
     setActiveKey(tabs[0].key);
+    setVisited({ [tabs[0].key]: true });
     setErrors({});
   }, [open, plan.cplan, initialByInsured, tabs.map((t) => t.key).join('|')]);
 
   const answers = byInsured[activeKey] ?? {};
+  const liveErrors = useMemo(
+    () => validateAnswers(questions, withBooleanDefaults(questions, answers)),
+    [questions, answers],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -135,18 +186,28 @@ export function FuneralHealthModal({
   };
 
   const handleSubmit = () => {
+    const filled: Record<string, Record<string, unknown>> = {};
     for (const t of tabs) {
-      const nextErrors = validateAnswers(questions, byInsured[t.key] ?? {});
-      if (Object.keys(nextErrors).length > 0) {
+      filled[t.key] = withBooleanDefaults(questions, byInsured[t.key] ?? {});
+      const nextErrors = validateAnswers(questions, filled[t.key]);
+      const pending = !visited[t.key] || Object.keys(nextErrors).length > 0;
+      if (pending) {
+        setByInsured(filled);
         setActiveKey(t.key);
+        setVisited((prev) => ({ ...prev, [t.key]: true }));
         setErrors(nextErrors);
         return;
       }
     }
-    onConfirm(byInsured);
+    onConfirm(filled);
   };
 
   const activeIdx = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
+  const pendingTabs = tabs.filter((t) => {
+    if (!visited[t.key]) return true;
+    return !isInsuredReady(questions, byInsured[t.key] ?? {});
+  });
+  const pendingNames = joinInsuredNames(pendingTabs.map((t) => t.label));
 
   const modal = (
     <div
@@ -173,7 +234,7 @@ export function FuneralHealthModal({
               Cuestionario de salud
             </h2>
             <p className="hidden [@media(min-height:700px)]:block text-xs text-slate-500 mt-1 leading-relaxed">
-              Declara la salud de cada asegurado. Los campos con * son obligatorios.
+              Declara la salud de cada asegurado. En Sí/No, si no marcas el interruptor cuenta como No.
             </p>
           </div>
           <button
@@ -217,27 +278,41 @@ export function FuneralHealthModal({
             </p>
             <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {tabs.map((t) => {
-                const done = questions.length > 0 && Object.keys(byInsured[t.key] ?? {}).length > 0;
+                const ready = visited[t.key] && isInsuredReady(questions, byInsured[t.key] ?? {});
                 return (
                   <button
                     key={t.key}
                     type="button"
                     onClick={() => {
                       setActiveKey(t.key);
+                      setVisited((prev) => ({ ...prev, [t.key]: true }));
                       setErrors({});
                     }}
-                    className={`shrink-0 max-w-[11rem] truncate px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                    className={`shrink-0 max-w-[13rem] truncate px-3 py-1.5 rounded-full text-xs font-bold border inline-flex items-center gap-1.5 transition-colors ${
                       activeKey === t.key
                         ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                        : ready
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:border-emerald-300'
+                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:border-amber-300'
                     }`}
                   >
+                    {ready ? <Check size={12} strokeWidth={2.6} /> : <AlertCircle size={12} strokeWidth={2.4} />}
                     {t.label}
-                    {done ? ' ·' : ''}
                   </button>
                 );
               })}
             </div>
+            {questions.length > 0 && tabs.length > 1 && (
+              pendingTabs.length > 0 ? (
+                <p className="mt-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+                  Falta responder las preguntas de {pendingNames}.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 leading-relaxed">
+                  Los {tabs.length} asegurados ya respondieron el cuestionario.
+                </p>
+              )
+            )}
           </div>
         )}
 
@@ -256,7 +331,7 @@ export function FuneralHealthModal({
           ) : (
             visibleQuestions.map((q, idx) => {
               const nested = Boolean(q.showIf?.field);
-              const err = errors[q.id];
+              const err = errors[q.id] || liveErrors[q.id];
               const label = (q.label || '').trim() || 'Pregunta';
               return (
               <div
@@ -269,9 +344,18 @@ export function FuneralHealthModal({
                     <ToggleSwitch
                       checked={answers[q.id] === true}
                       onChange={(v) => setAnswer(q.id, v)}
-                      label={`${label}${q.required ? ' *' : ''}`}
+                      label={label}
                       description={q.description}
                     />
+                    <p className="mt-1.5 ml-1 text-[0.72rem] leading-relaxed text-slate-500">
+                      {answers[q.id] === true ? (
+                        <span className="font-semibold text-indigo-700">Respuesta: Sí.</span>
+                      ) : (
+                        <span className="font-semibold text-slate-600">Respuesta: No.</span>
+                      )}
+                      {' '}
+                      Encienda el interruptor solo si la respuesta es sí. Si lo deja apagado, se guarda como no.
+                    </p>
                     {err && (
                       <p className="text-xs text-rose-500 font-medium mt-1.5 ml-1">{err}</p>
                     )}
@@ -321,9 +405,13 @@ export function FuneralHealthModal({
 
         {/* Footer */}
         <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 order-2 sm:order-1">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 order-2 sm:order-1 min-w-0">
             <ShieldCheck size={13} className="text-emerald-500 shrink-0" />
-            <span className="font-medium">Respuestas almacenadas de forma segura</span>
+            <span className="font-medium truncate">
+              {pendingTabs.length > 0 && questions.length > 0 && tabs.length > 1
+                ? `Falta: ${pendingNames}`
+                : 'Respuestas almacenadas de forma segura'}
+            </span>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto order-1 sm:order-2">
             <Button variant="secondary" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none min-w-[6.5rem]">

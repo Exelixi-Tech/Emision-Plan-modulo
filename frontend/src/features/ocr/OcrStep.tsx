@@ -39,8 +39,8 @@ const DOCS: DocConfig[] = [
   },
   {
     type: 'certificado',
-    label: 'Certificado del vehículo',
-    description: 'Vehículo a asegurar',
+    label: 'Carnet de circulación y/o título de propiedad',
+    description: 'Documento vehicular INTT · carnet o título',
     Icon: FileText,
     accent: 'from-blue-500 to-indigo-500',
   },

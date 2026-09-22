@@ -30,6 +30,7 @@ const {
 } = require('./nestApiClient');
 const { resolveIngresoCajaAfterPayment } = require('./collectionAfterPayment');
 const { alignQuoteWithPaymentCapture } = require('./paymentQuoteAlign');
+const { activateTarjetaAfterEmit } = require('./tarjetaActivateAfterEmit');
 const {
   buildQuoteRequest,
   buildCalculatePlanCoberturasRequest,
@@ -520,6 +521,9 @@ async function quoteAndEmit(state, overrides = {}) {
       );
     }
   }
+
+  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión)
+  await activateTarjetaAfterEmit(state, emission, metadata);
 
   // 5.5) Generar anexo de Conductor Habitual si existe (solo RCV)
   let url_conductor_habitual = undefined;

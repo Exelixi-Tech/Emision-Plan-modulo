@@ -146,14 +146,23 @@ function genInternalPolicyId(prefix = 'PER') {
  * @param {object} funeral - state.funeral con `asegurados` (FuneralPerson[]).
  * @returns {Array<{ cparen:number, xrif_asegurado:string, nedad_asegurado:number }>}
  */
-function buildAseguradosForQuote(funeral = {}) {
+function buildAseguradosForQuote(funeral = {}, extras = {}) {
   const lista = Array.isArray(funeral.asegurados) ? funeral.asegurados : [];
-  return lista.map((a, idx) => ({
-    // Primer asegurado = titular (parentesco 1) si no trae parentesco explícito.
-    cparen: Number(a.cparen ?? a.parentesco ?? (idx === 0 ? 1 : 0)) || 0,
-    xrif_asegurado: onlyDigits(a.xrif_asegurado ?? a.identificacion),
-    nedad_asegurado: resolveNedadAsegurado(a),
-  }));
+  const src = extras.sameInsured !== false
+    ? (extras.tomador || {})
+    : (extras.asegurado || extras.tomador || {});
+  return lista.map((a, idx) => {
+    const isTitular = idx === 0;
+    const id = onlyDigits(a.xrif_asegurado ?? a.identificacion)
+      || (isTitular ? onlyDigits(src.identificacion) : '');
+    const nedad = resolveNedadAsegurado(a)
+      || (isTitular ? resolveNedadAsegurado(src) : null);
+    return {
+      cparen: Number(a.cparen ?? a.parentesco ?? (isTitular ? 1 : 0)) || (isTitular ? 1 : 0),
+      xrif_asegurado: id,
+      nedad_asegurado: nedad,
+    };
+  });
 }
 
 /**

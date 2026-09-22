@@ -45,8 +45,8 @@ function getConfig() {
 function getClient() {
   const cfg = getConfig();
   if (_client && _clientCfg &&
-      _clientCfg.baseUrl === cfg.baseUrl &&
-      _clientCfg.timeout === cfg.timeout) {
+    _clientCfg.baseUrl === cfg.baseUrl &&
+    _clientCfg.timeout === cfg.timeout) {
     return _client;
   }
   _client = axios.create({
