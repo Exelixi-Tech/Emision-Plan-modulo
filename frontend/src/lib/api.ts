@@ -5,46 +5,65 @@ import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
-import { readMarketplaceActorSnapshot } from './sso-metadata';
+import {
+  composeGestorCsubitem,
+  normalizeCentidad,
+  readMarketplaceActorSnapshot,
+  resolveGestorForQuery,
+} from './sso-metadata';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
-/** centidad/citem del JWT SSO o metadataCanal (flujo tarjeta sin token). */
-function appendCanalEntityQuery(qs: URLSearchParams): boolean {
-  if (shouldUseTarjetaPublicApi()) {
-    const storeMeta = (
-      useWizardStore.getState().metadataCanal as Record<string, unknown> | null
-    ) ?? readTarjetaMetadataCanal();
-    if (storeMeta) {
-      const centidad = storeMeta.centidad != null ? String(storeMeta.centidad).trim().toUpperCase() : '';
-      const citemRaw = storeMeta.citem
-        ?? (centidad === 'P' ? storeMeta.cproductor : null)
-        ?? (centidad === 'C' ? (storeMeta.ccanalalt_in ?? storeMeta.ccanalalt) : null);
-      const citem = citemRaw != null && citemRaw !== '' ? String(citemRaw).trim() : '';
-
-      if (centidad) qs.set('centidad', centidad);
-      if (citem) qs.set('citem', citem);
-      if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
-      if (storeMeta.cramo != null) qs.set('cramo', String(storeMeta.cramo));
-      if (centidad && citem) return true;
-
-      if (storeMeta.cproductor != null) {
-        if (!centidad) qs.set('centidad', 'P');
-        if (!citem) qs.set('citem', String(storeMeta.cproductor));
-        if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
-        return true;
-      }
-    }
+function scrubActorMetaForExclusion(meta: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...meta };
+  const composed = composeGestorCsubitem(out);
+  if (composed) {
+    out.cgestor = composed;
+    out.csubitem = composed;
+    return out;
   }
+  delete out.csubitem;
+  delete out.cgestor;
+  delete out.cgestor_in;
+  return out;
+}
 
+function appendGestorExclusionQuery(qs: URLSearchParams, meta: Record<string, unknown>): void {
+  const actor = scrubActorMetaForExclusion(meta);
+  const csubitem = composeGestorCsubitem(actor);
+  if (!csubitem) return;
+
+  qs.set('csubitem', csubitem);
+  qs.set('cgestor', csubitem);
+}
+
+/** centidad/citem del JWT SSO, snapshot bridge o metadataCanal (flujo tarjeta). */
+function appendCanalEntityQuery(qs: URLSearchParams): boolean {
+  const storeMeta = (
+    useWizardStore.getState().metadataCanal as Record<string, unknown> | null
+  ) ?? {};
+  const tarjetaMeta = shouldUseTarjetaPublicApi() ? readTarjetaMetadataCanal() : null;
   const token = getNexusToken(NEXUS_TOKEN_KEY);
-  const meta = token ? decodeNexusTokenMetadata(token) : null;
-  if (!meta) return false;
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
 
-  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const snapshot = readMarketplaceActorSnapshot();
+  const meta: Record<string, unknown> = {
+    ...snapshot,
+    ...(tarjetaMeta || {}),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+  const gestorHint = resolveGestorForQuery({
+    ...snapshot,
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  });
+  if (gestorHint) meta.cgestor = gestorHint;
+
+  const centidad = normalizeCentidad(meta);
   const citemRaw = meta.citem
     ?? (centidad === 'P' ? meta.cproductor : null)
     ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
@@ -54,8 +73,17 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   if (citem) qs.set('citem', citem);
   if (meta.cproducto != null) qs.set('cproducto', String(meta.cproducto));
   if (meta.cramo != null) qs.set('cramo', String(meta.cramo));
+  appendGestorExclusionQuery(qs, meta);
 
-  return Boolean(centidad && citem);
+  if (centidad && citem) return true;
+
+  if (meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    if (!centidad) qs.set('centidad', 'P');
+    if (!citem) qs.set('citem', String(meta.cproductor).trim());
+    return true;
+  }
+
+  return Boolean(resolveGestorForQuery(meta));
 }
 
 const FUNERAL_CANAL_QUERY_KEYS = [
@@ -486,13 +514,13 @@ export async function verifyMobilePayment(
       baCode?: string | null;
       baMessage?: string | null;
     }>;
-    const data   = axErr.response?.data;
+    const data = axErr.response?.data;
     const status = axErr.response?.status;
     throw new MobilePaymentVerifyError({
-      message   : data?.message ?? axErr.message ?? 'Error verificando el pago.',
-      code      : data?.code    ?? 'MERITOP_ERROR',
-      baCode    : data?.baCode,
-      baMessage : data?.baMessage,
+      message: data?.message ?? axErr.message ?? 'Error verificando el pago.',
+      code: data?.code ?? 'MERITOP_ERROR',
+      baCode: data?.baCode,
+      baMessage: data?.baMessage,
       httpStatus: status,
     });
   }
@@ -501,48 +529,48 @@ export async function verifyMobilePayment(
 // ── SyPago — Débito OTP ───────────────────────────────────────────────────
 
 export interface SypagoOtpRequestPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  amount         : number;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  amount: number;
 }
 
 export interface SypagoOtpConfirmPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  debtorName     : string;
-  amount         : number;
-  otp            : string;
-  concept?       : string;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  debtorName: string;
+  amount: number;
+  otp: string;
+  concept?: string;
 }
 
 export interface SypagoOtpConfirmResponse {
-  success          : boolean;
-  transaction_id   : string;
-  operation_secret : string;
-  mock?            : boolean;
+  success: boolean;
+  transaction_id: string;
+  operation_secret: string;
+  mock?: boolean;
 }
 
 export interface SypagoTransactionStatus {
-  success        : boolean;
-  transaction_id : string;
-  status         : string;
-  mock?          : boolean;
-  [key: string]  : unknown;
+  success: boolean;
+  transaction_id: string;
+  status: string;
+  mock?: boolean;
+  [key: string]: unknown;
 }
 
 export class SypagoError extends Error {
-  code       : string;
+  code: string;
   sypagoCode?: string | null;
   httpStatus?: number;
 
   constructor(payload: { message: string; code: string; sypagoCode?: string | null; httpStatus?: number }) {
     super(payload.message);
-    this.name       = 'SypagoError';
-    this.code       = payload.code;
+    this.name = 'SypagoError';
+    this.code = payload.code;
     this.sypagoCode = payload.sypagoCode;
     this.httpStatus = payload.httpStatus;
   }
@@ -550,11 +578,11 @@ export class SypagoError extends Error {
 
 function _throwSypago(err: unknown): never {
   const axErr = err as AxiosError<{ code?: string; message?: string; sypagoCode?: string | null }>;
-  const data   = axErr.response?.data;
+  const data = axErr.response?.data;
   const status = axErr.response?.status;
   throw new SypagoError({
-    message   : data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
-    code      : data?.code    ?? 'SYPAGO_ERROR',
+    message: data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
+    code: data?.code ?? 'SYPAGO_ERROR',
     sypagoCode: data?.sypagoCode ?? null,
     httpStatus: status,
   });
@@ -596,8 +624,8 @@ export async function sypagoGetStatus(transactionId: string): Promise<SypagoTran
 
 // ── Catálogo INMA ──────────────────────────────────────────────────────────
 
-export interface InmaMarca   { cmarca: string; xmarca: string; }
-export interface InmaModelo  { cmodelo: string; xmodelo: string; }
+export interface InmaMarca { cmarca: string; xmarca: string; }
+export interface InmaModelo { cmodelo: string; xmodelo: string; }
 export interface InmaVersion {
   cversion: string;
   xversion: string;
@@ -621,10 +649,10 @@ export interface ResolverResult {
 }
 
 export interface PlanRcv {
-  cplan:   string;
-  xplan?:  string;
+  cplan: string;
+  xplan?: string;
   xplan_c?: string;
-  cramo?:  number;
+  cramo?: number;
   cmoneda?: string;
   cproducto?: string;
   coberturasAdicionales?: { value: string; text: string }[];
@@ -659,7 +687,12 @@ export const catalogoApi = {
     const hasEntity = appendCanalEntityQuery(qs);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
-    return api.get<{ success: boolean; planes: PlanRcv[]; canalVisibility?: CanalVisibility | null }>(
+    return api.get<{
+      success: boolean;
+      planes: PlanRcv[];
+      mensaje?: string;
+      canalVisibility?: CanalVisibility | null;
+    }>(
       `/catalogo/planes${query ? `?${query}` : ''}`,
     );
   },
@@ -723,6 +756,88 @@ export const personasApi = {
   cotizar: (payload: CotizacionPerPayload) =>
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
 };
+
+export interface PersonasPlanesV2Params {
+  cramo?: number | string;
+  ctipo?: string | null;
+  citem?: string;
+  centidad?: string;
+  cproducto?: string;
+}
+
+export const personApiV2 = {
+  /**
+   * Planes de personas v2 vía endpoint externo POST nest-api.
+   * Body base: { cramo: 7, ctipo: null, citem: "215", centidad: "P", cproducto: "14", cproductor: "215", cusuario: "7", cgestor_in: "marismendi@lamundialdeseguros.com", cgestor: "80080-27-0" }
+   * Reemplaza únicamente citem, centidad, cproducto y cramo con los datos obtenidos de la vista.
+   */
+  planes: async (params?: PersonasPlanesV2Params) => {
+    const baseBody = {
+      cramo: 7,
+      ctipo: null,
+      citem: '215',
+      centidad: 'P',
+      cproducto: '14',
+      cproductor: '215',
+      cusuario: '7',
+      cgestor_in: 'marismendi@lamundialdeseguros.com',
+      cgestor: '80080-27-0',
+    };
+
+    const body = {
+      ...baseBody,
+      ...(params?.cramo != null && params.cramo !== '' ? { cramo: Number(params.cramo) } : {}),
+      ...(params?.ctipo !== undefined ? { ctipo: params.ctipo } : {}),
+      ...(params?.citem != null && String(params.citem).trim() !== '' ? { citem: String(params.citem).trim() } : {}),
+      ...(params?.centidad != null && String(params.centidad).trim() !== '' ? { centidad: String(params.centidad).trim() } : {}),
+      ...(params?.cproducto != null && String(params.cproducto).trim() !== '' ? { cproducto: String(params.cproducto).trim() } : {}),
+    };
+
+    const apiKey =
+      import.meta.env.VITE_NEXUS_API_KEY ||
+      '';
+
+    const response = await axios.post<{
+      status?: boolean;
+      success?: boolean;
+      data?: { planes?: PlanPer[] } | PlanPer[];
+      planes?: PlanPer[];
+    }>('https://nexusqa.exelixitech.com/nest-api-docs/api/v1/personas/planes', body, {
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: apiKey,
+      },
+    });
+
+    const rawData = response.data;
+    let planes: PlanPer[] = [];
+    if (Array.isArray(rawData)) {
+      planes = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      if (Array.isArray((rawData as { planes?: PlanPer[] }).planes)) {
+        planes = (rawData as { planes: PlanPer[] }).planes;
+      } else if ((rawData as { data?: { planes?: PlanPer[] } }).data && Array.isArray((rawData as { data: { planes: PlanPer[] } }).data.planes)) {
+        planes = (rawData as { data: { planes: PlanPer[] } }).data.planes;
+      } else if (Array.isArray((rawData as { data?: PlanPer[] }).data)) {
+        planes = (rawData as { data: PlanPer[] }).data;
+      }
+    }
+
+    return {
+      data: {
+        success: response.data?.status ?? response.data?.success ?? true,
+        planes,
+      },
+      raw: response.data,
+    };
+  },
+  /** Cotización de personas (getCotizacionPer). */
+  cotizar: (payload: CotizacionPerPayload) =>
+    personasApi.cotizar(payload),
+};
+
+export const personasApiV2 = personApiV2;
+
 
 // ──────────────────────────────────────────────────────────────────────
 //  Catálogos de La Mundial — Estados, Ciudades y Listas (valrep)

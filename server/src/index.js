@@ -25,6 +25,7 @@ const funeralSubmissionRoutes = require('./routes/funeralSubmission');
 const patrimonialRoutes = require('./routes/patrimonial');
 const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
 const nexusAuth      = require('./middleware/nexusAuth');
+const { reportExpressError } = require('./services/monitorReporter');
 
 const app = express();
 
@@ -72,8 +73,9 @@ app.use('/api/exelixi', nexusAuth, exelixiRoutes);
 // Cotizaciones y emisiones La Mundial
 app.use('/api', nexusAuth, emisionRoutes);
 
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   console.error('[modulo-emision] error:', err);
+  reportExpressError(err, req);
   res.status(err.status || 500).json({ success: false, code: err.code || 'INTERNAL', message: err.message });
 });
 
