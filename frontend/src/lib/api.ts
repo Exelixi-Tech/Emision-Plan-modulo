@@ -757,6 +757,79 @@ export const personasApi = {
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
 };
 
+export interface PersonasPlanesV2Params {
+  cramo?: number | string;
+  ctipo?: string | null;
+  citem?: string;
+  centidad?: string;
+  cproducto?: string;
+}
+
+export const personApiV2 = {
+  /**
+   * Planes de personas v2 vía endpoint externo POST nest-api.
+   * Body base: { cramo: 7, ctipo: null, citem: "215", centidad: "P", cproducto: "14", cproductor: "215", cusuario: "7", cgestor_in: "marismendi@lamundialdeseguros.com", cgestor: "80080-27-0" }
+   * Reemplaza únicamente citem, centidad, cproducto y cramo con los datos obtenidos de la vista.
+   */
+  planes: async (params?: PersonasPlanesV2Params) => {
+    const baseBody = {
+      cramo: 7,
+      ctipo: null,
+      citem: '215',
+      centidad: 'P',
+      cproducto: '14',
+      cproductor: '215',
+      cusuario: '7',
+      cgestor_in: 'marismendi@lamundialdeseguros.com',
+      cgestor: '80080-27-0',
+    };
+
+    const body = {
+      ...baseBody,
+      ...(params?.cramo != null && params.cramo !== '' ? { cramo: Number(params.cramo) } : {}),
+      ...(params?.ctipo !== undefined ? { ctipo: params.ctipo } : {}),
+      ...(params?.citem != null && String(params.citem).trim() !== '' ? { citem: String(params.citem).trim() } : {}),
+      ...(params?.centidad != null && String(params.centidad).trim() !== '' ? { centidad: String(params.centidad).trim() } : {}),
+      ...(params?.cproducto != null && String(params.cproducto).trim() !== '' ? { cproducto: String(params.cproducto).trim() } : {}),
+    };
+
+    const response = await axios.post<{
+      status?: boolean;
+      success?: boolean;
+      data?: { planes?: PlanPer[] } | PlanPer[];
+      planes?: PlanPer[];
+    }>('https://nexusqa.exelixitech.com/nest-api-docs/api/v1/personas/planes', body);
+
+    const rawData = response.data;
+    let planes: PlanPer[] = [];
+    if (Array.isArray(rawData)) {
+      planes = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      if (Array.isArray((rawData as { planes?: PlanPer[] }).planes)) {
+        planes = (rawData as { planes: PlanPer[] }).planes;
+      } else if ((rawData as { data?: { planes?: PlanPer[] } }).data && Array.isArray((rawData as { data: { planes: PlanPer[] } }).data.planes)) {
+        planes = (rawData as { data: { planes: PlanPer[] } }).data.planes;
+      } else if (Array.isArray((rawData as { data?: PlanPer[] }).data)) {
+        planes = (rawData as { data: PlanPer[] }).data;
+      }
+    }
+
+    return {
+      data: {
+        success: response.data?.status ?? response.data?.success ?? true,
+        planes,
+      },
+      raw: response.data,
+    };
+  },
+  /** Cotización de personas (getCotizacionPer). */
+  cotizar: (payload: CotizacionPerPayload) =>
+    personasApi.cotizar(payload),
+};
+
+export const personasApiV2 = personApiV2;
+
+
 // ──────────────────────────────────────────────────────────────────────
 //  Catálogos de La Mundial — Estados, Ciudades y Listas (valrep)
 // ──────────────────────────────────────────────────────────────────────
