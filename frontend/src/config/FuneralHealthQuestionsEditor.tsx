@@ -22,6 +22,8 @@ export interface HealthQuestionDraft {
   scoreIfFalse?: number;
   scoreIfFilled?: number;
   optionScores?: Record<string, number>;
+  /** Knockout / referir por valor en select o multi_select */
+  optionActions?: Record<string, 'score' | 'refer' | 'reject'>;
   blockIfTrue?: boolean;
   blockIfFalse?: boolean;
   blockReason?: string;
@@ -142,6 +144,7 @@ export function enrichHealthQuestionScores(list: HealthQuestionDraft[]): HealthQ
       scoreIfFalse: q.scoreIfFalse ?? d.scoreIfFalse,
       scoreIfFilled: q.scoreIfFilled ?? d.scoreIfFilled,
       optionScores: q.optionScores ?? d.optionScores,
+      optionActions: q.optionActions ?? d.optionActions,
       blockIfTrue: q.blockIfTrue ?? d.blockIfTrue,
       blockIfFalse: q.blockIfFalse ?? d.blockIfFalse,
       blockReason: q.blockReason ?? d.blockReason,
