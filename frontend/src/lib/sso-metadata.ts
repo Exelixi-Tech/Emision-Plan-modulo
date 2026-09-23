@@ -2,6 +2,7 @@
 export const MARKETPLACE_ACTOR_KEYS = [
   'cgestor',
   'cgestor_in',
+  'csubitem',
   'centidad',
   'citem',
   'cproductor',
@@ -38,6 +39,67 @@ function decodeTokenMetadata(token: string): Record<string, unknown> | null {
 
 function isActorValue(val: unknown): boolean {
   return val != null && String(val).trim() !== '';
+}
+
+function isLikelyGestorCode(code: string, parent: string): boolean {
+  if (!code || code.includes('@')) return false;
+  if (code.includes('-')) return true;
+  if (!/^\d+$/.test(code) || code.length < 3) return false;
+  return !parent || code !== parent;
+}
+
+/** Paridad Sis2000 / planesClient: productor 348 + gestor 342 → "348-342". */
+export function composeGestorCsubitem(meta: Record<string, unknown> = {}): string | null {
+  const parentRaw =
+    meta.citem
+    ?? meta.cproductor
+    ?? meta.ccanalalt_in
+    ?? meta.ccanalalt;
+  const parent = parentRaw != null ? String(parentRaw).trim() : '';
+
+  const gestorRaw = preferGestorCode(meta.cgestor, meta.cgestor_in);
+  const gestorStr = gestorRaw != null ? String(gestorRaw).trim() : '';
+
+  if (gestorStr.includes('-') && !gestorStr.includes('@')) {
+    return gestorStr;
+  }
+
+  const explicit = meta.csubitem != null ? String(meta.csubitem).trim() : '';
+  if (explicit.includes('-') && !explicit.includes('@')) {
+    return explicit;
+  }
+
+  if (gestorStr && !gestorStr.includes('@') && isLikelyGestorCode(gestorStr, parent)) {
+    if (parent && parent !== gestorStr) {
+      return `${parent}-${gestorStr}`;
+    }
+    return gestorStr;
+  }
+
+  if (explicit && isLikelyGestorCode(explicit, parent)) {
+    if (parent && parent !== explicit && !explicit.includes('-')) {
+      return `${parent}-${explicit}`;
+    }
+    return explicit;
+  }
+
+  return null;
+}
+
+const VALID_CENTIDAD = new Set(['P', 'C', 'G']);
+
+/** Normaliza centidad Sis2000; valores inválidos del JWT → P si hay productor. */
+export function normalizeCentidad(meta: Record<string, unknown> = {}): string {
+  const raw = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  if (VALID_CENTIDAD.has(raw)) return raw;
+  if (meta.cproductor != null || meta.citem != null) return 'P';
+  return raw;
+}
+
+export function resolveGestorForQuery(meta: Record<string, unknown> = {}): string | null {
+  const gestor = preferGestorCode(meta.cgestor, meta.cgestor_in);
+  if (!isActorValue(gestor)) return null;
+  return String(gestor).trim();
 }
 
 function preferGestorCode(a: unknown, b: unknown): unknown {
