@@ -46,7 +46,7 @@ const TIER = {
   ],
 };
 
-/** @typedef {'boolean' | 'text' | 'select'} HealthQuestionType */
+/** @typedef {'boolean' | 'text' | 'select' | 'multi_select'} HealthQuestionType */
 
 /**
  * @typedef {Object} HealthQuestion
@@ -62,113 +62,16 @@ const TIER = {
  * @property {number} [scoreIfFalse]
  * @property {number} [scoreIfFilled]
  * @property {Record<string, number>} [optionScores]
+ * @property {Record<string, 'reject'|'refer'|'score'>} [optionActions]
  * @property {boolean} [blockIfTrue]
  * @property {boolean} [blockIfFalse]
  * @property {string} [blockReason]
  */
 
+const { SIS2000_V4_CATALOG } = require('./funeralHealthQuestions.sis2000-v4');
+
 /** @type {HealthQuestion[]} */
-const CATALOG = [
-  // ── Base: todos los planes ────────────────────────────────────────────────
-  {
-    id: 'fuma',
-    type: 'boolean',
-    label: '¿Fuma o ha fumado en los últimos 12 meses?',
-    description: 'Incluye cigarrillos, tabaco, puros o vapeo.',
-    required: true,
-    plans: TIER.TODOS,
-    scoreIfTrue: 15,
-  },
-  {
-    id: 'diagnosticoEnfermedad',
-    type: 'boolean',
-    label: '¿Ha sido diagnosticado con alguna enfermedad grave?',
-    description: 'Cáncer, diabetes, hipertensión, cardiopatías, VIH, etc.',
-    required: true,
-    plans: TIER.TODOS,
-    scoreIfTrue: 40,
-  },
-  {
-    id: 'descripcionEnfermedad',
-    type: 'text',
-    label: 'Describa la enfermedad diagnosticada',
-    description: 'Indique enfermedad, tratamiento y fecha aproximada del diagnóstico.',
-    required: true,
-    plans: TIER.TODOS,
-    showIf: { field: 'diagnosticoEnfermedad', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'aceptaTerminos',
-    type: 'boolean',
-    label: 'Acepto los términos y condiciones',
-    description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
-    required: true,
-    plans: TIER.TODOS,
-    scoreIfFalse: 100,
-    blockIfFalse: true,
-    blockReason: 'Debe aceptar los términos y condiciones.',
-  },
-
-  // ── Intermedio en adelante (2.500$ – 7.500$): cplan 5, 6, 7, 8, 9 ───────
-  {
-    id: 'consumeAlcohol',
-    type: 'boolean',
-    label: '¿Consume alcohol de forma habitual?',
-    description: 'Más de 2 copas por semana de forma regular.',
-    required: true,
-    plans: [...TIER.INTERMEDIO, ...TIER.ALTO],
-    scoreIfTrue: 10,
-  },
-  {
-    id: 'hospitalizacionReciente',
-    type: 'boolean',
-    label: '¿Ha sido hospitalizado en los últimos 24 meses?',
-    required: true,
-    plans: [...TIER.INTERMEDIO, ...TIER.ALTO],
-    scoreIfTrue: 25,
-  },
-  {
-    id: 'motivoHospitalizacion',
-    type: 'text',
-    label: 'Motivo de la hospitalización',
-    required: true,
-    plans: [...TIER.INTERMEDIO, ...TIER.ALTO],
-    showIf: { field: 'hospitalizacionReciente', equals: true },
-    scoreIfFilled: 5,
-  },
-
-  // ── Alto (4.000$ – 7.500$): cplan 7, 8, 9 ───────────────────────────────
-  {
-    id: 'medicacionCronica',
-    type: 'boolean',
-    label: '¿Toma medicación de forma crónica?',
-    description: 'Medicamentos prescritos de forma continua.',
-    required: true,
-    plans: TIER.ALTO,
-    scoreIfTrue: 20,
-  },
-  {
-    id: 'detalleMedicacion',
-    type: 'text',
-    label: 'Indique los medicamentos',
-    required: true,
-    plans: TIER.ALTO,
-    showIf: { field: 'medicacionCronica', equals: true },
-    scoreIfFilled: 5,
-  },
-
-  // ── Solo plan máximo 7.500$ (cplan 9) ───────────────────────────────────
-  {
-    id: 'deporteRiesgo',
-    type: 'boolean',
-    label: '¿Practica deportes de alto riesgo?',
-    description: 'Paracaidismo, montañismo, buceo, carreras, etc.',
-    required: true,
-    plans: [PLAN.P7500],
-    scoreIfTrue: 30,
-  },
-];
+const CATALOG = SIS2000_V4_CATALOG;
 
 /**
  * @param {unknown} q
@@ -358,6 +261,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     `[funeralHealthQuestions] cplan=${cplan} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
       (strippedShowIf.length ? ` strippedShowIf=${strippedShowIf.join(',')}` : ''),
   );
+  const { DEFAULT_SCORING_RULES } = require('../lib/funeralScoringRules');
   return {
     questions,
     source,
@@ -368,7 +272,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     triedEmpresas: candidates,
     canal: canalKey,
     resolvedCanal,
-    scoringRules: scoringRulesRaw,
+    scoringRules: scoringRulesRaw ?? DEFAULT_SCORING_RULES,
   };
 }
 

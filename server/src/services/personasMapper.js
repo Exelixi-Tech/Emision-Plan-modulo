@@ -1,3 +1,5 @@
+const { resolvePersonasCramo } = require('../lib/funerarioPlan');
+
 /**
  * Mapper del producto Funerario (personas): estado del wizard (frontend) ->
  * payload que espera nest-api (CreateEmissionPersonDto, ramo 9).
@@ -146,14 +148,23 @@ function genInternalPolicyId(prefix = 'PER') {
  * @param {object} funeral - state.funeral con `asegurados` (FuneralPerson[]).
  * @returns {Array<{ cparen:number, xrif_asegurado:string, nedad_asegurado:number }>}
  */
-function buildAseguradosForQuote(funeral = {}) {
+function buildAseguradosForQuote(funeral = {}, extras = {}) {
   const lista = Array.isArray(funeral.asegurados) ? funeral.asegurados : [];
-  return lista.map((a, idx) => ({
-    // Primer asegurado = titular (parentesco 1) si no trae parentesco explícito.
-    cparen: Number(a.cparen ?? a.parentesco ?? (idx === 0 ? 1 : 0)) || 0,
-    xrif_asegurado: onlyDigits(a.xrif_asegurado ?? a.identificacion),
-    nedad_asegurado: resolveNedadAsegurado(a),
-  }));
+  const src = extras.sameInsured !== false
+    ? (extras.tomador || {})
+    : (extras.asegurado || extras.tomador || {});
+  return lista.map((a, idx) => {
+    const isTitular = idx === 0;
+    const id = onlyDigits(a.xrif_asegurado ?? a.identificacion)
+      || (isTitular ? onlyDigits(src.identificacion) : '');
+    const nedad = resolveNedadAsegurado(a)
+      || (isTitular ? resolveNedadAsegurado(src) : null);
+    return {
+      cparen: Number(a.cparen ?? a.parentesco ?? (isTitular ? 1 : 0)) || (isTitular ? 1 : 0),
+      xrif_asegurado: id,
+      nedad_asegurado: nedad,
+    };
+  });
 }
 
 /**
@@ -174,7 +185,11 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
 
   const metadata = state.metadataCanal || {};
 
-  const cramo = metadata.cramo ? parseInt(metadata.cramo, 10) : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state.selectedPlan,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  });
   const productor = metadata.cproductor ? parseInt(metadata.cproductor, 10) : (parseInt(process.env.LAMUNDIAL_PRODUCTOR, 10) || 80080);
   const ctipocanal = metadata.ctipocanal !== undefined && String(metadata.ctipocanal).trim() !== ''
     ? metadata.ctipocanal
@@ -314,9 +329,11 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
   const titular = asegurados[0] || {};
   const metadata = state.metadataCanal || {};
 
-  const cramo = metadata.cramo
-    ? parseInt(metadata.cramo, 10)
-    : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state.selectedPlan,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  });
   const plan = overrides.plan || state.selectedPlan?.cplan || '';
   const femision = overrides.fechaEmision || todayYmd();
 
