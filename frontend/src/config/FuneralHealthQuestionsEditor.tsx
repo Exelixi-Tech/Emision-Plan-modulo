@@ -46,8 +46,6 @@ export const FALLBACK_FUNERAL_PLAN_OPTIONS: PlanOption[] = [
   { code: '9', label: '7.500$ Individual' },
 ];
 
-const FALLBACK_CODES = FALLBACK_FUNERAL_PLAN_OPTIONS.map((p) => p.code);
-
 const TYPE_LABEL: Record<HealthQuestionType, string> = {
   boolean: 'Sí/No',
   text: 'Texto',
