@@ -1,6 +1,8 @@
 ﻿# Dependencias
 node_modules/
 **/node_modules/
+**/.agents
+AGENTS.md
 
 # Variables de entorno (NUNCA versionar)
 .env
