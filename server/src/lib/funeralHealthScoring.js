@@ -51,21 +51,46 @@ function computeHealthScore(questions, answers, rulesRaw) {
     let action = 'score';
 
     if (q.type === 'boolean') {
-      if (answer === true) {
+      const yes = answer === true;
+      if (yes) {
         points = toScore(q.scoreIfTrue);
         action = questionAction(q, 'true');
         const concIds = rules.concurrence.questionIds;
         const counts =
           !concIds.length || concIds.includes(String(q.id));
         if (counts) yesCount += 1;
-      } else if (answer === false) {
+      } else {
         points = toScore(q.scoreIfFalse);
         action = questionAction(q, 'false');
       }
     } else if (q.type === 'select') {
       const val = String(answer ?? '');
       const map = q.optionScores && typeof q.optionScores === 'object' ? q.optionScores : {};
+      const actions =
+        q.optionActions && typeof q.optionActions === 'object' ? q.optionActions : {};
       points = toScore(map[val]);
+      const optAction = actions[val];
+      if (optAction === 'reject') {
+        forcedReject = true;
+        blockReason = q.blockReason || `Respuesta en: ${q.label}`;
+      } else if (optAction === 'refer') {
+        forcedRefer = true;
+      }
+    } else if (q.type === 'multi_select') {
+      const selected = Array.isArray(answer) ? answer.map((v) => String(v)) : [];
+      const map = q.optionScores && typeof q.optionScores === 'object' ? q.optionScores : {};
+      const actions =
+        q.optionActions && typeof q.optionActions === 'object' ? q.optionActions : {};
+      for (const val of selected) {
+        points += toScore(map[val]);
+        const optAction = actions[val];
+        if (optAction === 'reject') {
+          forcedReject = true;
+          blockReason = q.blockReason || `Respuesta en: ${q.label}`;
+        } else if (optAction === 'refer') {
+          forcedRefer = true;
+        }
+      }
     } else if (q.type === 'text') {
       const filled = String(answer ?? '').trim().length > 0;
       if (filled) points = toScore(q.scoreIfFilled);
@@ -189,6 +214,8 @@ function computePolicyHealthScore(questions, insureds, rulesRaw) {
   }
 
   const worst = perInsured.find((r) => r.scoring.verdict === verdict) || perInsured[0];
+  const forcedReject = perInsured.some((r) => r.scoring.forcedReject);
+  const forcedRefer = perInsured.some((r) => r.scoring.forcedRefer);
   const blocked = verdict === 'reject';
   return {
     total,
@@ -199,6 +226,8 @@ function computePolicyHealthScore(questions, insureds, rulesRaw) {
     verdictMessage: worst?.scoring.verdictMessage || messageForVerdict(verdict, rules),
     perInsured,
     rules,
+    forcedReject,
+    forcedRefer,
   };
 }
 

@@ -5,21 +5,38 @@ export interface PlanParentesco {
   max_edad: number;
 }
 
+/** Plan devuelto por valrep/planes/producto (numérico o alfanumérico). */
+export function isFunerarioCplan(cplan?: string | null): boolean {
+  return String(cplan || '').trim().length > 0;
+}
+
 export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolean {
   if (!parentescos?.length) return false;
   return parentescos.length === 1 && Number(parentescos[0].cparen) === 1;
 }
 
-/** Tope de personas del plan: 1 titular + nmax_dep, o 1 si solo admite titular. */
+/** Cupo de dependientes del plan (maplanes_per.nmax_dep). Es el valor que se muestra en UI. */
+export function nmaxDepDelPlan(opts: {
+  nmax_dep?: number | null;
+  maxAsegurados?: number | null;
+  parentescos?: PlanParentesco[] | null;
+}): number | null {
+  const nmax = Number(opts.nmax_dep);
+  if (Number.isFinite(nmax) && nmax >= 0) return nmax;
+  const fromApi = Number(opts.maxAsegurados);
+  if (Number.isFinite(fromApi) && fromApi > 0) return Math.max(0, fromApi - 1);
+  if (isTitularOnlyPlan(opts.parentescos)) return 0;
+  return null;
+}
+
+/** Tope de personas del plan: 1 titular + nmax_dep. Solo para recortar la lista, no se muestra. */
 export function maxAseguradosDelPlan(opts: {
   maxAsegurados?: number | null;
   nmax_dep?: number | null;
   parentescos?: PlanParentesco[] | null;
 }): number | null {
-  const fromApi = Number(opts.maxAsegurados);
-  if (Number.isFinite(fromApi) && fromApi > 0) return fromApi;
-  const nmax = Number(opts.nmax_dep);
-  if (Number.isFinite(nmax)) return Math.max(1, 1 + nmax);
+  const nmax = nmaxDepDelPlan(opts);
+  if (nmax != null) return Math.max(1, 1 + nmax);
   if (isTitularOnlyPlan(opts.parentescos)) return 1;
   return null;
 }

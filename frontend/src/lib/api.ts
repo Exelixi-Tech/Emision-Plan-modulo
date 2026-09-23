@@ -145,6 +145,54 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   );
 }
 
+/** Metadata del canal SSO: snapshot marketplace → JWT → metadataCanal del wizard. */
+function readSsoCanalMeta(): Record<string, unknown> {
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+  const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
+  return {
+    ...readMarketplaceActorSnapshot(),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+}
+
+/** Ramo enviado por el SSO. `null` si el canal no lo declara. */
+export function resolveSsoCramo(): number | null {
+  const raw = readSsoCanalMeta().cramo;
+  if (raw == null || String(raw).trim() === '') return null;
+  const cramo = parseInt(String(raw).trim(), 10);
+  return Number.isFinite(cramo) && cramo > 0 ? cramo : null;
+}
+
+/** Canal SSO genérico (JWT + sid + snapshot) sin forzar cproducto funerario 57. */
+function appendSsoCanalQuery(qs: URLSearchParams): void {
+  const meta = readSsoCanalMeta();
+
+  for (const key of FUNERAL_CANAL_QUERY_KEYS) {
+    if (meta[key] != null && String(meta[key]).trim() !== '') {
+      qs.set(key, String(meta[key]).trim());
+    }
+  }
+
+  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const citemRaw = meta.citem
+    ?? (centidad === 'P' ? meta.cproductor : null)
+    ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
+  const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
+  if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
+  if (citem && !qs.get('citem')) qs.set('citem', citem);
+  if (!qs.get('centidad') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('centidad', 'P');
+  }
+  if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('citem', String(meta.cproductor).trim());
+  }
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    qs.set('cramo', String(meta.cramo).trim());
+  }
+}
+
 function shouldUseBridgeRules(): boolean {
   if (typeof window === 'undefined') return false;
   const qs = new URLSearchParams(window.location.search);
@@ -723,6 +771,7 @@ export interface PlanParentescoPer {
 export interface PlanPer {
   cplan: string;
   xplan?: string;
+  cramo?: number;
   cmoneda?: string;
   nmax_dep?: number | null;
   maxAsegurados?: number;
@@ -755,6 +804,27 @@ export const personasApi = {
   /** Cotización de personas (getCotizacionPer). */
   cotizar: (payload: CotizacionPerPayload) =>
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
+};
+
+export const patrimonialApi = {
+  /** El ramo del SSO manda; `cramo` solo se usa si el canal no lo declara. */
+  planes: (cramo?: number) => {
+    const qs = new URLSearchParams();
+    const ramo = resolveSsoCramo() ?? cramo;
+    if (ramo != null) qs.set('cramo', String(ramo));
+    appendSsoCanalQuery(qs);
+    return api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?${qs.toString()}`);
+  },
+  cotizar: (payload: {
+    cplan: string;
+    cramo?: number;
+    ifrecuencia?: string;
+    pdescuento?: number;
+    precargo?: number;
+  }) => {
+    const cramo = resolveSsoCramo() ?? payload.cramo;
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -813,7 +883,7 @@ export async function getFrecuenciasByPlan(cplan: string, cramo: number = 9): Pr
 //  Cuestionario de salud funerario (preguntas Exélixi + persistencia BD)
 // ──────────────────────────────────────────────────────────────────────
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestion {
   id: string;
@@ -824,6 +894,9 @@ export interface HealthQuestion {
   plans: string[];
   showIf?: { field: string; equals: boolean | string };
   options?: { value: string; label: string }[];
+  /** Si true, la respuesta debe ser Sí (p. ej. términos). Destildar deja el cuestionario incompleto. */
+  blockIfFalse?: boolean;
+  blockReason?: string;
 }
 
 export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {

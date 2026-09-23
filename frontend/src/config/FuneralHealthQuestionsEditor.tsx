@@ -5,7 +5,7 @@ import {
   RotateCcw, ChevronUp, Percent, Power,
 } from 'lucide-react';
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestionDraft {
   id: string;
@@ -22,6 +22,8 @@ export interface HealthQuestionDraft {
   scoreIfFalse?: number;
   scoreIfFilled?: number;
   optionScores?: Record<string, number>;
+  /** Knockout / referir por valor en select o multi_select */
+  optionActions?: Record<string, 'score' | 'refer' | 'reject'>;
   blockIfTrue?: boolean;
   blockIfFalse?: boolean;
   blockReason?: string;
@@ -44,43 +46,84 @@ export const FALLBACK_FUNERAL_PLAN_OPTIONS: PlanOption[] = [
   { code: '9', label: '7.500$ Individual' },
 ];
 
-const FALLBACK_CODES = FALLBACK_FUNERAL_PLAN_OPTIONS.map((p) => p.code);
-
 const TYPE_LABEL: Record<HealthQuestionType, string> = {
   boolean: 'Sí/No',
   text: 'Texto',
   select: 'Lista',
+  multi_select: 'Varias opciones',
 };
 
-/** Seed si la config aún no trae preguntas (mismo default que Nexus). */
+/** Seed Sis2000 producción cproducto 57 · matriz v4 (mismo default que Nexus). */
 export const DEFAULT_HEALTH_QUESTIONS_SEED: HealthQuestionDraft[] = [
   {
     id: 'fuma',
     type: 'boolean',
-    label: '¿Fuma o ha fumado en los últimos 12 meses?',
-    description: 'Incluye cigarrillos, tabaco, puros o vapeo.',
+    label: '¿Es usted fumador?',
     required: true,
-    plans: [...FALLBACK_CODES],
+    plans: ['*'],
     scoreIfTrue: 15,
+    scoreIfFalse: 0,
   },
   {
-    id: 'diagnosticoEnfermedad',
+    id: 'cigarrillosPorDia',
+    type: 'select',
+    label: '¿Cuantos cigarrillos se fuma al día?',
+    required: true,
+    plans: ['*'],
+    showIf: { field: 'fuma', equals: true },
+    options: [
+      { value: 'Bajo', label: '1 a 5' },
+      { value: 'Medio', label: '5 a 10' },
+      { value: 'fumador violento', label: '10 a 15' },
+      { value: 'Alto', label: 'Más de 20' },
+    ],
+    optionScores: { Bajo: 2, Medio: 5, 'fumador violento': 15, Alto: 20 },
+    optionActions: { Alto: 'reject' },
+    blockReason:
+      'Se han detectado varios factores de riesgo inhabilitantes, no es posible continuar con el proceso.',
+  },
+  {
+    id: 'deportesExtremos',
     type: 'boolean',
-    label: '¿Ha sido diagnosticado con alguna enfermedad grave?',
-    description: 'Cáncer, diabetes, hipertensión, cardiopatías, VIH, etc.',
+    label: '¿Practica deportes extremos o de alto riesgo?',
     required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfTrue: 40,
+    plans: ['*'],
+    scoreIfTrue: 20,
+    scoreIfFalse: 0,
   },
   {
-    id: 'descripcionEnfermedad',
-    type: 'text',
-    label: 'Describa la enfermedad diagnosticada',
-    description: 'Indique enfermedad, tratamiento y fecha aproximada del diagnóstico.',
+    id: 'enfermedadCardiovascular',
+    type: 'boolean',
+    label: '¿Ha padecido enfermedades cardiovasculares?',
     required: true,
-    plans: [...FALLBACK_CODES],
-    showIf: { field: 'diagnosticoEnfermedad', equals: true },
-    scoreIfFilled: 5,
+    plans: ['*'],
+    scoreIfTrue: 0,
+    scoreIfFalse: 0,
+  },
+  {
+    id: 'indiqueEnfermedades',
+    type: 'multi_select',
+    label: 'Indique',
+    description: 'Seleccione las condiciones que apliquen.',
+    required: true,
+    plans: ['*'],
+    showIf: { field: 'enfermedadCardiovascular', equals: true },
+    options: [
+      { value: 'HIPCON', label: 'Hipertension controlada' },
+      { value: 'SI', label: 'Diábetes' },
+      { value: 'inf', label: 'Infarto antiguo' },
+      { value: 'diabe01', label: 'diabetes controlada' },
+    ],
+    optionScores: { HIPCON: 8, SI: 12, inf: 10, diabe01: 15 },
+  },
+  {
+    id: 'soyVidente',
+    type: 'boolean',
+    label: 'Soy vidente',
+    required: true,
+    plans: ['*'],
+    scoreIfTrue: 5,
+    scoreIfFalse: 0,
   },
   {
     id: 'aceptaTerminos',
@@ -88,63 +131,10 @@ export const DEFAULT_HEALTH_QUESTIONS_SEED: HealthQuestionDraft[] = [
     label: 'Acepto los términos y condiciones',
     description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
     required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfFalse: 100,
+    plans: ['*'],
+    scoreIfFalse: 0,
     blockIfFalse: true,
     blockReason: 'Debe aceptar los términos y condiciones.',
-  },
-  {
-    id: 'consumeAlcohol',
-    type: 'boolean',
-    label: '¿Consume alcohol de forma habitual?',
-    description: 'Más de 2 copas por semana de forma regular.',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    scoreIfTrue: 10,
-  },
-  {
-    id: 'hospitalizacionReciente',
-    type: 'boolean',
-    label: '¿Ha sido hospitalizado en los últimos 24 meses?',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    scoreIfTrue: 25,
-  },
-  {
-    id: 'motivoHospitalizacion',
-    type: 'text',
-    label: 'Motivo de la hospitalización',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    showIf: { field: 'hospitalizacionReciente', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'medicacionCronica',
-    type: 'boolean',
-    label: '¿Toma medicación de forma crónica?',
-    description: 'Medicamentos prescritos de forma continua.',
-    required: true,
-    plans: ['7', '8', '9'],
-    scoreIfTrue: 20,
-  },
-  {
-    id: 'detalleMedicacion',
-    type: 'text',
-    label: 'Indique los medicamentos',
-    required: true,
-    plans: ['7', '8', '9'],
-    showIf: { field: 'medicacionCronica', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'deporteRiesgo',
-    type: 'boolean',
-    label: '¿Practica deportes de alto riesgo?',
-    description: 'Paracaidismo, montañismo, buceo, carreras, etc.',
-    required: true,
-    plans: ['9'],
-    scoreIfTrue: 30,
   },
 ];
 
@@ -160,6 +150,7 @@ export function enrichHealthQuestionScores(list: HealthQuestionDraft[]): HealthQ
       scoreIfFalse: q.scoreIfFalse ?? d.scoreIfFalse,
       scoreIfFilled: q.scoreIfFilled ?? d.scoreIfFilled,
       optionScores: q.optionScores ?? d.optionScores,
+      optionActions: q.optionActions ?? d.optionActions,
       blockIfTrue: q.blockIfTrue ?? d.blockIfTrue,
       blockIfFalse: q.blockIfFalse ?? d.blockIfFalse,
       blockReason: q.blockReason ?? d.blockReason,
