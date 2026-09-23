@@ -1,12 +1,13 @@
 /**
- * Cuestionario alineado a Sis2000 QA — cproducto 57, cversion_matriz 4 (funerario).
- * Mantenimiento La Mundial: declaración de riesgo / sp_ma_obtener_preguntas_riesgo_producto.
+ * Cuestionario alineado a Sis2000 producción — cproducto 57, cversion_matriz 4.
+ * Fuente: maproductos_cuestionario / maproductos_resp_peso (export DBeaver 2026-09).
  *
  * Rangos: 0–25 APROBAR · 26–39 REFERIR · 40+ RECHAZAR (maproductos_reglas_riesgo v4).
  */
 
 const TIER = {
-  TODOS: ['2', '3', '4', '5', '6', '7', '8', '9'],
+  /** Producto 57 — aplica a todos los planes del canal (Sis2000 no filtra por cplan). */
+  TODOS: ['*'],
 };
 
 /** @type {import('./funeralHealthQuestions').HealthQuestion[]} */
@@ -14,17 +15,16 @@ const SIS2000_V4_CATALOG = [
   {
     id: 'fuma',
     type: 'boolean',
-    label: '¿Fuma o ha fumado en los últimos 12 meses?',
-    description: 'Incluye cigarrillos, tabaco, puros o vapeo.',
+    label: '¿Es usted fumador?',
     required: true,
     plans: TIER.TODOS,
-    scoreIfTrue: 0,
+    scoreIfTrue: 15,
     scoreIfFalse: 0,
   },
   {
     id: 'cigarrillosPorDia',
     type: 'select',
-    label: '¿Cuántos cigarrillos se fuma al día?',
+    label: '¿Cuantos cigarrillos se fuma al día?',
     required: true,
     plans: TIER.TODOS,
     showIf: { field: 'fuma', equals: true },
@@ -47,6 +47,15 @@ const SIS2000_V4_CATALOG = [
       'Se han detectado varios factores de riesgo inhabilitantes, no es posible continuar con el proceso.',
   },
   {
+    id: 'deportesExtremos',
+    type: 'boolean',
+    label: '¿Practica deportes extremos o de alto riesgo?',
+    required: true,
+    plans: TIER.TODOS,
+    scoreIfTrue: 20,
+    scoreIfFalse: 0,
+  },
+  {
     id: 'enfermedadCardiovascular',
     type: 'boolean',
     label: '¿Ha padecido enfermedades cardiovasculares?',
@@ -64,10 +73,10 @@ const SIS2000_V4_CATALOG = [
     plans: TIER.TODOS,
     showIf: { field: 'enfermedadCardiovascular', equals: true },
     options: [
-      { value: 'HIPCON', label: 'Hipertensión controlada' },
-      { value: 'SI', label: 'Diabetes' },
+      { value: 'HIPCON', label: 'Hipertension controlada' },
+      { value: 'SI', label: 'Diábetes' },
       { value: 'inf', label: 'Infarto antiguo' },
-      { value: 'diabe01', label: 'Diabetes controlada' },
+      { value: 'diabe01', label: 'diabetes controlada' },
     ],
     optionScores: {
       HIPCON: 8,

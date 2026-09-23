@@ -10,12 +10,12 @@ const DEFAULT_SCORING_RULES = {
     emit: {
       min: 0,
       max: 25,
-      message: 'Puede emitir sin inconvenientes.',
+      message: 'Puede Emitir Sin Inconvenientes',
     },
     referred: {
       min: 26,
       max: 39,
-      message: 'Comunicarse con el corredor de seguro.',
+      message: 'Comunicarse con el corredor de seguro',
     },
     reject: {
       min: 40,
