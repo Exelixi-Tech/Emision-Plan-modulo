@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
-import { moduleApiBase, publicAsset } from '../lib/app-base';
+import { publicAsset } from '../lib/app-base';
 import { formatHealthScoreNumber, formatHealthScoreSigned } from '../lib/formatHealthScore';
 import { parseFuneralScoringRules } from './FuneralScoringRulesEditor';
 
