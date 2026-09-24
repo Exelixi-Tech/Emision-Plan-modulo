@@ -24,6 +24,7 @@ const funeralHealthRoutes = require('./routes/funeralHealth');
 const funeralSubmissionRoutes = require('./routes/funeralSubmission');
 const patrimonialRoutes = require('./routes/patrimonial');
 const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
+const revisionPanelRoutes = require('./routes/revisionPanel');
 const nexusAuth      = require('./middleware/nexusAuth');
 const { reportExpressError } = require('./services/monitorReporter');
 
@@ -55,6 +56,9 @@ app.get('/api/health', (_req, res) => {
     nexusAuth: process.env.NEXUS_AUTH_ENABLED === 'true',
   });
 });
+
+// Mesa/config: mint JWT revision-panel sin nexus_token (iframe SysIP con token viejo).
+app.use('/api/revision', revisionPanelRoutes);
 
 // Multi-tenant: todas las rutas /api requieren nexus_token
 // Catálogos (valrep + INMA) consultados directamente desde Sis2000.
