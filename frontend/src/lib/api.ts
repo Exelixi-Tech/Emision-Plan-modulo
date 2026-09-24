@@ -795,6 +795,8 @@ export interface CotizacionPerPayload {
   cramo?: number;
   /** Viajero prorrata: días del plan elegido. */
   ndias?: number;
+  fdesde?: string;
+  fhasta?: string;
 }
 
 export const personasApi = {
