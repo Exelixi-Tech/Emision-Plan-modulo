@@ -49,11 +49,19 @@ function mergeTitularFromForm(
 const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL' }];
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
+function parseNdiasFromLabel(text: string): number | null {
+  const m = String(text || '').match(/(\d+)\s*d[ií]as?/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function apiPlanToWizardPlan(p: PlanPer): Plan {
-  const ndias =
+  const fromApi =
     p.ndias != null && Number.isFinite(Number(p.ndias)) && Number(p.ndias) > 0
       ? Number(p.ndias)
       : null;
+  const ndias = fromApi ?? parseNdiasFromLabel(p.xplan ?? '') ?? parseNdiasFromLabel(p.cplan ?? '');
   return {
     cplan: p.cplan,
     name: (p.xplan ?? '').trim() || p.cplan,
@@ -81,6 +89,14 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
     maxAsegurados: p.maxAsegurados,
     ndias,
   };
+}
+
+function vigenciasDesdeNdias(ndias: number): { fdesde: string; fhasta: string; ndias: number } {
+  const fdesde = new Date().toISOString().slice(0, 10);
+  const desde = new Date(`${fdesde}T00:00:00Z`);
+  const hasta = new Date(desde);
+  hasta.setUTCDate(hasta.getUTCDate() + ndias - 1);
+  return { fdesde, fhasta: hasta.toISOString().slice(0, 10), ndias };
 }
 
 function planOptionKey(p: Plan): string {
@@ -221,7 +237,7 @@ export function FuneralPlansStep() {
   const planCode = selectedPlan?.cplan ?? '';
   const planNdias = selectedPlan?.ndias != null && selectedPlan.ndias > 0
     ? selectedPlan.ndias
-    : null;
+    : parseNdiasFromLabel(selectedPlan?.name ?? selectedPlan?.tag ?? '');
   // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
   // Viajero: prima prorrata por ndias del plan elegido.
   const quoteSig = planCode
@@ -242,11 +258,12 @@ export function FuneralPlansStep() {
     snap.setQuoteState('loading');
 
     const snapPlan = useWizardStore.getState().selectedPlan;
+    const vig = planNdias != null ? vigenciasDesdeNdias(planNdias) : null;
     personasApi.cotizar({
       cplan: planCode,
       cramo: planCramo(snapPlan, product.cramo),
       ifrecuencia: 'A',
-      ...(planNdias != null ? { ndias: planNdias } : {}),
+      ...(vig ?? {}),
       asegurados: aseguradosListos.map(({ a, idx }) => ({
         parentesco: idx === 0 ? '1' : a.parentesco,
         identificacion: a.identificacion,
