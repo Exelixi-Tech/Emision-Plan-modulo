@@ -139,6 +139,8 @@ export interface Plan {
   nmax_dep?: number | null;
   /** Tope de personas en la póliza: titular + nmax_dep. */
   maxAsegurados?: number;
+  /** Días de vigencia (Viajero / maplanes_frec.ndias). */
+  ndias?: number | null;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';

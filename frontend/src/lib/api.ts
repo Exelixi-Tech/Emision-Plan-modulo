@@ -742,6 +742,8 @@ export interface PlanPer {
   nmax_dep?: number | null;
   maxAsegurados?: number;
   parentescos?: PlanParentescoPer[];
+  /** Días de vigencia (Viajero / maplanes_frec). */
+  ndias?: number | null;
 }
 
 /** Asegurado que se envía a la cotización de personas (formato amigable). */
@@ -757,6 +759,8 @@ export interface CotizacionPerPayload {
   asegurados: CotizacionPerAsegurado[];
   ifrecuencia: string;
   cramo?: number;
+  /** Viajero prorrata: días del plan elegido. */
+  ndias?: number;
 }
 
 export const personasApi = {
