@@ -17,7 +17,9 @@
  *
  * Configuración (.env):
  *   NEXUS_AUTH_ENABLED=true               # activar/desactivar la validación
- *   TENANT_TOKEN_SECRET=...               # mismo secret que nexus-api
+ *   TENANT_TOKEN_SECRET=...               # firma tenant_access (mismo que nexus-api)
+ *   JWT_SECRET=...                        # opcional: mismo JWT_SECRET de nexus-api
+ *                                         # (config-panel / revision-panel SysIP)
  *   NEXUS_EXPECTED_SUBMODULO_ID=17        # id del submódulo en BD de nexus
  *
  * Si NEXUS_AUTH_ENABLED !== 'true', se omite la validación pero igual
@@ -32,7 +34,22 @@ function done(req, _res, next) {
 }
 
 const ENABLED         = process.env.NEXUS_AUTH_ENABLED === 'true';
-const SECRET          = process.env.TENANT_TOKEN_SECRET || '';
+/**
+ * Nexus firma tenant_access con TENANT_TOKEN_SECRET y los JWT de mesa/parametrizador
+ * (config-panel / revision-panel) con JWT_SECRET. En GCIA suelen ser distintos;
+ * hay que probar ambos o el panel SysIP recibe NEXUS_TOKEN_INVALID.
+ */
+const VERIFY_SECRETS = [
+  ...new Set(
+    [
+      process.env.TENANT_TOKEN_SECRET,
+      process.env.NEXUS_JWT_SECRET,
+      process.env.JWT_SECRET,
+    ]
+      .map((s) => (typeof s === 'string' ? s.trim() : ''))
+      .filter(Boolean),
+  ),
+];
 // Un mismo backend puede atender varios submódulos (p.ej. el mismo backend para
 // el flujo RCV y el flujo Funerario). Se aceptan varios ids vía
 // NEXUS_EXPECTED_SUBMODULO_IDS=19,23 (lista) o el legacy NEXUS_EXPECTED_SUBMODULO_ID.
@@ -44,6 +61,18 @@ const EXPECTED_SUBMODS = (
   .split(',')
   .map((s) => parseInt(s.trim(), 10))
   .filter((n) => Number.isInteger(n) && n > 0);
+
+function verifyNexusJwt(token) {
+  let lastErr;
+  for (const secret of VERIFY_SECRETS) {
+    try {
+      return jwt.verify(token, secret, { ignoreExpiration: true });
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('NEXUS_TOKEN_INVALID');
+}
 
 function extractToken(req) {
   const auth = req.headers.authorization || req.headers['x-nexus-token'];
@@ -137,11 +166,11 @@ async function nexusAuth(req, res, next) {
     return done(req, res, next);
   }
 
-  if (!SECRET) {
+  if (VERIFY_SECRETS.length === 0) {
     return res.status(500).json({
       success: false,
       code: 'NEXUS_AUTH_MISCONFIGURED',
-      message: 'TENANT_TOKEN_SECRET no está configurado en el backend.',
+      message: 'TENANT_TOKEN_SECRET (y opcional JWT_SECRET) no están configurados en el backend.',
     });
   }
 
@@ -155,7 +184,7 @@ async function nexusAuth(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, SECRET, { ignoreExpiration: true });
+    const payload = verifyNexusJwt(token);
 
     // Tokens de mesa / parametrizador (SysIP iframe): no son tenant_access.
     // Solo lectura de catálogo de planes (preguntas + revisión funerario).

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
-import { publicAsset } from '../lib/app-base';
+import { moduleApiBase, publicAsset } from '../lib/app-base';
 import { formatHealthScoreNumber, formatHealthScoreSigned } from '../lib/formatHealthScore';
 import { parseFuneralScoringRules } from './FuneralScoringRulesEditor';
 
@@ -331,25 +331,40 @@ async function postRefresh(path: string, current: string): Promise<string | null
   return String(data.token);
 }
 
+async function bootstrapRevisionToken(): Promise<boolean> {
+  const { bootstrapPanelToken } = await import('./panelTokenBootstrap');
+  const token = await bootstrapPanelToken({
+    panel: 'revision',
+    empresaId: EMPRESA_ID || 1,
+  });
+  if (!token) return false;
+  replacePanelToken(token);
+  return true;
+}
+
 async function refreshRevisionToken(): Promise<boolean> {
   const current = readPanelToken();
-  if (!current) return false;
   try {
-    const scope = jwtScope(current);
-    const paths =
-      scope === 'config-panel'
-        ? ['/api/config/refresh-token', '/api/funeral-submissions/refresh-token']
-        : ['/api/funeral-submissions/refresh-token'];
-    let next: string | null = null;
-    for (const path of paths) {
-      next = await postRefresh(path, current);
-      if (next) break;
+    if (current) {
+      const scope = jwtScope(current);
+      const paths =
+        scope === 'config-panel'
+          ? ['/api/config/refresh-token', '/api/funeral-submissions/refresh-token']
+          : ['/api/funeral-submissions/refresh-token'];
+      let next: string | null = null;
+      for (const path of paths) {
+        next = await postRefresh(path, current);
+        if (next) break;
+      }
+      if (next) {
+        replacePanelToken(next);
+        return true;
+      }
     }
-    if (!next) return false;
-    replacePanelToken(next);
-    return true;
+    // Iframe SysIP: token ausente, tenant/SSO o firmado con otro JWT_SECRET.
+    return bootstrapRevisionToken();
   } catch {
-    return false;
+    return bootstrapRevisionToken();
   }
 }
 
