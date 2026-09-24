@@ -149,6 +149,11 @@ export interface Plan {
   maxAsegurados?: number;
 }
 
+export interface ProveedorItem {
+  xproveedor: string;
+  cci_rif: number | string;
+}
+
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
 
 /** Persona (asegurado/beneficiario) del producto Funerario. */
@@ -339,4 +344,7 @@ export interface WizardState {
   diligencia: import('../lib/diligencia').DiligenciaState | null;
   /** Reglas de visibilidad del canal (SysIP / nest-api canal/visibility). */
   canalVisibility: CanalVisibility | null;
+  /** Proveedor de servicio seleccionado (cproveedor: cci_rif). */
+  cproveedor?: number | string;
+  xproveedor?: string;
 }
