@@ -162,7 +162,7 @@ router.get('/planes', async (req, res) => {
 
 // ── POST /cotizacion ──────────────────────────────────────────────────────────
 router.post('/cotizacion', async (req, res) => {
-  const { cplan, ifrecuencia } = req.body || {};
+  const { cplan, ifrecuencia, ndias } = req.body || {};
   const cramo = resolvePersonasCramo({
     bodyCramo: req.body?.cramo,
     metadataCanal: req.nexusMetadata,
@@ -193,7 +193,13 @@ router.post('/cotizacion', async (req, res) => {
   }
 
   try {
-    const quote = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    const quote = await personasClient.getCotizacionPer({
+      cramo,
+      cplan,
+      asegurados,
+      ifrecuencia,
+      ...(ndias != null && Number(ndias) > 0 ? { ndias: Number(ndias) } : {}),
+    });
     res.json({
       success: true,
       mprima: quote.mprima,
