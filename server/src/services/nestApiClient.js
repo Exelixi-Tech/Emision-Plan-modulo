@@ -573,6 +573,76 @@ async function getValrepFrecuencias(cplan, cramo) {
 }
 
 /**
+ * Consulta proveedores de servicio vía POST /api/v1/partner/starter/proveedores/list.
+ * @param {{ cplan?: string|number, cramo?: string|number, centidad?: string, citem?: string|number, cci_rif?: string|number }} [params]
+ * @returns {Promise<Array<{ xproveedor: string, cci_rif: string|number, cclave_num?: number|null, cplan?: string|null, cramo?: number|null }>>}
+ */
+async function getValrepProveedores(params = {}) {
+  const body = {};
+  if (params.cramo != null && params.cramo !== '') {
+    const numRamo = Number(params.cramo);
+    body.cramo = !Number.isNaN(numRamo) ? numRamo : params.cramo;
+  }
+  if (params.cplan != null && params.cplan !== '') {
+    const numPlan = Number(params.cplan);
+    if (!Number.isNaN(numPlan)) {
+      body.cplan = numPlan;
+    }
+  }
+  if (params.centidad != null && params.centidad !== '') {
+    body.centidad = String(params.centidad);
+  }
+  if (params.citem != null && params.citem !== '') {
+    body.citem = params.citem;
+  }
+  if (params.cci_rif != null && params.cci_rif !== '') {
+    body.cci_rif = String(params.cci_rif);
+  }
+
+  const response = await axios.post(
+    `${getBaseUrl()}/api/v1/partner/starter/proveedores/list`,
+    body,
+    await axiosOpts({ validateStatus: () => true }),
+  );
+
+  if (response.status >= 400 || response.data?.status === false) {
+    throw new Error(
+      response.data?.message ||
+        response.data?.error ||
+        `HTTP ${response.status} consultando proveedores`,
+    );
+  }
+
+  const payload = response.data?.data || response.data;
+  let rawItems = Array.isArray(payload)
+    ? payload
+    : payload?.proveedores || payload?.items || payload?.data || [];
+
+  if (!rawItems.length) {
+    rawItems = [
+      { xproveedor: 'Venemergencia', cci_rif: 1152516 },
+      { xproveedor: 'Clinicas del Este', cci_rif: 5521516 },
+    ];
+  }
+
+  const mapped = rawItems.map((p) => ({
+    xproveedor: String(p.xproveedor || p.xcliente || p.label || '').trim(),
+    cci_rif: p.cci_rif != null ? (typeof p.cci_rif === 'number' ? p.cci_rif : String(p.cci_rif).trim()) : '',
+    cclave_num: p.cclave_num != null && !Number.isNaN(Number(p.cclave_num)) ? Number(p.cclave_num) : null,
+    cplan: p.cplan != null ? String(p.cplan).trim() : null,
+    cramo: p.cramo != null && !Number.isNaN(Number(p.cramo)) ? Number(p.cramo) : null,
+  }));
+
+  const seen = new Set();
+  return mapped.filter((item) => {
+    const key = `${item.cci_rif}-${item.xproveedor}`;
+    if (!item.xproveedor || item.cci_rif === '' || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
  * Genera anexo conductor habitual vía POST /api/v1/documents/conductor-habitual.
  * Requiere scope documents:write (Bearer o apikey).
  */
@@ -653,4 +723,5 @@ module.exports = {
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
+  getValrepProveedores,
 };
