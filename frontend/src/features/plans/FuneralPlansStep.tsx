@@ -50,24 +50,46 @@ const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
+  const ndias =
+    p.ndias != null && Number.isFinite(Number(p.ndias)) && Number(p.ndias) > 0
+      ? Number(p.ndias)
+      : null;
   return {
     cplan: p.cplan,
     name: (p.xplan ?? '').trim() || p.cplan,
     price: 'Tarifa La Mundial',
     priceNum: 0,
-    tag: 'Funerario',
-    desc: 'Cobertura de servicios funerarios para las personas aseguradas.',
-    benefits: [
-      'Servicio funerario completo',
-      'Cobertura para el grupo familiar asegurado',
-      'Asistencia y traslado',
-    ],
+    tag: ndias ? `Viajero · ${ndias} días` : 'Funerario',
+    desc: ndias
+      ? `Cobertura por ${ndias} días para las personas aseguradas.`
+      : 'Cobertura de servicios funerarios para las personas aseguradas.',
+    benefits: ndias
+      ? [
+          `Vigencia de ${ndias} días`,
+          'Cobertura para el grupo asegurado',
+          'Asistencia en viaje',
+        ]
+      : [
+          'Servicio funerario completo',
+          'Cobertura para el grupo familiar asegurado',
+          'Asistencia y traslado',
+        ],
     sumaAsegurada: 0,
     cramo: p.cramo,
     parentescos: p.parentescos ?? [],
     nmax_dep: p.nmax_dep ?? null,
     maxAsegurados: p.maxAsegurados,
+    ndias,
   };
+}
+
+function planOptionKey(p: Plan): string {
+  if (p.ndias != null && p.ndias > 0) return `${p.cplan}|${p.ndias}`;
+  return p.cplan;
+}
+
+function findPlanByOptionKey(plans: Plan[], key: string): Plan | undefined {
+  return plans.find((p) => planOptionKey(p) === key);
 }
 
 function planCramo(plan: Plan | null | undefined, fallback: number): number {
@@ -104,8 +126,12 @@ export function FuneralPlansStep() {
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
-        const keep = current?.cplan
-          ? mapped.find((p) => p.cplan === current.cplan) ?? null
+        const keep = current
+          ? mapped.find(
+              (p) =>
+                planOptionKey(p) === planOptionKey(current)
+                || (p.cplan === current.cplan && (current.ndias == null || p.ndias === current.ndias)),
+            ) ?? null
           : null;
         setSelectedPlan(keep);
       })
@@ -193,10 +219,13 @@ export function FuneralPlansStep() {
       );
     });
   const planCode = selectedPlan?.cplan ?? '';
+  const planNdias = selectedPlan?.ndias != null && selectedPlan.ndias > 0
+    ? selectedPlan.ndias
+    : null;
   // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
-  // La frecuencia solo define recibos al emitir.
+  // Viajero: prima prorrata por ndias del plan elegido.
   const quoteSig = planCode
-    ? `funeral|${planCode}|A|${aseguradosListos
+    ? `funeral|${planCode}|${planNdias ?? 'A'}|${aseguradosListos
         .map(({ a, idx }) => `${idx === 0 ? '1' : a.parentesco}:${a.identificacion}:${a.fechaNac}`)
         .join(',')}`
     : '';
@@ -217,6 +246,7 @@ export function FuneralPlansStep() {
       cplan: planCode,
       cramo: planCramo(snapPlan, product.cramo),
       ifrecuencia: 'A',
+      ...(planNdias != null ? { ndias: planNdias } : {}),
       asegurados: aseguradosListos.map(({ a, idx }) => ({
         parentesco: idx === 0 ? '1' : a.parentesco,
         identificacion: a.identificacion,
@@ -281,9 +311,9 @@ export function FuneralPlansStep() {
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
             <select
-              value={selectedPlan?.cplan ?? ''}
+              value={selectedPlan ? planOptionKey(selectedPlan) : ''}
               onChange={(e) => {
-                const found = apiPlans.find((p) => p.cplan === e.target.value);
+                const found = findPlanByOptionKey(apiPlans, e.target.value);
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
                 if (found) {
@@ -357,7 +387,7 @@ export function FuneralPlansStep() {
                         ? `${p.name} · sin dependientes`
                         : `${p.name} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
                     return (
-                      <option key={p.cplan} value={p.cplan ?? ''}>{cupo}</option>
+                      <option key={planOptionKey(p)} value={planOptionKey(p)}>{cupo}</option>
                     );
                   })}
                 </>
