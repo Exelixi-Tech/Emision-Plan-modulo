@@ -123,12 +123,15 @@ export function EmisionConfigPanel() {
       try {
         const panelToken =
           new URL(window.location.href).searchParams.get('token')?.trim() || '';
-        const headers: Record<string, string> = {};
-        if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
-        const res = await fetch(
-          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(String(cramo))}`,
-          { headers },
-        );
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        // Authorization + x-nexus-token: algunos proxies Apache quitan Authorization.
+        if (panelToken) {
+          headers.Authorization = `Bearer ${panelToken}`;
+          headers['x-nexus-token'] = panelToken;
+        }
+        const qs = new URLSearchParams({ cramo: String(cramo) });
+        if (panelToken) qs.set('nexus_token', panelToken);
+        const res = await fetch(`${moduleApiBase()}/personas/planes?${qs}`, { headers });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         const raw = Array.isArray(data?.planes) ? data.planes : [];

@@ -157,9 +157,9 @@ async function nexusAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, SECRET, { ignoreExpiration: true });
 
-    // Token del parametrizador (Nexus Admin): solo lecturas de catálogo (planes).
-    // No es tenant_access; no pasa por heartbeat SSO.
-    if (payload.scope === 'config-panel') {
+    // Tokens de mesa / parametrizador (SysIP iframe): no son tenant_access.
+    // Solo lectura de catálogo de planes (preguntas + revisión funerario).
+    if (payload.scope === 'config-panel' || payload.scope === 'revision-panel') {
       const path = String(req.path || '');
       const url = String(req.originalUrl || '');
       const isPlanesCatalog =
@@ -171,7 +171,7 @@ async function nexusAuth(req, res, next) {
         return res.status(403).json({
           success: false,
           code: 'NEXUS_CONFIG_PANEL_READ_ONLY',
-          message: 'El token del parametrizador solo permite consultar catálogo de planes.',
+          message: 'El token de mesa/parametrizador solo permite consultar catálogo de planes.',
         });
       }
       req.empresa = {
