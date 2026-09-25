@@ -343,6 +343,23 @@ export function FuneralHealthQuestionsEditor({
     setOpenId(questions[parentIdx]?.id ?? null);
   };
 
+  const textDrawerOf = (parentIdx: number) => {
+    const parent = questions[parentIdx];
+    if (!parent) return undefined;
+    return questions.find(
+      (q, i) => i !== parentIdx && q.showIf?.field === parent.id && q.type === 'text',
+    );
+  };
+
+  const setDrawerEquals = (parentIdx: number, equals: boolean | string) => {
+    const parent = questions[parentIdx];
+    if (!parent) return;
+    onChange(questions.map((q, i) => {
+      if (i === parentIdx || q.showIf?.field !== parent.id || q.type !== 'text') return q;
+      return { ...q, showIf: { field: parent.id, equals } };
+    }));
+  };
+
   const remove = (idx: number) => {
     const id = questions[idx]?.id;
     onChange(questions.filter((_, i) => i !== idx));
@@ -679,12 +696,25 @@ export function FuneralHealthQuestionsEditor({
                         Cajón de detalle
                       </p>
                       <p className="text-[11px] text-slate-600 mt-0.5 mb-2 leading-relaxed">
-                        {questions.some((x, i) => i !== idx && x.showIf?.field === q.id && x.type === 'text')
-                          ? 'Ya hay un cajón. Puedes ir a editarlo, ocultarlo (interruptor) o quitarlo. No está fijo en esta pregunta.'
+                        {textDrawerOf(idx)
+                          ? 'El recuadro de texto no está fijo. Elige si el cliente lo ve al responder Sí o al responder No.'
                           : `No es un tipo más. Crea un recuadro de texto que el cliente solo ve si${
-                              q.type === 'boolean' ? ' responde Sí' : ' elige una opción'
+                              q.type === 'boolean' ? ' responde Sí o No' : ' elige una opción'
                             }.`}
                       </p>
+                      {q.type === 'boolean' && textDrawerOf(idx) && (
+                        <div className="mb-2">
+                          <label className={lbl}>Mostrar la descripción si responde</label>
+                          <select
+                            className={inp}
+                            value={textDrawerOf(idx)?.showIf?.equals === false ? 'false' : 'true'}
+                            onChange={(e) => setDrawerEquals(idx, e.target.value === 'true')}
+                          >
+                            <option value="true">Sí</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
