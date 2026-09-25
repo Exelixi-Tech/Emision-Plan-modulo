@@ -104,8 +104,38 @@ function planOptionKey(p: Plan): string {
   return p.cplan;
 }
 
+function planBaseKey(p: Plan): string {
+  return String(p.cplan ?? '').trim();
+}
+
+function daysForPlan(plans: Plan[], cplan: string): Plan[] {
+  const rows = plans.filter((p) => planBaseKey(p) === cplan && p.ndias != null && p.ndias > 0);
+  rows.sort((a, b) => (a.ndias ?? 0) - (b.ndias ?? 0));
+  return rows;
+}
+
+function uniquePlansForSelect(plans: Plan[]): Plan[] {
+  const seen = new Set<string>();
+  const out: Plan[] = [];
+  for (const p of plans) {
+    const key = planBaseKey(p);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const days = daysForPlan(plans, key);
+    out.push(days.length ? days[0] : p);
+  }
+  return out;
+}
+
 function findPlanByOptionKey(plans: Plan[], key: string): Plan | undefined {
   return plans.find((p) => planOptionKey(p) === key);
+}
+
+function selectPlanDisplayName(p: Plan): string {
+  return String(p.name || p.cplan)
+    .replace(/\s*[·•|-]?\s*\d+\s*d[ií]as?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || p.cplan;
 }
 
 function planCramo(plan: Plan | null | undefined, fallback: number): number {
@@ -298,6 +328,59 @@ export function FuneralPlansStep() {
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote = quoteState === 'ready' && Boolean(quote);
   const annualUsd = hasRealQuote ? quote!.mprimaext : 0;
+  const planOptions = uniquePlansForSelect(apiPlans);
+  const dayOptions = selectedPlan ? daysForPlan(apiPlans, selectedPlan.cplan) : [];
+  const showDayPicker = dayOptions.length > 1;
+
+  function applySelectedPlan(found: Plan | null) {
+    if (found) setCategory(found.name);
+    setSelectedPlan(found);
+    if (!found) return;
+    const extras = useWizardStore.getState().funeral.asegurados;
+    const max = maxAseguradosDelPlan({
+      maxAsegurados: found.maxAsegurados,
+      nmax_dep: found.nmax_dep,
+      parentescos: found.parentescos,
+    });
+    const nmax = nmaxDepDelPlan({
+      nmax_dep: found.nmax_dep,
+      maxAsegurados: found.maxAsegurados,
+      parentescos: found.parentescos,
+    });
+    const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
+    let nextAsegurados = titularOnly
+      ? extras.slice(0, 1)
+      : extras.map((a, idx) => {
+        if (idx === 0) return a;
+        const allowed = (found.parentescos ?? []).some(
+          (p) => String(p.cparen) === String(a.parentesco),
+        );
+        return allowed ? a : { ...a, parentesco: '' };
+      });
+    if (max != null && nextAsegurados.length > max) {
+      nextAsegurados = nextAsegurados.slice(0, max);
+      toast.warning(
+        'Límite del plan',
+        `Este plan admite hasta ${nmax ?? 0} dependiente${nmax === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
+        6000,
+      );
+    } else if (titularOnly && extras.length > 1) {
+      toast.warning(
+        'Plan solo titular',
+        'Se quitaron los asegurados adicionales porque este plan no los admite.',
+        6000,
+      );
+    }
+    setFuneral({
+      asegurados: nextAsegurados,
+      healthQuestionnaireDone: false,
+      healthAnswers: {},
+      healthAnswersByInsured: {},
+      diagnosticoEnfermedad: false,
+      descripcionEnfermedad: '',
+      aceptaTerminos: false,
+    });
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -312,7 +395,7 @@ export function FuneralPlansStep() {
       </div>
 
       {/* Selectores */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${showDayPicker ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
         {/* Selector de plan */}
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
@@ -328,57 +411,14 @@ export function FuneralPlansStep() {
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
             <select
-              value={selectedPlan ? planOptionKey(selectedPlan) : ''}
+              value={selectedPlan ? selectedPlan.cplan : ''}
               onChange={(e) => {
-                const found = findPlanByOptionKey(apiPlans, e.target.value);
-                if (found) setCategory(found.name);
-                setSelectedPlan(found ?? null);
-                if (found) {
-                  const extras = useWizardStore.getState().funeral.asegurados;
-                  const max = maxAseguradosDelPlan({
-                    maxAsegurados: found.maxAsegurados,
-                    nmax_dep: found.nmax_dep,
-                    parentescos: found.parentescos,
-                  });
-                  const nmax = nmaxDepDelPlan({
-                    nmax_dep: found.nmax_dep,
-                    maxAsegurados: found.maxAsegurados,
-                    parentescos: found.parentescos,
-                  });
-                  const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
-                  let nextAsegurados = titularOnly
-                    ? extras.slice(0, 1)
-                    : extras.map((a, idx) => {
-                      if (idx === 0) return a;
-                      const allowed = (found.parentescos ?? []).some(
-                        (p) => String(p.cparen) === String(a.parentesco),
-                      );
-                      return allowed ? a : { ...a, parentesco: '' };
-                    });
-                  if (max != null && nextAsegurados.length > max) {
-                    nextAsegurados = nextAsegurados.slice(0, max);
-                    toast.warning(
-                      'Límite del plan',
-                      `Este plan admite hasta ${nmax ?? 0} dependiente${nmax === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
-                      6000,
-                    );
-                  } else if (titularOnly && extras.length > 1) {
-                    toast.warning(
-                      'Plan solo titular',
-                      'Se quitaron los asegurados adicionales porque este plan no los admite.',
-                      6000,
-                    );
-                  }
-                  setFuneral({
-                    asegurados: nextAsegurados,
-                    healthQuestionnaireDone: false,
-                    healthAnswers: {},
-                    healthAnswersByInsured: {},
-                    diagnosticoEnfermedad: false,
-                    descripcionEnfermedad: '',
-                    aceptaTerminos: false,
-                  });
-                }
+                const code = e.target.value;
+                const days = daysForPlan(apiPlans, code);
+                const found = days[0]
+                  ?? planOptions.find((p) => p.cplan === code)
+                  ?? null;
+                applySelectedPlan(found);
               }}
               disabled={plansLoading || apiPlans.length === 0}
               className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
@@ -387,24 +427,25 @@ export function FuneralPlansStep() {
                 <option value="">Cargando planes...</option>
               ) : plansError ? (
                 <option value="">Error al cargar planes</option>
-              ) : apiPlans.length === 0 ? (
+              ) : planOptions.length === 0 ? (
                 <option value="">Sin planes disponibles</option>
               ) : (
                 <>
                   <option value="" disabled>— Elige un plan —</option>
-                  {apiPlans.map((p) => {
+                  {planOptions.map((p) => {
                     const nmax = nmaxDepDelPlan({
                       nmax_dep: p.nmax_dep,
                       maxAsegurados: p.maxAsegurados,
                       parentescos: p.parentescos,
                     });
+                    const label = selectPlanDisplayName(p);
                     const cupo = nmax == null
-                      ? p.name
+                      ? label
                       : nmax === 0
-                        ? `${p.name} · sin dependientes`
-                        : `${p.name} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
+                        ? `${label} · sin dependientes`
+                        : `${label} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
                     return (
-                      <option key={planOptionKey(p)} value={planOptionKey(p)}>{cupo}</option>
+                      <option key={p.cplan} value={p.cplan}>{cupo}</option>
                     );
                   })}
                 </>
@@ -413,6 +454,35 @@ export function FuneralPlansStep() {
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
+
+        {showDayPicker ? (
+          <div>
+            <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
+              <CalendarClock size={11} className="text-amber-500" />
+              Días de vigencia
+            </label>
+            <div className="relative group">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+                <CalendarClock size={15} strokeWidth={2.5} />
+              </div>
+              <select
+                value={selectedPlan ? planOptionKey(selectedPlan) : ''}
+                onChange={(e) => {
+                  const found = findPlanByOptionKey(apiPlans, e.target.value) ?? null;
+                  applySelectedPlan(found);
+                }}
+                className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+              >
+                {dayOptions.map((p) => (
+                  <option key={planOptionKey(p)} value={planOptionKey(p)}>
+                    {p.ndias} días
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            </div>
+          </div>
+        ) : null}
 
         {/* Selector de frecuencia */}
         <div>
