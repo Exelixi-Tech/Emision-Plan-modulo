@@ -170,6 +170,26 @@ const FUNERARIO = [
  * @param {unknown} cramo
  * @returns {{ kind: 'ap'|'vida'|'funerario', questions: object[] } | null}
  */
+function storedRamoKey(cramo) {
+  const n = Number(cramo);
+  if (n === 45 || n === 9) return '9';
+  if (n === 1 || n === 5) return String(n);
+  return '';
+}
+
+/**
+ * Lista guardada en product_config.healthQuestionsByRamo.
+ * `null` si ese ramo no está en la base (se usa el catálogo de código).
+ * @returns {object[] | null}
+ */
+function questionsStoredForRamo(cfg, cramo) {
+  const key = storedRamoKey(cramo);
+  const by = cfg?.healthQuestionsByRamo;
+  if (!key || !by || typeof by !== 'object' || Array.isArray(by)) return null;
+  if (!Object.prototype.hasOwnProperty.call(by, key)) return null;
+  return Array.isArray(by[key]) ? by[key] : null;
+}
+
 function catalogForConsultedRamo(cramo) {
   const n = Number(cramo);
   if (n === 5) return { kind: 'ap', questions: AP };
@@ -178,4 +198,4 @@ function catalogForConsultedRamo(cramo) {
   return null;
 }
 
-module.exports = { catalogForConsultedRamo, FUNERARIO };
+module.exports = { catalogForConsultedRamo, questionsStoredForRamo, FUNERARIO };
