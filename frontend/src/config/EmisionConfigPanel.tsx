@@ -133,7 +133,7 @@ export function EmisionConfigPanel() {
           new URL(window.location.href).searchParams.get('token')?.trim() || '';
         const headers: Record<string, string> = {};
         if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
-        const catalogo = cramo === '9' ? '' : '&catalogo=ramo';
+        const catalogo = cramo === '9' ? '' : `&catalogo=ramo&cproducto=${cramo === '1' ? '76' : '78'}`;
         const res = await fetch(
           `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(cramo)}${catalogo}`,
           { headers },
