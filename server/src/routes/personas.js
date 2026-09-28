@@ -21,7 +21,7 @@ const {
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
-const { isFunerarioCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
+const { isFunerarioCplan, isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
 
 function asRecord(value) {
@@ -201,10 +201,10 @@ router.post('/cotizacion', async (req, res) => {
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'cplan es obligatorio' });
   }
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, req.nexusMetadata?.cproducto)) {
     return res.status(400).json({
       success: false,
-      code: 'PLAN_NOT_FUNERARIO',
+      code: 'PLAN_NOT_PERSONAS',
       message: `El plan ${cplan} no es válido para el producto personas.`,
     });
   }
@@ -332,10 +332,10 @@ router.post('/emision', async (req, res) => {
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
   }
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, state?.metadataCanal?.cproducto)) {
     return res.status(400).json({
       success: false,
-      code: 'PLAN_NOT_FUNERARIO',
+      code: 'PLAN_NOT_PERSONAS',
       message: `El plan ${cplan} no es válido para el producto personas.`,
     });
   }
