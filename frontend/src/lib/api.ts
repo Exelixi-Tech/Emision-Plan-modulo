@@ -157,6 +157,19 @@ function readSsoCanalMeta(): Record<string, unknown> {
   };
 }
 
+/**
+ * Ramo del cuestionario: el del flujo SSO, si no el del plan o el del producto.
+ */
+export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: number): number {
+  const sso = resolveSsoCramo();
+  if (sso != null) return sso;
+  const plan = Number(planCramo);
+  if (Number.isFinite(plan) && plan > 0) return plan;
+  const product = Number(productCramo);
+  if (Number.isFinite(product) && product > 0) return product;
+  return 9;
+}
+
 /** Ramo enviado por el SSO. `null` si el canal no lo declara. */
 export function resolveSsoCramo(): number | null {
   const raw = readSsoCanalMeta().cramo;
