@@ -146,7 +146,10 @@ export function EmisionConfigPanel() {
           headers['x-nexus-token'] = panelToken;
         }
         const qs = new URLSearchParams({ cramo: String(cramo) });
-        if (cramo !== '9') qs.set('catalogo', 'ramo');
+        if (cramo !== '9') {
+          qs.set('catalogo', 'ramo');
+          qs.set('cproducto', cramo === '1' ? '76' : '78');
+        }
         if (panelToken) qs.set('nexus_token', panelToken);
         const res = await fetch(`${moduleApiBase()}/personas/planes?${qs}`, { headers });
         const data = await res.json().catch(() => ({}));
