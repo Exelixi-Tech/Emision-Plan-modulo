@@ -194,8 +194,9 @@ export default function FuneralPlansApp() {
     if (!selectedPlan?.cplan) return;
     setLoadingQuestions(true);
     try {
-      const cramo = resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo);
-      const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan, cramo, product.cproducto);
+      const effectiveCramo = metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo);
+      const effectiveCproducto = (metadataCanal?.cproducto as string) ?? product.cproducto;
+      const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan, effectiveCramo, effectiveCproducto);
       setHealthQuestions(qs);
       if (qs.length === 0) {
         setHealthModalOpen(false);
@@ -221,11 +222,14 @@ export default function FuneralPlansApp() {
       const sessionId = getSessionId();
       const packed = { byInsured };
 
+      const effectiveCramo = metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo);
+      const effectiveCproducto = (metadataCanal?.cproducto as string) ?? product.cproducto;
+
       await saveFuneralHealthAnswers({
         sessionId,
         cplan: selectedPlan.cplan,
-        cramo: resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo),
-        cproducto: product.cproducto,
+        cramo: effectiveCramo,
+        cproducto: effectiveCproducto,
         tomadorRif: `${tomador.tipoDoc}-${tomador.identificacion}`,
         planName: selectedPlan.name,
         answers: packed,
@@ -234,8 +238,8 @@ export default function FuneralPlansApp() {
       const { submission, scoring } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
-        cramo: resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo),
-        cproducto: product.cproducto,
+        cramo: effectiveCramo,
+        cproducto: effectiveCproducto,
         tomador: { ...tomador },
         asegurado: { ...asegurado },
         sameInsured,

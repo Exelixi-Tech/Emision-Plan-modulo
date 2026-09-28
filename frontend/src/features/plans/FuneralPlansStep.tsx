@@ -166,10 +166,15 @@ export function FuneralPlansStep() {
     setPlansLoading(true);
     setPlansError(false);
 
-    personasApi.planes(product.cramo, product.cproducto ?? '57')
+    const meta = useWizardStore.getState().metadataCanal as Record<string, unknown> | null;
+    const effectiveCproducto = (meta?.cproducto as string) ?? product.cproducto ?? '57';
+    const effectiveCramo = meta?.cramo != null ? Number(meta.cramo) : product.cramo;
+    const effectiveLabel = (meta?.xproducto as string) ?? product.label;
+
+    personasApi.planes(effectiveCramo, effectiveCproducto)
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, product.label));
+        const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, effectiveLabel));
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
         const keep = current
