@@ -165,15 +165,30 @@ function getQuestionsForPlan(cplan) {
 }
 
 /**
- * Resuelve preguntas: parametrizador Nexus (si hay) → fallback catálogo local.
- * @param {string} cplan
- * @param {{ empresaId?: number }} [opts]
- * @returns {Promise<HealthQuestion[]>}
- */
-/**
  * Resuelve preguntas por plan + canal (metadata JWT).
  * El parametrizador guarda en healthQuestionsByCanal[canal]; legacy usa healthQuestions.
  */
+function parsePositiveCramo(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Ramo del cuestionario: el que llega en el SSO, si no el del plan o producto.
+ * No usa el atajo de producto 57 antes que el ramo del flujo.
+ */
+function resolveHealthCramo(opts, meta) {
+  const fromFlow = parsePositiveCramo(meta?.cramo);
+  if (fromFlow) return fromFlow;
+  const fromRequest = parsePositiveCramo(opts.cramo);
+  if (fromRequest) return fromRequest;
+  const fromPlan = parsePositiveCramo(opts.selectedPlan?.cramo);
+  if (fromPlan) return fromPlan;
+  const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  if (prod === '57') return 45;
+  return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
+}
+
 async function resolveQuestionsForPlan(cplan, opts = {}) {
   const { resolveCanalKey, pickHealthQuestionsForCanal } = require('../lib/canalKey');
   // Como RCV: la config es por empresa del JWT; canal opcional; fallback default.
@@ -186,14 +201,8 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     ...(opts.canal ? { canal: opts.canal } : {}),
   };
   const canalKey = resolveCanalKey(meta);
-  const { resolvePersonasCramo } = require('../lib/funerarioPlan');
   const { catalogForConsultedRamo } = require('./healthQuestionsByRamo');
-  const cramo = resolvePersonasCramo({
-    selectedPlan: opts.selectedPlan,
-    metadataCanal: meta,
-    bodyCramo: opts.cramo,
-    cproducto: opts.cproducto,
-  });
+  const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
 

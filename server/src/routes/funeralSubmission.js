@@ -21,6 +21,11 @@ function pickTomadorNombre(tomador) {
   return n || String(tomador.razonSocial ?? '').trim();
 }
 
+function positiveCramo(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function pickTomadorRif(tomador) {
   if (!tomador || typeof tomador !== 'object') return '';
   const tipo = String(tomador.tipoDoc ?? 'V').trim();
@@ -73,7 +78,10 @@ router.post('/submissions', async (req, res) => {
 
   const tomador = body.tomador ?? {};
   const selectedPlan = body.selectedPlan ?? {};
-  const cramo = body.cramo != null ? Number(body.cramo) : 9;
+  const cramo = positiveCramo(metadata.cramo)
+    ?? positiveCramo(body.cramo)
+    ?? positiveCramo(selectedPlan.cramo)
+    ?? 9;
   const planName = String(selectedPlan.name ?? body.planName ?? '').trim() || null;
   const tomadorRif = pickTomadorRif(tomador) || body.tomadorRif;
   const tomadorNombre = pickTomadorNombre(tomador) || body.tomadorNombre;
@@ -91,8 +99,6 @@ router.post('/submissions', async (req, res) => {
       { plan: cplan },
     );
 
-    const cramoBody = Number(body.cramo ?? selectedPlan.cramo);
-    const cramo = Number.isFinite(cramoBody) && cramoBody > 0 ? cramoBody : undefined;
     const { questions, scoringRules } = await resolveQuestionsForPlan(cplan, {
       empresaId,
       metadata,

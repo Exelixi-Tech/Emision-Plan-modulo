@@ -90,7 +90,7 @@ router.get('/health-questions', async (req, res) => {
       empresaId,
       metadata,
       cramo,
-      selectedPlan: cramo ? { cramo } : undefined,
+      cproducto: req.query.cproducto,
     });
     res.json({
       success: true,
