@@ -1,13 +1,21 @@
 /**
- * Planes producto personas (valrep/planes/producto) — códigos numéricos y alfanuméricos (FUNESP, ACH*, …).
+ * Planes producto personas (valrep/planes/producto) — códigos numéricos del ramo funerario (ramo 9).
  */
 
 /**
+ * Valida que el cplan corresponde a un plan funerario La Mundial (ramo 9).
+ * Los planes funerarios son numéricos entre 2 y 12 (inclusive).
+ * Planes alfanuméricos o con espacios (ej. UUID, nombre comercial Exélixi) NO son funerarios.
  * @param {string} cplan
  * @returns {boolean}
  */
 function isFunerarioCplan(cplan) {
-  return String(cplan || '').trim().length > 0;
+  const code = String(cplan || '').trim();
+  if (!code) return false;
+  // Solo planes numéricos son válidos para ramo funerario (2–12)
+  if (!/^\d+$/.test(code)) return false;
+  const n = parseInt(code, 10);
+  return Number.isFinite(n) && n >= 2 && n <= 12;
 }
 
 /**
