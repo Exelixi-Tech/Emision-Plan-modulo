@@ -5,9 +5,17 @@ export interface PlanParentesco {
   max_edad: number;
 }
 
-/** Plan devuelto por valrep/planes/producto (numérico o alfanumérico). */
+/**
+ * Valida que el cplan corresponde a un plan funerario La Mundial (ramo 9).
+ * Solo son válidos planes numéricos entre 2 y 12 (inclusive).
+ * Planes alfanuméricos (UUID, nombre comercial catálogo Exélixi) NO son funerarios.
+ */
 export function isFunerarioCplan(cplan?: string | null): boolean {
-  return String(cplan || '').trim().length > 0;
+  const code = String(cplan ?? '').trim();
+  if (!code) return false;
+  if (!/^\d+$/.test(code)) return false;
+  const n = parseInt(code, 10);
+  return Number.isFinite(n) && n >= 2 && n <= 12;
 }
 
 export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolean {
