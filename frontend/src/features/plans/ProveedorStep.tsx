@@ -3,7 +3,7 @@ import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
   Loader2, AlertTriangle, Users, CalendarClock, Building2,
-  Sparkles, CheckCircle2
+  CheckCircle2
 } from 'lucide-react';
 import type { Plan, ProveedorItem } from '../../types';
 import {
@@ -88,7 +88,13 @@ export function ProveedorStep() {
     quoteError,
     cproveedor,
     xproveedor,
+    cplan_proveedor,
+    cramo_proveedor,
+    cclave_num,
+    itiposerv,
+    selectedProveedor,
     setCproveedor,
+    setSelectedProveedor,
     metadataCanal,
   } = useWizardStore();
 
@@ -205,26 +211,26 @@ export function ProveedorStep() {
         if (cancelled) return;
         setProveedores(items);
         if (items.length > 0) {
-          // Si el proveedor actual no está en la lista o no hay ninguno, auto-seleccionar el primero
           const currentMatch = items.find((p) => String(p.cci_rif) === String(cproveedor));
           if (!currentMatch) {
             const first = items[0];
-            setCproveedor(String(first.cci_rif), first.xproveedor);
+            setSelectedProveedor(first);
+          } else {
+            setSelectedProveedor(currentMatch);
           }
         } else {
-          setCproveedor(undefined, undefined);
+          setSelectedProveedor(null);
         }
       })
       .catch((err) => {
         console.error('Error al consultar proveedores:', err);
         if (!cancelled) {
-          // Fallback seguro a los mocks requeridos
-          const fallback = [
-            { xproveedor: 'Venemergencia', cci_rif: 1152516 },
-            { xproveedor: 'Clinicas del Este', cci_rif: 5521516 },
+          const fallback: ProveedorItem[] = [
+            { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: product.cramo, cplan: planCode },
+            { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: product.cramo, cplan: planCode },
           ];
           setProveedores(fallback);
-          setCproveedor(String(fallback[0].cci_rif), fallback[0].xproveedor);
+          setSelectedProveedor(fallback[0]);
         }
       })
       .finally(() => {
@@ -232,7 +238,7 @@ export function ProveedorStep() {
       });
 
     return () => { cancelled = true; };
-  }, [selectedPlan?.cplan, product.cramo, metadataCanal, setCproveedor]);
+  }, [selectedPlan?.cplan, product.cramo, metadataCanal, setSelectedProveedor]);
 
   // ── Cotización contra getCotizacionPer ─────────────────────────────────────
   const aseguradosListos = funeral.asegurados.filter(
@@ -415,9 +421,9 @@ export function ProveedorStep() {
               Proveedor de Servicio
             </label>
             {cproveedor && (
-              <span className="inline-flex items-center gap-1 text-[0.68rem] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
+              <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
                 <CheckCircle2 size={11} className="text-emerald-500" />
-                cproveedor: {String(cproveedor)}
+                RIF: {String(cproveedor)} {cclave_num != null && `· Clave: ${cclave_num}`} {itiposerv && `· Tipo: ${itiposerv}`}
               </span>
             )}
           </div>
@@ -441,10 +447,13 @@ export function ProveedorStep() {
                 const val = e.target.value;
                 const found = proveedores.find((p) => String(p.cci_rif) === val);
                 if (found) {
-                  setCproveedor(String(found.cci_rif), found.xproveedor);
-                  toast.success('Proveedor seleccionado', `${found.xproveedor} (RIF: ${found.cci_rif})`);
+                  setSelectedProveedor(found);
+                  toast.success(
+                    'Proveedor seleccionado',
+                    `${found.xproveedor || found.xcliente} (RIF: ${found.cci_rif} · Clave: ${found.cclave_num ?? 'N/A'})`,
+                  );
                 } else {
-                  setCproveedor(undefined, undefined);
+                  setSelectedProveedor(null);
                 }
               }}
               disabled={loadingProveedores || proveedores.length === 0}
@@ -459,7 +468,7 @@ export function ProveedorStep() {
                   <option value="" disabled>— Selecciona un Proveedor de Servicio —</option>
                   {proveedores.map((p) => (
                     <option key={String(p.cci_rif)} value={String(p.cci_rif)}>
-                      {p.xproveedor} — (RIF/ID: {p.cci_rif})
+                      {p.xcliente || p.xproveedor} — (RIF: {p.cci_rif}{p.cclave_num != null ? ` · Clave: ${p.cclave_num}` : ''}{p.itiposerv ? ` · Tipo: ${p.itiposerv}` : ''})
                     </option>
                   ))}
                 </>
@@ -468,10 +477,12 @@ export function ProveedorStep() {
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
 
-          <p className="text-[0.72rem] text-slate-500 mt-2 flex items-center gap-1.5">
-            <Sparkles size={12} className="text-amber-500 shrink-0" />
-            El proveedor seleccionado se vinculará a la emisión como <code className="px-1 py-0.5 rounded bg-indigo-100/70 font-mono text-[0.68rem] text-indigo-900">cproveedor: {cproveedor ? String(cproveedor) : '---'}</code>.
-          </p>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-indigo-100/60 text-[0.72rem] text-slate-600">
+            <div><span className="font-semibold text-slate-400">cplan:</span> <strong className="text-indigo-900 font-mono">{cplan_proveedor || selectedPlan?.cplan || '---'}</strong></div>
+            <div><span className="font-semibold text-slate-400">cramo:</span> <strong className="text-indigo-900 font-mono">{cramo_proveedor ?? product.cramo}</strong></div>
+            <div><span className="font-semibold text-slate-400">cclave_num:</span> <strong className="text-indigo-900 font-mono">{cclave_num ?? '---'}</strong></div>
+            <div><span className="font-semibold text-slate-400">itiposerv:</span> <strong className="text-indigo-900 font-mono">{itiposerv || 'S'}</strong></div>
+          </div>
         </div>
       )}
 
@@ -550,7 +561,7 @@ export function ProveedorStep() {
               </div>
               {cproveedor && (
                 <div className="text-[0.7rem] font-semibold text-slate-600">
-                  Proveedor asignado: <strong className="text-indigo-700">{xproveedor || currentProveedorObj?.xproveedor}</strong>
+                  Proveedor asignado: <strong className="text-indigo-700">{selectedProveedor?.xcliente || xproveedor || currentProveedorObj?.xproveedor}</strong> {selectedProveedor?.cclave_num != null && <span className="font-mono text-slate-400 font-normal">(Clave: {selectedProveedor.cclave_num})</span>}
                 </div>
               )}
             </div>
