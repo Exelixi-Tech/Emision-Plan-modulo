@@ -227,12 +227,13 @@ export function EmisionConfigPanel() {
       const storedRamo = config.healthQuestionsByRamo as
         | Record<string, HealthQuestionDraft[]>
         | undefined;
-      const seed = ramoCatalog as Record<string, HealthQuestionDraft[]>;
+      const ramoSeed = ramoCatalog as Record<'1' | '5' | '9', HealthQuestionDraft[]>;
       const nextRamo: Record<string, HealthQuestionDraft[]> = {};
       for (const key of ['1', '5', '9'] as const) {
         const saved = storedRamo?.[key];
+        const fallback = ramoSeed[key] ?? [];
         nextRamo[key] = enrichHealthQuestionScores(
-          Array.isArray(saved) && saved.length > 0 ? saved : (seed[key] ?? []),
+          Array.isArray(saved) && saved.length > 0 ? saved : fallback,
         );
       }
       setByRamo(nextRamo);
