@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useProductConfig } from '../hooks/useProductConfig';
-import { getProductConfig, getProductId } from '../lib/product';
+import { getProductId } from '../lib/product';
 import { moduleApiBase } from '../lib/app-base';
 import {
   Settings2, RotateCcw, Save, CheckCircle2, AlertTriangle,
