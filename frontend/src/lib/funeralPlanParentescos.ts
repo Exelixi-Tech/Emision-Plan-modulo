@@ -18,6 +18,25 @@ export function isFunerarioCplan(cplan?: string | null): boolean {
   return Number.isFinite(n) && n >= 2 && n <= 12;
 }
 
+/**
+ * Valida que el cplan es válido para el flujo de personas (funerario, vida, AP).
+ * - Funerario (cproducto 57): numérico 2–12.
+ * - Vida (76) / AP (78, 79): cualquier numérico positivo.
+ * - Si no se conoce el cproducto, aplica la regla funeraria por retrocompatibilidad.
+ */
+export function isPersonasCplan(cplan?: string | null, cproducto?: string | null): boolean {
+  const code = String(cplan ?? '').trim();
+  if (!code) return false;
+  if (!/^\d+$/.test(code)) return false;
+  const n = parseInt(code, 10);
+  if (!Number.isFinite(n) || n <= 0) return false;
+  const prod = String(cproducto || '57').trim();
+  // Para vida y AP: cualquier numérico positivo es válido
+  if (prod === '76' || prod === '78' || prod === '79') return true;
+  // Funerario (57): solo 2–12
+  return n >= 2 && n <= 12;
+}
+
 export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolean {
   if (!parentescos?.length) return false;
   return parentescos.length === 1 && Number(parentescos[0].cparen) === 1;

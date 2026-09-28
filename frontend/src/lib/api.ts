@@ -100,8 +100,8 @@ const FUNERAL_CANAL_QUERY_KEYS = [
   'cscanalalt_in',
 ] as const;
 
-/** Canal SSO del wizard funerario (JWT + sid + snapshot), sin pisar RCV. */
-function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
+/** Canal SSO del wizard funerario/vida/AP (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams, cproductoOverride?: string): boolean {
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
   const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
@@ -133,8 +133,11 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     qs.set('cramo', String(meta.cramo).trim());
   }
-  if (!qs.get('cproducto')) qs.set('cproducto', '57');
-  if (qs.get('cproducto') === '57') qs.set('cramo', '45');
+  // cproducto: el override del producto activo tiene prioridad sobre el JWT/session
+  const effectiveCproducto = cproductoOverride ?? (qs.get('cproducto') || null) ?? '57';
+  qs.set('cproducto', effectiveCproducto);
+  // Para funerario (57) el SP usa ramo 45 internamente
+  if (effectiveCproducto === '57') qs.set('cramo', '45');
   if (qs.get('cproductor') === '80080') qs.delete('cproductor');
 
   return Boolean(
@@ -813,11 +816,16 @@ export interface CotizacionPerPayload {
 }
 
 export const personasApi = {
-  /** Planes funerarios del canal SSO (productor/entidad/gestor), igual criterio que RCV. */
-  planes: (cramo = 9) => {
+  /**
+   * Planes de personas del canal SSO.
+   * Para funerario: cproducto=57 (cramo 45 internamente).
+   * Para vida: cproducto=76, cramo=1.
+   * Para AP: cproducto=78 o 79, cramo=5.
+   */
+  planes: (cramo = 9, cproducto = '57') => {
     const qs = new URLSearchParams();
     qs.set('cramo', String(cramo));
-    appendFuneralCanalQuery(qs);
+    appendFuneralCanalQuery(qs, cproducto);
     return api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?${qs.toString()}`);
   },
   /** Cotización de personas (getCotizacionPer). */
@@ -918,9 +926,10 @@ export interface HealthQuestion {
   blockReason?: string;
 }
 
-export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number): Promise<HealthQuestion[]> {
+export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number, cproducto?: string): Promise<HealthQuestion[]> {
   const qs = new URLSearchParams({ cplan });
   if (cramo != null && Number.isFinite(cramo) && cramo > 0) qs.set('cramo', String(cramo));
+  if (cproducto) qs.set('cproducto', cproducto);
   const { data } = await api.get<{ success: boolean; questions: HealthQuestion[] }>(
     `/funeral/health-questions?${qs.toString()}`,
   );
@@ -931,6 +940,7 @@ export interface SaveHealthAnswersPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomadorRif?: string;
   planName?: string;
   answers: Record<string, unknown>;
@@ -950,6 +960,7 @@ export interface SubmitFuneralReviewPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomador: Record<string, unknown>;
   asegurado?: Record<string, unknown>;
   sameInsured?: boolean;

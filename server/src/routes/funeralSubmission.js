@@ -10,7 +10,7 @@ const { parseScoringRules } = require('../lib/funeralScoringRules');
 const { upsertHealthAnswers } = require('../services/healthDb');
 const { createFuneralSubmission } = require('../services/nexusFuneralSubmission');
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
-const { isFunerarioCplan } = require('../lib/funerarioPlan');
+const { isFunerarioCplan, isPersonasCplan } = require('../lib/funerarioPlan');
 const { resolveCanalKey } = require('../lib/canalKey');
 
 const router = express.Router();
@@ -51,11 +51,11 @@ router.post('/submissions', async (req, res) => {
     });
   }
 
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, body.cproducto)) {
     return res.status(400).json({
       success: false,
-      code: 'NOT_FUNERARIO_PLAN',
-      message: `El cplan "${cplan}" no es un plan funerario.`,
+      code: 'NOT_PERSONAS_PLAN',
+      message: `El cplan "${cplan}" no es un plan de personas.`,
     });
   }
 
