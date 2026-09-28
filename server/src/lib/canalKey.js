@@ -26,19 +26,27 @@ function pickHealthQuestionsForCanal(cfg, canalKey) {
   const by = cfg?.healthQuestionsByCanal;
 
   if (by && typeof by === 'object' && !Array.isArray(by)) {
-    if (Array.isArray(by[key]) && by[key].length > 0) {
-      return { questions: by[key], resolvedCanal: key, source: 'nexus-canal' };
+    if (Array.isArray(by[key])) {
+      return {
+        questions: by[key],
+        resolvedCanal: key,
+        source: by[key].length > 0 ? 'nexus-canal' : 'nexus-empty',
+      };
     }
-    if (key !== 'default' && Array.isArray(by.default) && by.default.length > 0) {
-      return { questions: by.default, resolvedCanal: 'default', source: 'nexus-canal-default' };
+    if (key !== 'default' && Array.isArray(by.default)) {
+      return {
+        questions: by.default,
+        resolvedCanal: 'default',
+        source: by.default.length > 0 ? 'nexus-canal-default' : 'nexus-empty',
+      };
     }
   }
 
-  if (Array.isArray(cfg?.healthQuestions) && cfg.healthQuestions.length > 0) {
+  if (Array.isArray(cfg?.healthQuestions)) {
     return {
       questions: cfg.healthQuestions,
       resolvedCanal: 'legacy',
-      source: 'nexus',
+      source: cfg.healthQuestions.length > 0 ? 'nexus' : 'nexus-empty',
     };
   }
 
