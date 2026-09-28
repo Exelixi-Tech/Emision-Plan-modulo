@@ -10,6 +10,7 @@ const {
   getValrepList,
   getValrepFrecuencias,
   getValrepProveedores,
+  registerPolicyProveedorViaNestApi,
   validateEmissionAutoViaNestApi,
 } = require('../services/nestApiClient');
 
@@ -154,8 +155,9 @@ router.all('/proveedores', async (req, res) => {
     const centidad = req.body?.centidad ?? req.query?.centidad;
     const citem = req.body?.citem ?? req.query?.citem;
     const cci_rif = req.body?.cci_rif ?? req.query?.cci_rif;
+    const cclave_num = req.body?.cclave_num ?? req.query?.cclave_num;
 
-    const items = await getValrepProveedores({ cplan, cramo, centidad, citem, cci_rif });
+    const items = await getValrepProveedores({ cplan, cramo, centidad, citem, cci_rif, cclave_num });
     res.json({ ok: true, items });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -164,6 +166,22 @@ router.all('/proveedores', async (req, res) => {
       ok: false,
       error: 'No se pudo conectar con el servicio de proveedores',
       detail: msg,
+    });
+  }
+});
+
+router.post('/proveedores/register-policy', async (req, res) => {
+  try {
+    const result = await registerPolicyProveedorViaNestApi(req.body);
+    res.json({ ok: true, status: true, message: 'Proveedor registrado en póliza exitosamente', data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[valrep/proveedores/register-policy]', msg);
+    res.status(err.httpStatus || 502).json({
+      ok: false,
+      status: false,
+      error: 'No se pudo registrar el proveedor en la póliza',
+      message: msg,
     });
   }
 });

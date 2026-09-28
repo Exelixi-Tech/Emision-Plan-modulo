@@ -587,8 +587,8 @@ async function getValrepFrecuencias(cplan, cramo) {
 
 /**
  * Consulta proveedores de servicio vía POST /api/v1/partner/starter/proveedores/list.
- * @param {{ cplan?: string|number, cramo?: string|number, centidad?: string, citem?: string|number, cci_rif?: string|number }} [params]
- * @returns {Promise<Array<{ xproveedor: string, cci_rif: string|number, cclave_num?: number|null, cplan?: string|null, cramo?: number|null }>>}
+ * @param {{ cplan?: string|number, cramo?: string|number, centidad?: string, citem?: string|number, cci_rif?: string|number, cclave_num?: number }} [params]
+ * @returns {Promise<Array<{ xproveedor: string, xcliente?: string, cci_rif: string|number, cclave_num?: number|null, cplan?: string|null, cramo?: number|null, itiposerv?: string }>>}
  */
 async function getValrepProveedores(params = {}) {
   const body = {};
@@ -597,10 +597,7 @@ async function getValrepProveedores(params = {}) {
     body.cramo = !Number.isNaN(numRamo) ? numRamo : params.cramo;
   }
   if (params.cplan != null && params.cplan !== '') {
-    const numPlan = Number(params.cplan);
-    if (!Number.isNaN(numPlan)) {
-      body.cplan = numPlan;
-    }
+    body.cplan = String(params.cplan).trim();
   }
   if (params.centidad != null && params.centidad !== '') {
     body.centidad = String(params.centidad);
@@ -610,6 +607,10 @@ async function getValrepProveedores(params = {}) {
   }
   if (params.cci_rif != null && params.cci_rif !== '') {
     body.cci_rif = String(params.cci_rif);
+  }
+  if (params.cclave_num != null && params.cclave_num !== '') {
+    const num = Number(params.cclave_num);
+    if (!Number.isNaN(num)) body.cclave_num = num;
   }
 
   const response = await axios.post(
@@ -633,18 +634,23 @@ async function getValrepProveedores(params = {}) {
 
   if (!rawItems.length) {
     rawItems = [
-      { xproveedor: 'Venemergencia', cci_rif: 1152516 },
-      { xproveedor: 'Clinicas del Este', cci_rif: 5521516 },
+      { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
+      { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
     ];
   }
 
-  const mapped = rawItems.map((p) => ({
-    xproveedor: String(p.xproveedor || p.xcliente || p.label || '').trim(),
-    cci_rif: p.cci_rif != null ? (typeof p.cci_rif === 'number' ? p.cci_rif : String(p.cci_rif).trim()) : '',
-    cclave_num: p.cclave_num != null && !Number.isNaN(Number(p.cclave_num)) ? Number(p.cclave_num) : null,
-    cplan: p.cplan != null ? String(p.cplan).trim() : null,
-    cramo: p.cramo != null && !Number.isNaN(Number(p.cramo)) ? Number(p.cramo) : null,
-  }));
+  const mapped = rawItems.map((p) => {
+    const name = String(p.xcliente || p.xproveedor || p.label || '').trim();
+    return {
+      xproveedor: name,
+      xcliente: name,
+      cci_rif: p.cci_rif != null ? (typeof p.cci_rif === 'number' ? p.cci_rif : String(p.cci_rif).trim()) : '',
+      cclave_num: p.cclave_num != null && !Number.isNaN(Number(p.cclave_num)) ? Number(p.cclave_num) : null,
+      cplan: p.cplan != null ? String(p.cplan).trim() : (params.cplan ? String(params.cplan).trim() : null),
+      cramo: p.cramo != null && !Number.isNaN(Number(p.cramo)) ? Number(p.cramo) : (params.cramo ? Number(params.cramo) : null),
+      itiposerv: p.itiposerv != null ? String(p.itiposerv).trim() : 'S',
+    };
+  });
 
   const seen = new Set();
   return mapped.filter((item) => {
@@ -653,6 +659,31 @@ async function getValrepProveedores(params = {}) {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * Inserta dinámicamente el registro del proveedor en la tabla dbo.adproveedor
+ * vía POST /api/v1/partner/starter/proveedores/register-policy.
+ * @param {object} payload - RegisterPolicyProveedorDto
+ */
+async function registerPolicyProveedorViaNestApi(payload) {
+  const url = `${getBaseUrl()}/api/v1/partner/starter/proveedores/register-policy`;
+  const response = trackResponse(
+    await axios.post(url, payload, await axiosOpts({ validateStatus: () => true })),
+  );
+
+  if (response.status >= 200 && response.status < 300) {
+    return response.data;
+  }
+
+  const body = response.data ?? {};
+  const err = new Error(
+    body.message || body.error || `HTTP ${response.status} en register-policy`,
+  );
+  err.code = 'REGISTER_PROVEEDOR_POLICY_ERROR';
+  err.httpStatus = response.status;
+  err.raw = body;
+  throw err;
 }
 
 /**
@@ -737,4 +768,5 @@ module.exports = {
   getValrepList,
   getValrepFrecuencias,
   getValrepProveedores,
+  registerPolicyProveedorViaNestApi,
 };

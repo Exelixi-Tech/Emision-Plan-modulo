@@ -12,7 +12,7 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario' | 'patrimonial' | 'patrimoniales';
+export type ProductId = 'rcv' | 'funerario' | 'patrimonial' | 'patrimoniales' | 'com-fam' | 'combinado_familiar' | 'proveedor';
 
 export interface PatrimonialesData {
   datosBien: string;
@@ -150,8 +150,14 @@ export interface Plan {
 }
 
 export interface ProveedorItem {
-  xproveedor: string;
+  xproveedor?: string;
+  xcliente?: string;
   cci_rif: number | string;
+  cplan?: string;
+  cramo?: number;
+  cclave_num?: number;
+  itiposerv?: string;
+  [key: string]: any;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
@@ -347,4 +353,9 @@ export interface WizardState {
   /** Proveedor de servicio seleccionado (cproveedor: cci_rif). */
   cproveedor?: number | string;
   xproveedor?: string;
+  cplan_proveedor?: string;
+  cramo_proveedor?: number;
+  cclave_num?: number;
+  itiposerv?: string;
+  selectedProveedor?: ProveedorItem | null;
 }
