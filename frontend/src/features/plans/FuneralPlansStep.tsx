@@ -166,7 +166,7 @@ export function FuneralPlansStep() {
     setPlansLoading(true);
     setPlansError(false);
 
-    personasApi.planes(product.cramo)
+    personasApi.planes(product.cramo, product.cproducto ?? '57')
       .then((res) => {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
