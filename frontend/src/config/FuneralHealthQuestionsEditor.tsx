@@ -151,6 +151,7 @@ function plansSummary(
 ): string {
   const allCodes = planOptions.map((p) => p.code);
   if (!plans?.length) return 'ningún plan';
+  if (plans.includes('*')) return 'todos los planes de este ramo';
   if (allCodes.length > 0 && plans.length >= allCodes.length && allCodes.every((c) => plans.includes(c))) {
     return 'todos';
   }
@@ -169,6 +170,9 @@ type Props = {
   planOptions?: PlanOption[];
   plansLoading?: boolean;
   plansError?: boolean;
+  /** `ramo`: el cuestionario aplica a todos los planes. No usa el selector de planes de funerario. */
+  scope?: 'canal' | 'ramo';
+  ramoName?: string;
 };
 
 const inp = 'w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-white';
@@ -180,6 +184,8 @@ export function FuneralHealthQuestionsEditor({
   planOptions: planOptionsProp,
   plansLoading = false,
   plansError = false,
+  scope = 'canal',
+  ramoName = '',
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [previewPlan, setPreviewPlan] = useState('');
@@ -195,12 +201,14 @@ export function FuneralHealthQuestionsEditor({
     () => (previewCode ? clientViewForPlan(questions, previewCode) : null),
     [questions, previewCode],
   );
+  const porPlan = scope !== 'ramo';
   const listed = useMemo(
     () => questions
       .map((q, idx) => ({ q, idx }))
-      .filter(({ q }) => showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
-    [questions, showFullCatalog, previewCode],
+      .filter(({ q }) => !porPlan || showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
+    [questions, showFullCatalog, previewCode, porPlan],
   );
+  const padresEnLista = listed.filter(({ q }) => !q.showIf?.field).length;
 
   const update = (idx: number, patch: Partial<HealthQuestionDraft>) => {
     onChange(questions.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
@@ -337,13 +345,12 @@ export function FuneralHealthQuestionsEditor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
-            Preguntas · {listed.length}
-            {listed.length !== questions.length ? ` de ${questions.length}` : ''}
+            {porPlan ? 'Preguntas' : `Preguntas de ${ramoName || 'este ramo'}`} · {padresEnLista}
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-            Pulsa una fila para editarla. El <strong className="font-semibold text-slate-600">%</strong> lo
-            ve solo el técnico. Tras <strong className="font-semibold text-slate-600">Guardar</strong>, el
-            cliente ve las preguntas <em>visibles</em> de este canal.
+            {porPlan
+              ? 'Pulsa una fila para editarla. El % lo ve solo el técnico. Tras Guardar, el cliente ve las preguntas visibles de este canal.'
+              : `El cliente las responde en todos los planes de ${ramoName || 'este ramo'}. Cada “Especifique” es el detalle que se abre según la respuesta, no una pregunta nueva. Tras Guardar quedan en la base.`}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -365,7 +372,7 @@ export function FuneralHealthQuestionsEditor({
           </button>
         </div>
       </div>
-      {clientPreview && previewCode && (
+      {porPlan && clientPreview && previewCode && (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2.5 text-[12px] text-indigo-950 leading-snug space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <label className="font-black uppercase tracking-wider text-[10px] text-indigo-600">
@@ -385,7 +392,7 @@ export function FuneralHealthQuestionsEditor({
             Ahora: <strong>{clientPreview.now.length}</strong> pregunta
             {clientPreview.now.length === 1 ? '' : 's'}
             {clientPreview.drawers.length > 0
-              ? ` · ${clientPreview.drawers.length} cajón${clientPreview.drawers.length === 1 ? '' : 'es'} al responder Sí`
+              ? ` · ${clientPreview.drawers.length} detalle${clientPreview.drawers.length === 1 ? '' : 's'} que se abren según la respuesta`
               : ''}
             {clientPreview.otherPlans.length > 0
               ? ` · ${clientPreview.otherPlans.length} no aplica${clientPreview.otherPlans.length === 1 ? '' : 'n'} a este plan`
@@ -441,6 +448,8 @@ export function FuneralHealthQuestionsEditor({
           const open = openId === q.id;
           const isChild = Boolean(q.showIf?.field);
           const isActive = q.enabled !== false;
+          const padreN = listed.slice(0, listedPos + 1).filter(({ q: row }) => !row.showIf?.field).length;
+          const abreCon = q.showIf?.equals === false ? 'No' : 'Sí';
           return (
             <li
               key={`${q.id}-${idx}`}
@@ -457,7 +466,7 @@ export function FuneralHealthQuestionsEditor({
                     {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </span>
                   <span className="w-5 text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
-                    {listedPos + 1}
+                    {isChild ? '' : padreN}
                   </span>
                   <span
                     className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
@@ -481,7 +490,7 @@ export function FuneralHealthQuestionsEditor({
                       {allPlanCodes.length > 0 && q.plans.length < allPlanCodes.length
                         ? `Solo ${plansSummary(q.plans, planOptions)}`
                         : `Planes ${plansSummary(q.plans, planOptions)}`}
-                      {q.showIf?.field ? ' · cajón (solo si responde otra)' : ''}
+                      {q.showIf?.field ? ` · se abre si responde ${abreCon}` : ''}
                       {q.required ? ' · obligatoria' : ' · opcional'}
                       {!isActive ? ' · oculta al cliente' : ''}
                     </span>

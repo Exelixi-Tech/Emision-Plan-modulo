@@ -611,26 +611,40 @@ export function EmisionConfigPanel() {
                 {/* ── TAB PREGUNTAS (funerario) ── */}
                 {tab === 'preguntas' && producto === 'funerario' && (
                   <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {([
-                        ['9', 'Funerario'],
-                        ['1', 'Vida'],
-                        ['5', 'Accidentes personales'],
-                      ] as const).map(([key, label]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setScoringRamo(key)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                            scoringRamo === key
-                              ? 'bg-indigo-700 text-white'
-                              : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
-                          }`}
-                        >
-                          {label}
-                          <span className="ml-1 font-normal opacity-70">{(byRamo[key] || []).length}</span>
-                        </button>
-                      ))}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {([
+                          ['9', 'Funerario'],
+                          ['1', 'Vida'],
+                          ['5', 'Accidentes personales'],
+                        ] as const).map(([key, label]) => {
+                          const rows = byRamo[key] || [];
+                          const padres = rows.filter((q) => !q.showIf?.field).length;
+                          const active = scoringRamo === key;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => setScoringRamo(key)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                                active
+                                  ? 'bg-indigo-700 text-white'
+                                  : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                              }`}
+                              title={`${padres} preguntas que responde el cliente`}
+                            >
+                              {label}
+                              <span className={`ml-1.5 font-normal ${active ? 'text-indigo-100' : 'text-indigo-500'}`}>
+                                {padres} pregunta{padres === 1 ? '' : 's'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        El número es cuántas preguntas ve el cliente. El detalle “Especifique” no cuenta como pregunta.
+                        Funerario sigue por canal. Vida y accidentes personales se guardan en la base para todos los planes de ese ramo.
+                      </p>
                     </div>
                     {scoringRamo === '9' && (
                     <div className="space-y-2.5">
@@ -754,6 +768,8 @@ export function EmisionConfigPanel() {
                       planOptions={funeralPlanOptions}
                       plansLoading={funeralPlansLoading}
                       plansError={funeralPlansError}
+                      scope={scoringRamo === '9' ? 'canal' : 'ramo'}
+                      ramoName={scoringRamo === '1' ? 'Vida' : scoringRamo === '5' ? 'Accidentes personales' : 'Funerario'}
                     />
                     )}
                   </div>
