@@ -134,9 +134,9 @@ router.get('/planes', async (req, res) => {
   const entity = sisOk ? rawEntity : null;
   const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
   const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
-  const cproducto = meta.cproducto != null && String(meta.cproducto).trim() !== ''
+  const cproducto = req.query.cproducto || (meta.cproducto != null && String(meta.cproducto).trim() !== ''
     ? String(meta.cproducto).trim()
-    : (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
+    : (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57'));
   const cramo = cproducto === '57'
     ? 45
     : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO);

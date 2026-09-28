@@ -56,7 +56,7 @@ function parseNdiasFromLabel(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function apiPlanToWizardPlan(p: PlanPer): Plan {
+function apiPlanToWizardPlan(p: PlanPer, productName: string = 'Funerario'): Plan {
   const fromApi =
     p.ndias != null && Number.isFinite(Number(p.ndias)) && Number(p.ndias) > 0
       ? Number(p.ndias)
@@ -67,10 +67,10 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
     name: (p.xplan ?? '').trim() || p.cplan,
     price: 'Tarifa La Mundial',
     priceNum: 0,
-    tag: ndias ? `Viajero · ${ndias} días` : 'Funerario',
+    tag: ndias ? `Viajero · ${ndias} días` : productName,
     desc: ndias
       ? `Cobertura por ${ndias} días para las personas aseguradas.`
-      : 'Cobertura de servicios funerarios para las personas aseguradas.',
+      : `Cobertura de ${productName.toLowerCase()} para las personas aseguradas.`,
     benefits: ndias
       ? [
           `Vigencia de ${ndias} días`,
@@ -78,9 +78,9 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
           'Asistencia en viaje',
         ]
       : [
-          'Servicio funerario completo',
-          'Cobertura para el grupo familiar asegurado',
-          'Asistencia y traslado',
+          `Servicio de ${productName.toLowerCase()} completo`,
+          'Cobertura para el grupo asegurado',
+          'Atención especializada',
         ],
     sumaAsegurada: 0,
     cramo: p.cramo,
@@ -169,7 +169,7 @@ export function FuneralPlansStep() {
     personasApi.planes(product.cramo, product.cproducto ?? '57')
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
+        const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, product.label));
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
         const keep = current
