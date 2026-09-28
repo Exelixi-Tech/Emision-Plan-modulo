@@ -193,7 +193,9 @@ export default function FuneralPlansApp() {
     if (!selectedPlan?.cplan) return;
     setLoadingQuestions(true);
     try {
-      const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan);
+      const planCramo = Number(selectedPlan.cramo);
+      const cramo = Number.isFinite(planCramo) && planCramo > 0 ? planCramo : product.cramo;
+      const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan, cramo);
       setHealthQuestions(qs);
       if (qs.length === 0) {
         setHealthModalOpen(false);
@@ -222,7 +224,7 @@ export default function FuneralPlansApp() {
       await saveFuneralHealthAnswers({
         sessionId,
         cplan: selectedPlan.cplan,
-        cramo: product.cramo,
+        cramo: Number(selectedPlan.cramo) > 0 ? Number(selectedPlan.cramo) : product.cramo,
         tomadorRif: `${tomador.tipoDoc}-${tomador.identificacion}`,
         planName: selectedPlan.name,
         answers: packed,
@@ -231,7 +233,7 @@ export default function FuneralPlansApp() {
       const { submission, scoring } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
-        cramo: product.cramo,
+        cramo: Number(selectedPlan.cramo) > 0 ? Number(selectedPlan.cramo) : product.cramo,
         tomador: { ...tomador },
         asegurado: { ...asegurado },
         sameInsured,

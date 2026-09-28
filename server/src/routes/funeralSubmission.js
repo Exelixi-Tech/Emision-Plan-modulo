@@ -91,9 +91,13 @@ router.post('/submissions', async (req, res) => {
       { plan: cplan },
     );
 
+    const cramoBody = Number(body.cramo ?? selectedPlan.cramo);
+    const cramo = Number.isFinite(cramoBody) && cramoBody > 0 ? cramoBody : undefined;
     const { questions, scoringRules } = await resolveQuestionsForPlan(cplan, {
       empresaId,
       metadata,
+      cramo,
+      selectedPlan,
     });
     const rules = parseScoringRules(scoringRules);
 

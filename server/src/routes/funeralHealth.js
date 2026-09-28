@@ -69,6 +69,8 @@ router.get('/health-questions', async (req, res) => {
   }
   try {
     const empresaId = empresaIdFromRequest(req) || 1;
+    const cramoRaw = Number(req.query.cramo);
+    const cramo = Number.isFinite(cramoRaw) && cramoRaw > 0 ? cramoRaw : undefined;
     const metadata = {
       ...(req.nexusMetadata && typeof req.nexusMetadata === 'object' ? req.nexusMetadata : {}),
       ...(req.query.canal ? { canal: String(req.query.canal) } : {}),
@@ -84,7 +86,12 @@ router.get('/health-questions', async (req, res) => {
       triedEmpresas,
       canal,
       resolvedCanal,
-    } = await resolveQuestionsForPlan(cplan, { empresaId, metadata });
+    } = await resolveQuestionsForPlan(cplan, {
+      empresaId,
+      metadata,
+      cramo,
+      selectedPlan: cramo ? { cramo } : undefined,
+    });
     res.json({
       success: true,
       cplan,
