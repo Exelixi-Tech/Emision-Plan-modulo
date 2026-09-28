@@ -117,6 +117,13 @@ function appliesToPlan(q: HealthQuestionDraft, cplan: string): boolean {
   return plans.includes('*') || plans.includes(cplan);
 }
 
+/** `*` significa todos los planes del ramo que se está editando. */
+function selectedPlanCodes(plans: string[] | undefined, allCodes: string[]): string[] {
+  const list = (plans || []).map((p) => String(p).trim()).filter(Boolean);
+  if (list.includes('*')) return [...allCodes];
+  return list;
+}
+
 function clientViewForPlan(questions: HealthQuestionDraft[], cplan: string) {
   const onPlan = questions.filter((q) => q.enabled !== false && appliesToPlan(q, cplan));
   return {
@@ -170,8 +177,8 @@ type Props = {
   planOptions?: PlanOption[];
   plansLoading?: boolean;
   plansError?: boolean;
-  /** `ramo`: el cuestionario aplica a todos los planes. No usa el selector de planes de funerario. */
-  scope?: 'canal' | 'ramo';
+  /** Preguntas de Defaults de este ramo. Si no viene, usa la semilla de funerario. */
+  seedQuestions?: HealthQuestionDraft[];
   ramoName?: string;
 };
 
@@ -184,7 +191,7 @@ export function FuneralHealthQuestionsEditor({
   planOptions: planOptionsProp,
   plansLoading = false,
   plansError = false,
-  scope = 'canal',
+  seedQuestions,
   ramoName = '',
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -192,21 +199,22 @@ export function FuneralHealthQuestionsEditor({
   const [showFullCatalog, setShowFullCatalog] = useState(false);
 
   const planOptions = useMemo(
-    () => (planOptionsProp?.length ? planOptionsProp : FALLBACK_FUNERAL_PLAN_OPTIONS),
-    [planOptionsProp],
+    () => (planOptionsProp?.length ? planOptionsProp : (plansError ? [] : FALLBACK_FUNERAL_PLAN_OPTIONS)),
+    [planOptionsProp, plansError],
   );
   const allPlanCodes = useMemo(() => planOptions.map((p) => p.code), [planOptions]);
-  const previewCode = previewPlan || (allPlanCodes.includes('8') ? '8' : allPlanCodes[0] || '');
+  const previewCode = previewPlan && allPlanCodes.includes(previewPlan)
+    ? previewPlan
+    : (allPlanCodes.includes('8') ? '8' : allPlanCodes[0] || '');
   const clientPreview = useMemo(
     () => (previewCode ? clientViewForPlan(questions, previewCode) : null),
     [questions, previewCode],
   );
-  const porPlan = scope !== 'ramo';
   const listed = useMemo(
     () => questions
       .map((q, idx) => ({ q, idx }))
-      .filter(({ q }) => !porPlan || showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
-    [questions, showFullCatalog, previewCode, porPlan],
+      .filter(({ q }) => showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
+    [questions, showFullCatalog, previewCode],
   );
   const padresEnLista = listed.filter(({ q }) => !q.showIf?.field).length;
 
@@ -215,9 +223,9 @@ export function FuneralHealthQuestionsEditor({
   };
 
   const togglePlan = (idx: number, code: string) => {
-    const q = questions[idx];
-    const has = q.plans.includes(code);
-    const plans = has ? q.plans.filter((p) => p !== code) : [...q.plans, code];
+    const current = selectedPlanCodes(questions[idx].plans, allPlanCodes);
+    const has = current.includes(code);
+    const plans = has ? current.filter((p) => p !== code) : [...current, code];
     update(idx, { plans });
   };
 
@@ -255,9 +263,10 @@ export function FuneralHealthQuestionsEditor({
   };
 
   const restoreDefaults = () => {
-    onChange(DEFAULT_HEALTH_QUESTIONS_SEED.map((q) => ({
+    const source = seedQuestions?.length ? seedQuestions : DEFAULT_HEALTH_QUESTIONS_SEED;
+    onChange(source.map((q) => ({
       ...q,
-      plans: [...q.plans],
+      plans: [...(q.plans?.length ? q.plans : allPlanCodes)],
       options: q.options ? q.options.map((o) => ({ ...o })) : undefined,
       optionScores: q.optionScores ? { ...q.optionScores } : undefined,
     })));
@@ -345,12 +354,10 @@ export function FuneralHealthQuestionsEditor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
-            {porPlan ? 'Preguntas' : `Preguntas de ${ramoName || 'este ramo'}`} · {padresEnLista}
+            Preguntas{ramoName ? ` de ${ramoName}` : ''} · {padresEnLista}
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-            {porPlan
-              ? 'Pulsa una fila para editarla. El % lo ve solo el técnico. Tras Guardar, el cliente ve las preguntas visibles de este canal.'
-              : `El cliente las responde en todos los planes de ${ramoName || 'este ramo'}. Cada “Especifique” es el detalle que se abre según la respuesta, no una pregunta nueva. Tras Guardar quedan en la base.`}
+            Abre una pregunta y marca los planes en los que debe salir. El detalle “Especifique” no es una pregunta: se abre según la respuesta. Tras Guardar, el cliente ve solo las de su plan.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -372,7 +379,7 @@ export function FuneralHealthQuestionsEditor({
           </button>
         </div>
       </div>
-      {porPlan && clientPreview && previewCode && (
+      {clientPreview && previewCode && (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2.5 text-[12px] text-indigo-950 leading-snug space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <label className="font-black uppercase tracking-wider text-[10px] text-indigo-600">
@@ -1014,15 +1021,19 @@ export function FuneralHealthQuestionsEditor({
                     )}
                     {plansError && !plansLoading && (
                       <p className="text-[11px] text-amber-700 mb-1.5 font-semibold">
-                        No se pudieron cargar los planes del API; se muestran los nombres de respaldo.
+                        {planOptions.length
+                          ? 'No se pudieron cargar los planes del API; se muestran los nombres de respaldo.'
+                          : 'No se pudieron cargar los planes de este ramo.'}
                       </p>
                     )}
                     <div className="flex flex-col gap-1">
-                      {planOptions.map((p) => (
+                      {planOptions.map((p) => {
+                        const marked = selectedPlanCodes(q.plans, allPlanCodes).includes(p.code);
+                        return (
                         <label
                           key={p.code}
                           className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer ${
-                            q.plans.includes(p.code)
+                            marked
                               ? 'border-indigo-400 bg-indigo-50 text-indigo-800'
                               : 'border-slate-200 text-slate-500'
                           }`}
@@ -1030,7 +1041,7 @@ export function FuneralHealthQuestionsEditor({
                           <input
                             type="checkbox"
                             className="rounded text-indigo-600"
-                            checked={q.plans.includes(p.code)}
+                            checked={marked}
                             onChange={() => togglePlan(idx, p.code)}
                           />
                           <span className="min-w-0 flex-1 leading-snug">{p.label}</span>
@@ -1038,20 +1049,21 @@ export function FuneralHealthQuestionsEditor({
                             cplan {p.code}
                           </span>
                         </label>
-                      ))}
+                        );
+                      })}
                     </div>
-                    {allPlanCodes.length > 0 && q.plans.length < allPlanCodes.length && (
+                    {allPlanCodes.length > 0 && selectedPlanCodes(q.plans, allPlanCodes).length < allPlanCodes.length && selectedPlanCodes(q.plans, allPlanCodes).length > 0 && (
                       <p className="text-[11px] text-amber-800 font-semibold mt-2 leading-relaxed">
                         El cliente no la verá si elige un plan que no esté marcado.
                         Faltan:{' '}
                         {planOptions
-                          .filter((p) => !q.plans.includes(p.code))
+                          .filter((p) => !selectedPlanCodes(q.plans, allPlanCodes).includes(p.code))
                           .map((p) => p.label)
                           .join(' · ') || 'ninguno'}
                         . Pulsa «Todos» si debe salir en todos.
                       </p>
                     )}
-                    {q.plans.length === 0 && (
+                    {selectedPlanCodes(q.plans, allPlanCodes).length === 0 && (
                       <p className="text-[11px] text-rose-600 font-semibold mt-2">
                         Sin planes: no saldrá en ningún flujo. Marca al menos uno o pulsa Todos.
                       </p>
