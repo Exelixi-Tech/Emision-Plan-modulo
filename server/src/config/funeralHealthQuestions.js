@@ -186,13 +186,24 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     ...(opts.canal ? { canal: opts.canal } : {}),
   };
   const canalKey = resolveCanalKey(meta);
+  const { resolvePersonasCramo } = require('../lib/funerarioPlan');
+  const { catalogForConsultedRamo } = require('./healthQuestionsByRamo');
+  const cramo = resolvePersonasCramo({
+    selectedPlan: opts.selectedPlan,
+    metadataCanal: meta,
+    bodyCramo: opts.cramo,
+    cproducto: opts.cproducto,
+  });
+  const consulted = catalogForConsultedRamo(cramo);
+  const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
 
-  let catalog = CATALOG;
-  let source = 'catalog';
+  let catalog = consulted && consulted.kind === 'funerario' ? consulted.questions : CATALOG;
+  let source = consulted && consulted.kind === 'funerario' ? 'ramo-funerario' : 'catalog';
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
   try {
+    if (ramoDirecto) throw new Error('skip-nexus');
     const {
       fetchProductConfig,
       clearProductConfigCache,
@@ -248,9 +259,16 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[funeralHealthQuestions] Nexus fallback: ${msg}`);
+    if (ramoDirecto) {
+      catalog = consulted.questions;
+      source = `ramo-${consulted.kind}`;
+    } else if (msg !== 'skip-nexus') {
+      console.warn(`[funeralHealthQuestions] Nexus fallback: ${msg}`);
+    }
   }
-  const filtered = filterQuestionsForPlan(filterEnabledQuestions(catalog), cplan);
+  const filtered = ramoDirecto
+    ? consulted.questions
+    : filterQuestionsForPlan(filterEnabledQuestions(catalog), cplan);
   const questions = stripOrphanShowIf(filtered);
   const disabledCount = catalog.filter((q) => q && !isQuestionEnabled(q)).length;
   const catalogIds = catalog.map((q) => q?.id).filter(Boolean);
@@ -261,7 +279,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     .map((q) => q.id)
     .filter(Boolean);
   console.log(
-    `[funeralHealthQuestions] cplan=${cplan} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
+    `[funeralHealthQuestions] cplan=${cplan} cramo=${cramo} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
       (strippedShowIf.length ? ` strippedShowIf=${strippedShowIf.join(',')}` : ''),
   );
   const { DEFAULT_SCORING_RULES } = require('../lib/funeralScoringRules');

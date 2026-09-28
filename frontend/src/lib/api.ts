@@ -905,9 +905,11 @@ export interface HealthQuestion {
   blockReason?: string;
 }
 
-export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
+export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number): Promise<HealthQuestion[]> {
+  const qs = new URLSearchParams({ cplan });
+  if (cramo != null && Number.isFinite(cramo) && cramo > 0) qs.set('cramo', String(cramo));
   const { data } = await api.get<{ success: boolean; questions: HealthQuestion[] }>(
-    `/funeral/health-questions?cplan=${encodeURIComponent(cplan)}`,
+    `/funeral/health-questions?${qs.toString()}`,
   );
   return data?.questions ?? [];
 }
