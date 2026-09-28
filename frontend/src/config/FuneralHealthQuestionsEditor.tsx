@@ -198,10 +198,11 @@ export function FuneralHealthQuestionsEditor({
   const [previewPlan, setPreviewPlan] = useState('');
   const [showFullCatalog, setShowFullCatalog] = useState(false);
 
-  const planOptions = useMemo(
-    () => (planOptionsProp?.length ? planOptionsProp : (plansError ? [] : FALLBACK_FUNERAL_PLAN_OPTIONS)),
-    [planOptionsProp, plansError],
-  );
+  const planOptions = useMemo(() => {
+    if (planOptionsProp?.length) return planOptionsProp;
+    if (plansLoading || plansError) return [];
+    return ramoName === 'Funerario' ? FALLBACK_FUNERAL_PLAN_OPTIONS : [];
+  }, [planOptionsProp, plansError, plansLoading, ramoName]);
   const allPlanCodes = useMemo(() => planOptions.map((p) => p.code), [planOptions]);
   const previewCode = previewPlan && allPlanCodes.includes(previewPlan)
     ? previewPlan
