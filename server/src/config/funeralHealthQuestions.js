@@ -201,7 +201,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     ...(opts.canal ? { canal: opts.canal } : {}),
   };
   const canalKey = resolveCanalKey(meta);
-  const { catalogForConsultedRamo } = require('./healthQuestionsByRamo');
+  const { catalogForConsultedRamo, questionsStoredForRamo } = require('./healthQuestionsByRamo');
   const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
@@ -211,8 +211,8 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
+  let foundStoredRamo = false;
   try {
-    if (ramoDirecto) throw new Error('skip-nexus');
     const {
       fetchProductConfig,
       clearProductConfigCache,
@@ -227,6 +227,18 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       });
       if (cfg?.healthScoringRules && !scoringRulesRaw) {
         scoringRulesRaw = cfg.healthScoringRules;
+      }
+      if (ramoDirecto) {
+        const stored = questionsStoredForRamo(cfg, cramo);
+        if (stored) {
+          catalog = stored;
+          source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
+          empresaId = eid;
+          foundStoredRamo = true;
+          if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
+          break;
+        }
+        continue;
       }
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
@@ -261,23 +273,20 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         empresaId = eid;
       }
     }
-    if (picked) {
+    if (picked && !foundStoredRamo) {
       catalog = picked.questions;
       source = picked.source;
       resolvedCanal = picked.resolvedCanal;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (ramoDirecto) {
-      catalog = consulted.questions;
-      source = `ramo-${consulted.kind}`;
-    } else if (msg !== 'skip-nexus') {
-      console.warn(`[funeralHealthQuestions] Nexus fallback: ${msg}`);
-    }
+    console.warn(`[funeralHealthQuestions] Nexus fallback: ${msg}`);
   }
-  const filtered = ramoDirecto
-    ? consulted.questions
-    : filterQuestionsForPlan(filterEnabledQuestions(catalog), cplan);
+  if (ramoDirecto && !foundStoredRamo && consulted) {
+    catalog = consulted.questions;
+    source = `ramo-${consulted.kind}`;
+  }
+  const filtered = filterQuestionsForPlan(filterEnabledQuestions(catalog), cplan);
   const questions = stripOrphanShowIf(filtered);
   const disabledCount = catalog.filter((q) => q && !isQuestionEnabled(q)).length;
   const catalogIds = catalog.map((q) => q?.id).filter(Boolean);

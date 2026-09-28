@@ -22,6 +22,7 @@ import {
   parseFuneralScoringRules,
   type FuneralScoringRules,
 } from './FuneralScoringRulesEditor';
+import ramoCatalog from './cuestionario-ramos.json';
 
 const ALL_PLAN_CODES = ['2', '3', '4', '5', '6', '7', '8', '9'];
 const PANEL_CTX = readConfigPanelContext();
@@ -111,6 +112,9 @@ export function EmisionConfigPanel() {
     parseFuneralScoringRules(null),
   );
   const [preguntasVista, setPreguntasVista] = useState<'cuestionario' | 'puntaje'>('cuestionario');
+  /** Scoring no usa el SSO. Cada ramo tiene su lista en product_config.healthQuestionsByRamo. */
+  const [scoringRamo, setScoringRamo] = useState<'9' | '1' | '5'>('9');
+  const [byRamo, setByRamo] = useState<Record<string, HealthQuestionDraft[]>>({});
 
   useEffect(() => {
     if (producto !== 'funerario') return;
@@ -220,6 +224,18 @@ export function EmisionConfigPanel() {
       setHealthByCanal({ ...by });
       setActiveCanal(useCanal);
       setHealthQuestions(by[useCanal]);
+      const storedRamo = config.healthQuestionsByRamo as
+        | Record<string, HealthQuestionDraft[]>
+        | undefined;
+      const seed = ramoCatalog as Record<string, HealthQuestionDraft[]>;
+      const nextRamo: Record<string, HealthQuestionDraft[]> = {};
+      for (const key of ['1', '5', '9'] as const) {
+        const saved = storedRamo?.[key];
+        nextRamo[key] = enrichHealthQuestionScores(
+          Array.isArray(saved) && saved.length > 0 ? saved : (seed[key] ?? []),
+        );
+      }
+      setByRamo(nextRamo);
     } else if (!healthQuestionsDirty.current && producto !== 'funerario') {
       setHealthQuestions([]);
     }
@@ -268,8 +284,13 @@ export function EmisionConfigPanel() {
 
   const onHealthQuestionsChange = (next: HealthQuestionDraft[]) => {
     healthQuestionsDirty.current = true;
-    setHealthQuestions(next);
-    setHealthByCanal((prev) => ({ ...prev, [activeCanal]: next }));
+    if (scoringRamo === '9') {
+      setHealthQuestions(next);
+      setHealthByCanal((prev) => ({ ...prev, [activeCanal]: next }));
+      setByRamo((prev) => ({ ...prev, '9': next }));
+    } else {
+      setByRamo((prev) => ({ ...prev, [scoringRamo]: next }));
+    }
     setSaved(false);
   };
 
@@ -349,6 +370,11 @@ export function EmisionConfigPanel() {
       soloPreguntas && cleanedQuestions && byCanalPayload
         ? {
             healthQuestionsByCanal: byCanalPayload,
+            healthQuestionsByRamo: {
+              '1': cleanQuestions(byRamo['1'] || []),
+              '5': cleanQuestions(byRamo['5'] || []),
+              '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || [])),
+            },
             healthScoringRules: scoringRules,
             ...(Object.keys(byCanalPayload).includes('default')
               ? { healthQuestions: byCanalPayload.default }
@@ -373,6 +399,11 @@ export function EmisionConfigPanel() {
             ...(cleanedQuestions && byCanalPayload
               ? {
                   healthQuestionsByCanal: byCanalPayload,
+                  healthQuestionsByRamo: {
+                    '1': cleanQuestions(byRamo['1'] || []),
+                    '5': cleanQuestions(byRamo['5'] || []),
+                    '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || [])),
+                  },
                   healthScoringRules: scoringRules,
                   ...(Object.keys(byCanalPayload).includes('default')
                     ? { healthQuestions: byCanalPayload.default }
@@ -568,6 +599,28 @@ export function EmisionConfigPanel() {
                 {/* ── TAB PREGUNTAS (funerario) ── */}
                 {tab === 'preguntas' && producto === 'funerario' && (
                   <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {([
+                        ['9', 'Funerario'],
+                        ['1', 'Vida'],
+                        ['5', 'Accidentes personales'],
+                      ] as const).map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setScoringRamo(key)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                            scoringRamo === key
+                              ? 'bg-indigo-700 text-white'
+                              : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {label}
+                          <span className="ml-1 font-normal opacity-70">{(byRamo[key] || []).length}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {scoringRamo === '9' && (
                     <div className="space-y-2.5">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -646,6 +699,7 @@ export function EmisionConfigPanel() {
                         </div>
                       )}
                     </div>
+                    )}
                     <div className="inline-flex p-1 rounded-2xl bg-slate-100/80 border border-slate-200/70">
                       <button
                         type="button"
@@ -683,7 +737,7 @@ export function EmisionConfigPanel() {
                     />
                     ) : (
                     <FuneralHealthQuestionsEditor
-                      questions={healthQuestions}
+                      questions={scoringRamo === '9' ? healthQuestions : (byRamo[scoringRamo] || [])}
                       onChange={onHealthQuestionsChange}
                       planOptions={funeralPlanOptions}
                       plansLoading={funeralPlansLoading}
