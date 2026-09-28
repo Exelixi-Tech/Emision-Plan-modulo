@@ -380,7 +380,14 @@ export function FuneralHealthQuestionsEditor({
           </button>
         </div>
       </div>
-      {clientPreview && previewCode && (
+      {plansLoading && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-4 flex flex-col items-center justify-center space-y-2">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-indigo-500 border-t-transparent"></div>
+          <p className="text-xs font-semibold text-indigo-800">Cargando planes desde el servidor...</p>
+          <p className="text-[10px] text-indigo-600">Esto puede tomar unos segundos.</p>
+        </div>
+      )}
+      {!plansLoading && clientPreview && previewCode && (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2.5 text-[12px] text-indigo-950 leading-snug space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <label className="font-black uppercase tracking-wider text-[10px] text-indigo-600">
