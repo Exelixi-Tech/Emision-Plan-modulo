@@ -25,6 +25,9 @@ export const PRODUCTS: Record<ProductId, ProductConfig> = {
   funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, hasVehicle: false },
   patrimonial: { id: 'patrimonial', label: 'Patrimonial', fullLabel: 'Riesgos Generales / Patrimonial', cramo: 20, hasVehicle: false },
   patrimoniales: { id: 'patrimoniales', label: 'Patrimonial', fullLabel: 'Riesgos Generales / Patrimonial', cramo: 20, hasVehicle: false },
+  'com-fam': { id: 'com-fam', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 28, hasVehicle: false },
+  combinado_familiar: { id: 'combinado_familiar', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 28, hasVehicle: false },
+  proveedor: { id: 'proveedor', label: 'Plan Proveedor', fullLabel: 'Planes con Proveedor', cramo: 28, hasVehicle: false },
 };
 
 /** Ramo externo maplanes para BINAC* (confirmado: cramo 28; también existe fila duplicada en 18). */
@@ -33,7 +36,7 @@ export const RCV_RAMO_BINACIONAL = parseInt(
   10,
 );
 
-const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimonial', 'patrimoniales'];
+const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimonial', 'patrimoniales', 'com-fam', 'combinado_familiar', 'proveedor'];
 const STORAGE_KEY = 'exelixi_product';
 
 export interface ProductDetectHints {
@@ -129,3 +132,9 @@ export function isFunerario(): boolean {
 export function isRcv(): boolean {
   return getProductId() === 'rcv';
 }
+
+export function isCombinadoFamiliar(): boolean {
+  const p = getProductId();
+  return p === 'com-fam' || p === 'combinado_familiar' || p === 'proveedor';
+}
+
