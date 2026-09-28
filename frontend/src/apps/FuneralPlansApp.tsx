@@ -180,13 +180,27 @@ export default function FuneralPlansApp() {
     }
   }
 
+  function emptyAnswersByInsured() {
+    const people = healthInsureds.length
+      ? healthInsureds
+      : [{ key: 'aseg-0', label: 'Asegurado' }];
+    const byInsured: Record<string, Record<string, unknown>> = {};
+    for (const person of people) byInsured[person.key] = {};
+    return byInsured;
+  }
+
   async function openHealthModal() {
     if (!selectedPlan?.cplan) return;
-    setHealthModalOpen(true);
     setLoadingQuestions(true);
     try {
       const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan);
       setHealthQuestions(qs);
+      if (qs.length === 0) {
+        setHealthModalOpen(false);
+        await handleHealthConfirm(emptyAnswersByInsured());
+        return;
+      }
+      setHealthModalOpen(true);
     } catch {
       toast.error(
         'Error al cargar preguntas',

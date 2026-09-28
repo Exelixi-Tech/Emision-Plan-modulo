@@ -330,11 +330,6 @@ export function EmisionConfigPanel() {
     if (producto === 'funerario') {
       const canalKey = canalLocked ? (PANEL_CTX.canal || activeCanal) : activeCanal;
       cleanedQuestions = cleanQuestions(healthQuestions);
-      if (!cleanedQuestions.length) {
-        setSaved(false);
-        alert('No hay preguntas de salud para guardar. Agrega al menos una o restaura defaults.');
-        return;
-      }
       const snapshot: Record<string, HealthQuestionDraft[]> = {
         ...healthByCanal,
         [canalKey]: healthQuestions,

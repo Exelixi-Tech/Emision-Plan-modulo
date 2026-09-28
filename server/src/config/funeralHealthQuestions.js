@@ -221,7 +221,10 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
             : [];
       hit.questions = applyDisabledFromDefault(hit.questions, defaultList);
       // Prioridad: match exacto de canal en la empresa del JWT
-      if (hit.source === 'nexus-canal' && eid === primaryEmpresa) {
+      if (
+        eid === primaryEmpresa &&
+        (hit.source === 'nexus-canal' || hit.source === 'nexus-empty')
+      ) {
         picked = hit;
         empresaId = eid;
         if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
