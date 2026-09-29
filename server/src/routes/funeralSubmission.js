@@ -10,6 +10,7 @@ const { parseScoringRules } = require('../lib/funeralScoringRules');
 const { upsertHealthAnswers } = require('../services/healthDb');
 const { createFuneralSubmission } = require('../services/nexusFuneralSubmission');
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
+const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { isPersonasCplan } = require('../lib/funerarioPlan');
 const { resolveCanalKey } = require('../lib/canalKey');
 
@@ -188,6 +189,8 @@ router.post('/submissions', async (req, res) => {
       documents: body.documents ?? null,
       metadataCanal: body.metadataCanal ?? metadata,
       product: 'funerario',
+      /** Producto real para los correos (Nexus lo lee del snapshot). */
+      productLabel: productLabelFromMeta(body.metadataCanal ?? metadata),
     };
 
     const submission = await createFuneralSubmission({
