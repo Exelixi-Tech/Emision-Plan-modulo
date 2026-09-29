@@ -100,23 +100,46 @@ function mapAsegurado(a) {
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
   const meta = funeralCanalMeta(req);
+  const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
+  // Scoring de Vida (1) y Accidentes personales (5): el catálogo del ramo,
+  // sin el producto funerario 57 que siempre consulta el ramo 45.
+  if (req.query.catalogo === 'ramo' || askedRamo === 1 || askedRamo === 5) {
+    try {
+      const targetRamo = Number.isFinite(askedRamo) ? askedRamo : 1;
+      const result = await fetchPlanesV2({ ...meta, cramo: targetRamo });
+      const planes = (result.planes || []).filter((p) => Number(p.cramo) === targetRamo);
+      res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+      return res.json({
+        success: true,
+        planes,
+        canal: { cramo: targetRamo, catalogo: 'ramo' },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[personas/planes] catalogo ramo', askedRamo, msg);
+      return res.status(502).json({
+        success: false,
+        code: 'PLANES_RAMO_ERROR',
+        message: `No se pudieron obtener los planes del ramo ${askedRamo}: ${msg}`,
+      });
+    }
+  }
+
   const rawEntity = resolveEntityContext(meta);
   const sisOk = rawEntity
     && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
   const entity = sisOk ? rawEntity : null;
   const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
   const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
-  const queryCramo = req.query.cramo ? parseInt(String(req.query.cramo), 10) : null;
-  const metaCramo = meta.cramo ? parseInt(String(meta.cramo), 10) : null;
-  const cramo = (queryCramo && Number.isFinite(queryCramo) && queryCramo > 0)
-    ? queryCramo
-    : ((metaCramo && Number.isFinite(metaCramo) && metaCramo > 0)
-      ? metaCramo
-      : (meta.cproducto === '57' ? 45 : DEFAULT_RAMO));
-
-  const queryCproducto = req.query.cproducto != null && String(req.query.cproducto).trim() !== '' ? String(req.query.cproducto).trim() : null;
   const metaCproducto = meta.cproducto != null && String(meta.cproducto).trim() !== '' ? String(meta.cproducto).trim() : null;
-  const cproducto = queryCproducto || metaCproducto || (cramo === 45 || cramo === 9 ? (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57') : String(cramo));
+  const cproducto = metaCproducto || req.query.cproducto || (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
+  const cramo = cproducto === '57'
+    ? 45
+    : (meta.cramo ? parseInt(meta.cramo, 10) : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO));
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
