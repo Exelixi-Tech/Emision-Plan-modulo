@@ -187,6 +187,8 @@ export interface RcvPlanData {
   tasaPP?: number;
   sumaAsegBl?: number;
   sumaAsegAd?: number;
+  cproductor?: number | string | null;
+  xproductor?: string | null;
 }
 
 /** Datos del producto Funerario (personas). Se usa cuando product = 'funerario'. */

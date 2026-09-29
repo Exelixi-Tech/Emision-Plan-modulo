@@ -64,6 +64,10 @@ function mergeNexusMetadata(req) {
   if (citemQ != null) {
     meta.citem = citemQ;
   }
+  const cproductorQ = pickQueryValue(req.query, 'cproductor');
+  if (cproductorQ != null && cproductorQ !== '') {
+    meta.cproductor = cproductorQ;
+  }
   const cgestorQ = pickQueryValue(req.query, 'cgestor');
   if (cgestorQ != null) {
     meta.cgestor = cgestorQ;

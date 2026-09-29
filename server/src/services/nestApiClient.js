@@ -550,6 +550,29 @@ const FRECUENCIAS_GENERIC_FALLBACK = [
  * filas en maplanes_frec, devolver ANUAL como SysIP persons-alt (nunca 502).
  * @returns {Promise<Array<{ code: string, label: string, ndias?: number|null }>>}
  */
+/**
+ * Productores / Brokers desde Sis2000 (POST /api/v1/valrep/brokers)
+ * @returns {Promise<Array<{ code: number, label: string }>>}
+ */
+async function getValrepBrokers() {
+  const response = await axios.post(
+    `${getBaseUrl()}/api/v1/valrep/brokers`,
+    null,
+    await axiosOpts({ validateStatus: () => true }),
+  );
+  if (response.status >= 400 || response.data?.status === false) {
+    throw new Error(response.data?.message || `HTTP ${response.status} valrep/brokers`);
+  }
+  const raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+  return raw
+    .map((b) => ({
+      code: Number(b.cproductor),
+      label: String(b.xproductor ?? '').trim(),
+    }))
+    .filter((it) => it.code > 0 && it.label !== '')
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function getValrepFrecuencias(cplan, cramo) {
   const body = { cplan };
   if (cramo != null) body.cramo = cramo;
@@ -666,4 +689,5 @@ module.exports = {
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
+  getValrepBrokers,
 };
