@@ -209,6 +209,22 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
   const funerarioDeEsteProducto = consulted?.kind === 'funerario' && isFunerarioProduct;
 
+  if (!isFunerarioProduct && !ramoDirecto) {
+    const { DEFAULT_SCORING_RULES } = require('../lib/funeralScoringRules');
+    return {
+      questions: [],
+      source: 'sin-cuestionario',
+      catalogCount: 0,
+      skippedIds: [],
+      strippedShowIf: [],
+      empresaId: primaryEmpresa,
+      triedEmpresas: candidates,
+      canal: canalKey,
+      resolvedCanal: canalKey,
+      scoringRules: DEFAULT_SCORING_RULES,
+    };
+  }
+
   let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
   let source = funerarioDeEsteProducto
     ? 'ramo-funerario'
