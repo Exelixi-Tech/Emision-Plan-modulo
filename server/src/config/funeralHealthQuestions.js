@@ -204,10 +204,14 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const { catalogForConsultedRamo, questionsStoredForRamo } = require('./healthQuestionsByRamo');
   const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
+  const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
+  const funerarioDeEsteProducto = consulted?.kind === 'funerario' && (!prod || prod === '57');
 
-  let catalog = consulted && consulted.kind === 'funerario' ? consulted.questions : CATALOG;
-  let source = consulted && consulted.kind === 'funerario' ? 'ramo-funerario' : 'catalog';
+  let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
+  let source = funerarioDeEsteProducto
+    ? 'ramo-funerario'
+    : (ramoDirecto ? `ramo-${consulted.kind}` : 'sin-cuestionario');
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
@@ -228,15 +232,17 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       if (cfg?.healthScoringRules && !scoringRulesRaw) {
         scoringRulesRaw = cfg.healthScoringRules;
       }
-      if (ramoDirecto) {
-        const stored = questionsStoredForRamo(cfg, cramo);
-        if (stored) {
-          catalog = stored;
-          source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
-          empresaId = eid;
-          foundStoredRamo = true;
-          if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
-          break;
+      if (ramoDirecto || !funerarioDeEsteProducto) {
+        if (ramoDirecto) {
+          const stored = questionsStoredForRamo(cfg, cramo);
+          if (stored) {
+            catalog = stored;
+            source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
+            empresaId = eid;
+            foundStoredRamo = true;
+            if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
+            break;
+          }
         }
         continue;
       }

@@ -8,7 +8,6 @@ import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import {
   fetchFuneralHealthQuestions,
-  resolveQuestionnaireCramo,
   saveFuneralHealthAnswers,
   submitFuneralPolicyReview,
   validateFuneralEmission,
@@ -26,6 +25,27 @@ const FREC_LABELS: Record<string, string> = {
   S: 'Pago semestral',
   A: 'Pago anual',
 };
+
+function questionnaireForPlan(
+  planCramo: number | undefined,
+  meta: { cproducto?: unknown; xproducto?: unknown; cramo?: unknown } | null | undefined,
+  fallbackCproducto: string | undefined,
+  fallbackCramo: number,
+): { cramo: number; cproducto: string } {
+  const label = String(meta?.xproducto ?? '').toLowerCase();
+  let cproducto = String(meta?.cproducto ?? fallbackCproducto ?? '').trim();
+  if (label && !label.includes('funer') && (!cproducto || cproducto === '57')) {
+    cproducto = 'otro';
+  }
+  const plan = Number(planCramo);
+  const sso = meta?.cramo != null ? Number(meta.cramo) : NaN;
+  const cramo = Number.isFinite(plan) && plan > 0
+    ? plan
+    : (cproducto && cproducto !== '57'
+      ? (sso === 1 || sso === 5 ? sso : 0)
+      : (Number.isFinite(sso) && sso > 0 ? sso : fallbackCramo));
+  return { cramo, cproducto };
+}
 
 function getSessionId(): string {
   try {
@@ -194,11 +214,12 @@ export default function FuneralPlansApp() {
     if (!selectedPlan?.cplan) return;
     setLoadingQuestions(true);
     try {
-      const planCramo = Number(selectedPlan.cramo);
-      const effectiveCramo = (planCramo === 1 || planCramo === 5 || planCramo === 9 || planCramo === 45)
-        ? planCramo
-        : (metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(planCramo, product.cramo));
-      const effectiveCproducto = (metadataCanal?.cproducto as string) ?? product.cproducto;
+      const { cramo: effectiveCramo, cproducto: effectiveCproducto } = questionnaireForPlan(
+        selectedPlan.cramo,
+        metadataCanal,
+        product.cproducto,
+        product.cramo,
+      );
       const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan, effectiveCramo, effectiveCproducto);
       setHealthQuestions(qs);
       if (qs.length === 0) {
@@ -225,11 +246,12 @@ export default function FuneralPlansApp() {
       const sessionId = getSessionId();
       const packed = { byInsured };
 
-      const planCramo = Number(selectedPlan.cramo);
-      const effectiveCramo = (planCramo === 1 || planCramo === 5 || planCramo === 9 || planCramo === 45)
-        ? planCramo
-        : (metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(planCramo, product.cramo));
-      const effectiveCproducto = (metadataCanal?.cproducto as string) ?? product.cproducto;
+      const { cramo: effectiveCramo, cproducto: effectiveCproducto } = questionnaireForPlan(
+        selectedPlan.cramo,
+        metadataCanal,
+        product.cproducto,
+        product.cramo,
+      );
 
       await saveFuneralHealthAnswers({
         sessionId,
