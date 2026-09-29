@@ -22,6 +22,7 @@ const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
+const { fetchPlanesV2 } = require('../services/planesClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
