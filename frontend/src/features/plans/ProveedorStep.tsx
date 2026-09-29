@@ -343,12 +343,14 @@ export function ProveedorStep() {
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
                 if (found) {
+                  // Plan Proveedor no tiene cuestionario de salud (Sis2000 sin preguntas para el producto):
+                  // no dejar Pagos bloqueado por cuestionario/términos que nunca se muestran.
                   setFuneral({
-                    healthQuestionnaireDone: false,
+                    healthQuestionnaireDone: true,
                     healthAnswers: {},
                     diagnosticoEnfermedad: false,
                     descripcionEnfermedad: '',
-                    aceptaTerminos: false,
+                    aceptaTerminos: true,
                   });
                 }
               }}
