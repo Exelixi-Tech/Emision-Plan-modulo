@@ -1,4 +1,4 @@
-import { getNexusToken, decodeNexusTokenMetadata } from './nexus-token-client';
+import { decodeNexusTokenMetadata } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 
 const CANDIDATE_TOKEN_KEYS = [
@@ -10,13 +10,28 @@ const CANDIDATE_TOKEN_KEYS = [
   'nexus_token',
 ];
 
-/** Obtiene la metadata efectiva del SSO combinando tokens almacenados y store */
+/** Obtiene la metadata efectiva del SSO buscando en URL, sessionStorage, localStorage y store */
 export function getEffectiveSsoMetadata(): Record<string, unknown> {
   let token: string | null = null;
-  for (const k of CANDIDATE_TOKEN_KEYS) {
-    token = getNexusToken(k);
-    if (token) break;
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('nexus_token');
+    if (fromUrl && fromUrl.trim().length > 0) {
+      token = fromUrl.trim();
+    }
+  } catch { /* ignore */ }
+
+  if (!token) {
+    for (const k of CANDIDATE_TOKEN_KEYS) {
+      try {
+        const val = sessionStorage.getItem(k) || localStorage.getItem(k);
+        if (val && val.trim().length > 0) {
+          token = val.trim();
+          break;
+        }
+      } catch { /* ignore */ }
+    }
   }
+
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
   const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
   return {
@@ -36,14 +51,27 @@ export function isProductorRole(meta: Record<string, unknown>): boolean {
 /** Determina si la sesión se originó desde el Backoffice de Sis2000 */
 export function isBackofficeSession(meta: Record<string, unknown>): boolean {
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
-  return origen === 'backoffice';
+  const allowPending = String(meta.allowPendingEmission ?? '').trim().toLowerCase() === 'true';
+  return origen === 'backoffice' || allowPending;
 }
 
 /**
- * En Backoffice de Sis2000:
+ * En Sis2000:
  * - Rol Productor: NO ve el selector (toma su propio código de productor logueado).
- * - Otros roles (Admin, Suscripción, Técnica, etc.): SÍ ven el selector para asociar la emisión.
+ * - Otros roles (Root, Admin, Suscripción, Técnica, etc.): SÍ ven el selector para asociar la emisión.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
-  return isBackofficeSession(meta) && !isProductorRole(meta);
+  // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
+  if (isProductorRole(meta)) {
+    return false;
+  }
+
+  // Si es marketplace cerrado sin permiso de emisión pendiente
+  const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
+  if (origen === 'marketplace' && String(meta.allowPendingEmission ?? '').trim().toLowerCase() !== 'true') {
+    return false;
+  }
+
+  // Para todos los demás roles (root, admin, suscripción, etc.), SÍ se muestra el selector
+  return true;
 }
