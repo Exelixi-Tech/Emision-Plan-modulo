@@ -167,6 +167,43 @@ const FUNERARIO = [
 ];
 
 /**
+ * Ponderación inicial Vida/AP (puntos si responde "Sí"), sobre rangos de scoring
+ * 0–25 emitir · 26–39 mesa técnica · 40+ rechazo. Ajustable en el parametrizador.
+ * Debe coincidir con frontend/src/config/cuestionario-ramos.json.
+ */
+const DEFAULT_SCORES = {
+  vida: {
+    habitos: 10,
+    deporteRiesgo: 15,
+    pesoInvoluntario: 10,
+    cardiovascular: 26,
+    respiratorioDigestivo: 15,
+    endocrinoRenal: 15,
+    nerviosoSentidos: 10,
+    oncologico: 30,
+    quirurgico: 10,
+    defectoFisico: 10,
+    embarazo: 26,
+    ginecologico: 10,
+    otraCondicion: 15
+  },
+  ap: {
+    laboresRiesgo: 26,
+    deporteRiesgo: 26,
+    defectoFisico: 20,
+    condicionMedica: 20
+  }
+};
+
+function applyDefaultScores(list, scores) {
+  for (const q of list) {
+    if (scores[q.id] != null) q.scoreIfTrue = scores[q.id];
+  }
+}
+applyDefaultScores(VIDA, DEFAULT_SCORES.vida);
+applyDefaultScores(AP, DEFAULT_SCORES.ap);
+
+/**
  * @param {unknown} cramo
  * @returns {{ kind: 'ap'|'vida'|'funerario', questions: object[] } | null}
  */
