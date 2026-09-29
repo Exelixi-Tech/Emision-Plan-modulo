@@ -8,6 +8,7 @@ import {
 import type { Plan, ProveedorItem } from '../../types';
 import {
   personasApi,
+  resolveQuoteCramo,
   type PlanPer,
   getFrecuenciasByPlan,
   type CatalogItem,
@@ -153,7 +154,7 @@ export function ProveedorStep() {
 
     let cancelled = false;
     setFrecLoading(true);
-    getFrecuenciasByPlan(planCode, product.cramo)
+    getFrecuenciasByPlan(planCode, resolveQuoteCramo(selectedPlan?.cramo, product.cramo))
       .then((items) => {
         if (!cancelled) {
           const result = items.length > 0 ? items : FALLBACK_FRECUENCIAS;
@@ -203,7 +204,7 @@ export function ProveedorStep() {
 
     getProveedores({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
       centidad: centidad || undefined,
       citem: citem || undefined,
     })
@@ -225,12 +226,10 @@ export function ProveedorStep() {
       .catch((err) => {
         console.error('Error al consultar proveedores:', err);
         if (!cancelled) {
-          const fallback: ProveedorItem[] = [
-            { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: product.cramo, cplan: planCode },
-            { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: product.cramo, cplan: planCode },
-          ];
-          setProveedores(fallback);
-          setSelectedProveedor(fallback[0]);
+          // Sin proveedores de ejemplo: se muestra el error real.
+          setProveedores([]);
+          setSelectedProveedor(null);
+          toast.error('Error al consultar proveedores', 'No se pudieron cargar los proveedores del plan.');
         }
       })
       .finally(() => {
@@ -264,7 +263,7 @@ export function ProveedorStep() {
 
     personasApi.cotizar({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
       ifrecuencia: funeral.frecuencia,
       asegurados: aseguradosListos.map((a) => ({
         parentesco: a.parentesco,
