@@ -205,14 +205,16 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
-  const isFunerarioProduct = !prod || prod === '57' || prod === '14' || cramo === 7 || cramo === 45 || cramo === 9;
+  const isFunerarioProduct = !prod || prod === '57';
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
-  const funerarioDeEsteProducto = consulted?.kind === 'funerario' || isFunerarioProduct;
+  const funerarioDeEsteProducto = (consulted?.kind === 'funerario' || isFunerarioProduct) && !ramoDirecto;
 
-  let catalog = (funerarioDeEsteProducto || consulted?.kind === 'funerario') ? consulted.questions : (ramoDirecto ? consulted.questions : []);
-  let source = (funerarioDeEsteProducto || consulted?.kind === 'funerario')
-    ? 'ramo-funerario'
-    : (ramoDirecto ? `ramo-${consulted.kind}` : 'sin-cuestionario');
+  let catalog = ramoDirecto
+    ? consulted.questions
+    : (funerarioDeEsteProducto ? consulted.questions : []);
+  let source = ramoDirecto
+    ? `ramo-${consulted.kind}`
+    : (funerarioDeEsteProducto ? 'ramo-funerario' : 'sin-cuestionario');
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
@@ -234,24 +236,19 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         scoringRulesRaw = cfg.healthScoringRules;
       }
       if (ramoDirecto) {
-        if (ramoDirecto) {
-          const stored = questionsStoredForRamo(cfg, cramo);
-          if (stored) {
-            catalog = stored;
-            source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
-            empresaId = eid;
-            foundStoredRamo = true;
-            if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
-            break;
-          }
+        const stored = questionsStoredForRamo(cfg, cramo);
+        if (stored) {
+          catalog = stored;
+          source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
+          empresaId = eid;
+          foundStoredRamo = true;
+          if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
+          break;
         }
         continue;
       }
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
-      if (!isFunerarioProduct && !ramoDirecto && (hit.source === 'nexus-canal-default' || hit.source === 'legacy')) {
-        continue;
-      }
       const defaultList =
         cfg?.healthQuestionsByCanal &&
         typeof cfg.healthQuestionsByCanal === 'object' &&
@@ -283,7 +280,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         empresaId = eid;
       }
     }
-    if (picked && !foundStoredRamo) {
+    if (picked && !foundStoredRamo && !ramoDirecto) {
       catalog = picked.questions;
       source = picked.source;
       resolvedCanal = picked.resolvedCanal;
