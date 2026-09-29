@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useProductConfig } from '../hooks/useProductConfig';
-import { getProductConfig, getProductId } from '../lib/product';
+import { getProductId } from '../lib/product';
 import { moduleApiBase } from '../lib/app-base';
 import {
   Settings2, RotateCcw, Save, CheckCircle2, AlertTriangle,
   Loader2, Plus, Trash2, ArrowLeftRight, Layers, Sparkles, Globe, Lock, Eye, EyeOff,
-  ClipboardList,
+  ClipboardList, Gauge,
 } from 'lucide-react';
 import { AuroraBackground } from '../components/AuroraBackground';
 import {
@@ -17,6 +17,12 @@ import {
   type PlanOption,
 } from './FuneralHealthQuestionsEditor';
 import { canalDisplayLabel, readConfigPanelContext, isPreguntasOnlyView } from './configPanelContext';
+import {
+  FuneralScoringRulesEditor,
+  parseFuneralScoringRules,
+  type FuneralScoringRules,
+} from './FuneralScoringRulesEditor';
+import ramoCatalog from './cuestionario-ramos.json';
 
 const ALL_PLAN_CODES = ['2', '3', '4', '5', '6', '7', '8', '9'];
 const PANEL_CTX = readConfigPanelContext();
@@ -96,19 +102,30 @@ export function EmisionConfigPanel() {
   /** Evita que un refetch de config borre ediciones locales no guardadas */
   const healthQuestionsDirty = useRef(false);
 
-  /** Planes reales ramo funerario (personas) para el editor de preguntas. */
+  /** Planes del ramo que se está editando (personas) para asignar preguntas. */
   const [funeralPlanOptions, setFuneralPlanOptions] = useState<PlanOption[]>(
     FALLBACK_FUNERAL_PLAN_OPTIONS,
   );
+  const [planCodesByRamo, setPlanCodesByRamo] = useState<Record<string, string[]>>({
+    '9': FALLBACK_FUNERAL_PLAN_OPTIONS.map((p) => p.code),
+  });
   const [funeralPlansLoading, setFuneralPlansLoading] = useState(false);
   const [funeralPlansError, setFuneralPlansError] = useState(false);
+  const [scoringRules, setScoringRules] = useState<FuneralScoringRules>(
+    parseFuneralScoringRules(null),
+  );
+  const [preguntasVista, setPreguntasVista] = useState<'cuestionario' | 'puntaje'>('cuestionario');
+  /** Scoring no usa el SSO. Cada ramo tiene su lista en product_config.healthQuestionsByRamo. */
+  const [scoringRamo, setScoringRamo] = useState<'9' | '1' | '5'>('9');
+  const [byRamo, setByRamo] = useState<Record<string, HealthQuestionDraft[]>>({});
 
   useEffect(() => {
     if (producto !== 'funerario') return;
     let cancelled = false;
-    const cramo = getProductConfig().cramo || 9;
+    const cramo = scoringRamo;
     setFuneralPlansLoading(true);
     setFuneralPlansError(false);
+    if (cramo !== '9') setFuneralPlanOptions([]);
 
     (async () => {
       try {
@@ -117,7 +134,7 @@ export function EmisionConfigPanel() {
         const headers: Record<string, string> = {};
         if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
         const res = await fetch(
-          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(String(cramo))}`,
+          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(cramo)}`,
           { headers },
         );
         const data = await res.json().catch(() => ({}));
@@ -133,14 +150,21 @@ export function EmisionConfigPanel() {
           .filter(Boolean) as PlanOption[];
         if (mapped.length > 0) {
           setFuneralPlanOptions(mapped);
+          setPlanCodesByRamo((prev) => ({
+            ...prev,
+            [cramo]: mapped.map((p) => p.code),
+          }));
           setFuneralPlansError(false);
-        } else {
+        } else if (cramo === '9') {
           setFuneralPlanOptions(FALLBACK_FUNERAL_PLAN_OPTIONS);
+          setFuneralPlansError(true);
+        } else {
+          setFuneralPlanOptions([]);
           setFuneralPlansError(true);
         }
       } catch {
         if (!cancelled) {
-          setFuneralPlanOptions(FALLBACK_FUNERAL_PLAN_OPTIONS);
+          setFuneralPlanOptions(cramo === '9' ? FALLBACK_FUNERAL_PLAN_OPTIONS : []);
           setFuneralPlansError(true);
         }
       } finally {
@@ -151,7 +175,7 @@ export function EmisionConfigPanel() {
     return () => {
       cancelled = true;
     };
-  }, [producto]);
+  }, [producto, scoringRamo]);
 
   // ── Conexión API ──────────────────────────────────────────
   const [apiUrl, setApiUrl] = useState('');
@@ -171,6 +195,9 @@ export function EmisionConfigPanel() {
     setDiligenciaUmbral(dil?.umbralMultiplicador ?? 300);
     setDiasCarencia(config.diasCarencia ?? 0);
     setEdadMaxima(config.edadMaxima ?? 70);
+    if (producto === 'funerario') {
+      setScoringRules(parseFuneralScoringRules(config.healthScoringRules));
+    }
     if (!healthQuestionsDirty.current && producto === 'funerario') {
       const legacy = config.healthQuestions as HealthQuestionDraft[] | undefined;
       const rawBy = config.healthQuestionsByCanal as
@@ -208,6 +235,19 @@ export function EmisionConfigPanel() {
       setHealthByCanal({ ...by });
       setActiveCanal(useCanal);
       setHealthQuestions(by[useCanal]);
+      const storedRamo = config.healthQuestionsByRamo as
+        | Record<string, HealthQuestionDraft[]>
+        | undefined;
+      const ramoSeed = ramoCatalog as Record<'1' | '5' | '9', HealthQuestionDraft[]>;
+      const nextRamo: Record<string, HealthQuestionDraft[]> = {};
+      for (const key of ['1', '5', '9'] as const) {
+        const saved = storedRamo?.[key];
+        const fallback = ramoSeed[key] ?? [];
+        nextRamo[key] = enrichHealthQuestionScores(
+          Array.isArray(saved) && saved.length > 0 ? saved : fallback,
+        );
+      }
+      setByRamo(nextRamo);
     } else if (!healthQuestionsDirty.current && producto !== 'funerario') {
       setHealthQuestions([]);
     }
@@ -228,15 +268,15 @@ export function EmisionConfigPanel() {
   };
   const removeMapEntry = (idx: number) => { setApiMap(p => p.filter((_, i) => i !== idx)); setSaved(false); };
 
-  const fallbackCodes = funeralPlanOptions.map((p) => p.code);
-  const cleanQuestions = (list: HealthQuestionDraft[]): HealthQuestionDraft[] =>
+  const cleanQuestions = (list: HealthQuestionDraft[], ramo: '1' | '5' | '9' = '9'): HealthQuestionDraft[] =>
     list.map((q) => {
       const plans = (q.plans || []).map(String).filter(Boolean);
+      const codes = planCodesByRamo[ramo] || [];
       const next: HealthQuestionDraft = {
         ...q,
         id: String(q.id || '').trim() || `pregunta_${Date.now().toString(36)}`,
         label: String(q.label || '').trim() || 'Pregunta',
-        plans: plans.length > 0 ? plans : [...fallbackCodes],
+        plans: plans.includes('*') ? ['*'] : (plans.length > 0 ? plans : [...codes]),
         enabled: q.enabled !== false,
       };
       if (!next.showIf?.field) delete next.showIf;
@@ -256,8 +296,13 @@ export function EmisionConfigPanel() {
 
   const onHealthQuestionsChange = (next: HealthQuestionDraft[]) => {
     healthQuestionsDirty.current = true;
-    setHealthQuestions(next);
-    setHealthByCanal((prev) => ({ ...prev, [activeCanal]: next }));
+    if (scoringRamo === '9') {
+      setHealthQuestions(next);
+      setHealthByCanal((prev) => ({ ...prev, [activeCanal]: next }));
+      setByRamo((prev) => ({ ...prev, '9': next }));
+    } else {
+      setByRamo((prev) => ({ ...prev, [scoringRamo]: next }));
+    }
     setSaved(false);
   };
 
@@ -307,11 +352,6 @@ export function EmisionConfigPanel() {
     if (producto === 'funerario') {
       const canalKey = canalLocked ? (PANEL_CTX.canal || activeCanal) : activeCanal;
       cleanedQuestions = cleanQuestions(healthQuestions);
-      if (!cleanedQuestions.length) {
-        setSaved(false);
-        alert('No hay preguntas de salud para guardar. Agrega al menos una o restaura defaults.');
-        return;
-      }
       const snapshot: Record<string, HealthQuestionDraft[]> = {
         ...healthByCanal,
         [canalKey]: healthQuestions,
@@ -342,6 +382,12 @@ export function EmisionConfigPanel() {
       soloPreguntas && cleanedQuestions && byCanalPayload
         ? {
             healthQuestionsByCanal: byCanalPayload,
+            healthQuestionsByRamo: {
+              '1': cleanQuestions(byRamo['1'] || [], '1'),
+              '5': cleanQuestions(byRamo['5'] || [], '5'),
+              '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || []), '9'),
+            },
+            healthScoringRules: scoringRules,
             ...(Object.keys(byCanalPayload).includes('default')
               ? { healthQuestions: byCanalPayload.default }
               : {}),
@@ -365,6 +411,12 @@ export function EmisionConfigPanel() {
             ...(cleanedQuestions && byCanalPayload
               ? {
                   healthQuestionsByCanal: byCanalPayload,
+                  healthQuestionsByRamo: {
+                    '1': cleanQuestions(byRamo['1'] || [], '1'),
+                    '5': cleanQuestions(byRamo['5'] || [], '5'),
+                    '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || []), '9'),
+                  },
+                  healthScoringRules: scoringRules,
                   ...(Object.keys(byCanalPayload).includes('default')
                     ? { healthQuestions: byCanalPayload.default }
                     : {}),
@@ -559,6 +611,42 @@ export function EmisionConfigPanel() {
                 {/* ── TAB PREGUNTAS (funerario) ── */}
                 {tab === 'preguntas' && producto === 'funerario' && (
                   <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {([
+                          ['9', 'Funerario'],
+                          ['1', 'Vida'],
+                          ['5', 'Accidentes personales'],
+                        ] as const).map(([key, label]) => {
+                          const rows = byRamo[key] || [];
+                          const padres = rows.filter((q) => !q.showIf?.field).length;
+                          const active = scoringRamo === key;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => setScoringRamo(key)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                                active
+                                  ? 'bg-indigo-700 text-white'
+                                  : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                              }`}
+                              title={`${padres} preguntas que responde el cliente`}
+                            >
+                              {label}
+                              <span className={`ml-1.5 font-normal ${active ? 'text-indigo-100' : 'text-indigo-500'}`}>
+                                {padres} pregunta{padres === 1 ? '' : 's'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        El número es cuántas preguntas ve el cliente. El detalle “Especifique” no cuenta como pregunta.
+                        En cada ramo se marcan los planes, igual que en funerario. Funerario además se separa por canal.
+                      </p>
+                    </div>
+                    {scoringRamo === '9' && (
                     <div className="space-y-2.5">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -637,13 +725,57 @@ export function EmisionConfigPanel() {
                         </div>
                       )}
                     </div>
-                    <FuneralHealthQuestionsEditor
+                    )}
+                    <div className="inline-flex p-1 rounded-2xl bg-slate-100/80 border border-slate-200/70">
+                      <button
+                        type="button"
+                        onClick={() => setPreguntasVista('cuestionario')}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] ${
+                          preguntasVista === 'cuestionario'
+                            ? 'bg-white text-indigo-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <ClipboardList size={13} />
+                        Cuestionario
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreguntasVista('puntaje')}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] ${
+                          preguntasVista === 'puntaje'
+                            ? 'bg-white text-indigo-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Gauge size={13} />
+                        Destino del puntaje
+                      </button>
+                    </div>
+                    {preguntasVista === 'puntaje' ? (
+                    <FuneralScoringRulesEditor
+                      rules={scoringRules}
                       questions={healthQuestions}
+                      onChange={(next) => {
+                        setScoringRules(next);
+                        setSaved(false);
+                      }}
+                    />
+                    ) : (
+                    <FuneralHealthQuestionsEditor
+                      questions={scoringRamo === '9' ? healthQuestions : (byRamo[scoringRamo] || [])}
                       onChange={onHealthQuestionsChange}
                       planOptions={funeralPlanOptions}
                       plansLoading={funeralPlansLoading}
                       plansError={funeralPlansError}
+                      ramoName={scoringRamo === '1' ? 'Vida' : scoringRamo === '5' ? 'Accidentes personales' : 'Funerario'}
+                      seedQuestions={
+                        scoringRamo === '9'
+                          ? undefined
+                          : (ramoCatalog as Record<'1' | '5', HealthQuestionDraft[]>)[scoringRamo]
+                      }
                     />
+                    )}
                   </div>
                 )}
 

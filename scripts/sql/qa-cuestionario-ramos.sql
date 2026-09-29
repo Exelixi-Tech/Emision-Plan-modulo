@@ -1,0 +1,45 @@
+DO $$
+DECLARE
+  rec record;
+  cfg jsonb;
+  canal jsonb;
+  k text;
+  ramos jsonb := $json$
+{"1":[{"id":"habitos","type":"boolean","label":"¿Fuma, consume bebidas alcohólicas, o utiliza o ha utilizado drogas, estupefacientes o medicamentos no recetados?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"habitosDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"habitos","equals":true}},{"id":"deporteRiesgo","type":"boolean","label":"¿Practica habitualmente deportes de alto riesgo o aviación no comercial?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"deporteRiesgoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"deporteRiesgo","equals":true}},{"id":"pesoInvoluntario","type":"boolean","label":"¿Ha aumentado o disminuido más de 5 kg involuntariamente en los últimos 3 años?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"pesoInvoluntarioDetalle","type":"text","label":"Indique los kg variados y la causa","required":true,"plans":["*"],"showIf":{"field":"pesoInvoluntario","equals":true}},{"id":"cardiovascular","type":"boolean","label":"Sistema cardiovascular: ¿padece o ha padecido de tensión alta, infartos, soplos, afecciones en venas o arterias, o trastornos o tumores en la sangre?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"cardiovascularDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"cardiovascular","equals":true}},{"id":"respiratorioDigestivo","type":"boolean","label":"Sistema respiratorio y digestivo: ¿ha sido diagnosticado o tratado por asma, tos crónica, neumonía, tuberculosis, úlceras, gastritis severa o enfermedades del hígado, vesícula, hemorroides, páncreas o colon?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"respiratorioDigestivoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"respiratorioDigestivo","equals":true}},{"id":"endocrinoRenal","type":"boolean","label":"Sistema endocrino y renal: ¿sufre de diabetes, obesidad, alteraciones de la tiroides, enfermedad renal, vejiga o próstata?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"nerviosoSentidos","type":"boolean","label":"Sistema nervioso y sentidos: ¿presenta o ha tenido migrañas persistentes, dolores de columna o espalda, convulsiones, vértigos, parálisis o defectos de vista u oído?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"nerviosoSentidosDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"nerviosoSentidos","equals":true}},{"id":"oncologico","type":"boolean","label":"¿Ha sido diagnosticado, tratado o se encuentra en control por quistes, tumores, neoplasias o algún tipo de cáncer?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"oncologicoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"oncologico","equals":true}},{"id":"quirurgico","type":"boolean","label":"¿Ha tenido accidentes, cirugías, hospitalizaciones, transfusiones, posee tratamiento actual o tiene prevista alguna intervención?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"quirurgicoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"quirurgico","equals":true}},{"id":"defectoFisico","type":"boolean","label":"¿Presenta alguna deformidad, amputación, defecto físico, o afección congénita o adquirida?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"defectoFisicoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"defectoFisico","equals":true}},{"id":"embarazo","type":"boolean","label":"Si aplica: ¿existe sospecha o confirmación de embarazo actual?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"ginecologico","type":"boolean","label":"¿Presenta padecimientos ginecológicos o de glándulas mamarias?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"ginecologicoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"ginecologico","equals":true}},{"id":"otraCondicion","type":"boolean","label":"¿Padece, ha padecido o ha sido diagnosticado de alguna otra enfermedad, síntoma, lesión o anomalía que no se haya nombrado, o está en proceso de diagnóstico?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"otraCondicionDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"otraCondicion","equals":true}}],"5":[{"id":"manoDominante","type":"select","label":"¿Cuál es su mano dominante?","required":true,"plans":["*"],"options":[{"value":"diestro","label":"Diestro (mano derecha)"},{"value":"zurdo","label":"Zurdo (mano izquierda)"},{"value":"ambidiestro","label":"Ambidiestro (ambas manos)"}],"optionScores":{}},{"id":"ocupacion","type":"text","label":"Ocupación u oficio principal","required":true,"plans":["*"]},{"id":"laboresRiesgo","type":"boolean","label":"¿Realiza actividades laborales en alturas (mayores a 1.5 metros), con alta tensión eléctrica, manejo de maquinaria pesada, explosivos, químicos o manejo de carga?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"deporteRiesgo","type":"boolean","label":"¿Practica deportes de alto riesgo o realiza actividades de aviación no comercial?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"deporteRiesgoDetalle","type":"text","label":"Especifique la actividad","required":true,"plans":["*"],"showIf":{"field":"deporteRiesgo","equals":true}},{"id":"defectoFisico","type":"boolean","label":"¿Presenta alguna amputación, deformidad, limitación motora o defecto físico congénito o adquirido?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"defectoFisicoDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"defectoFisico","equals":true}},{"id":"condicionMedica","type":"boolean","label":"¿Ha padecido, padece o ha sido diagnosticado con diabetes, afecciones del sistema nervioso, osteomuscular o de los sentidos, del sistema cardiovascular o coagulación, o del sistema respiratorio (asma, EPOC o enfisema)?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"condicionMedicaDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"condicionMedica","equals":true},"description":"Diabetes, convulsiones, epilepsia, parálisis, vértigos, columna, hipertensión, infarto, trombosis, asma, EPOC u otras."}],"9":[{"id":"buenEstadoSalud","type":"boolean","label":"¿Se encuentra actualmente en buen estado de salud?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"buenEstadoSaludDetalle","type":"text","label":"Especifique","required":false,"plans":["*"],"showIf":{"field":"buenEstadoSalud","equals":false}},{"id":"patologiaGrave","type":"boolean","label":"¿Ha padecido, padece o ha sido diagnosticado con patologías coronarias o cardíacas, cáncer, enfermedad renal o hepática crónica, o alguna condición médica grave o terminal?","required":true,"plans":["*"],"scoreIfTrue":0,"scoreIfFalse":0},{"id":"patologiaGraveDetalle","type":"text","label":"Especifique","required":true,"plans":["*"],"showIf":{"field":"patologiaGrave","equals":true}}]}
+$json$::jsonb;
+BEGIN
+  FOR rec IN
+    SELECT product_config_id, product_config_json
+    FROM product_config
+    WHERE product_config_producto = 'funerario'
+      AND product_config_modulo = 'emision'
+  LOOP
+    cfg := rec.product_config_json;
+    cfg := jsonb_set(cfg, '{healthQuestionsByRamo}', ramos, true);
+    cfg := jsonb_set(cfg, '{healthQuestions}', ramos->'9', true);
+    IF jsonb_typeof(cfg->'healthQuestionsByCanal') = 'object' THEN
+      canal := '{}'::jsonb;
+      FOR k IN SELECT jsonb_object_keys(cfg->'healthQuestionsByCanal') LOOP
+        IF k = 'default' THEN
+          canal := canal || jsonb_build_object(k, ramos->'9');
+        ELSIF jsonb_typeof(cfg->'healthQuestionsByCanal'->k) = 'array' THEN
+          canal := canal || jsonb_build_object(k, (
+            SELECT COALESCE(jsonb_agg(elem || '{"plans":["*"]}'::jsonb), '[]'::jsonb)
+            FROM jsonb_array_elements(cfg->'healthQuestionsByCanal'->k) elem
+          ));
+        END IF;
+      END LOOP;
+      IF NOT canal ? 'default' THEN
+        canal := canal || jsonb_build_object('default', ramos->'9');
+      END IF;
+      cfg := jsonb_set(cfg, '{healthQuestionsByCanal}', canal, true);
+    ELSE
+      cfg := jsonb_set(cfg, '{healthQuestionsByCanal}', jsonb_build_object('default', ramos->'9'), true);
+    END IF;
+    UPDATE product_config
+    SET product_config_json = cfg,
+        product_config_updated_at = now()
+    WHERE product_config_id = rec.product_config_id;
+  END LOOP;
+END
+$$;

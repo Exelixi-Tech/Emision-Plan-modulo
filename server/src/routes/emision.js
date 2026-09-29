@@ -15,6 +15,7 @@ const express = require('express');
 const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 
 const router = express.Router();
 
@@ -230,6 +231,18 @@ router.post('/policies/emit', async (req, res) => {
       empresaNombre: req.empresa?.nombre,
       authToken: req.nexusToken,
     });
+    try {
+      await registerIssuedPolicy({
+        empresaId: req.empresa?.id,
+        producto: 'rcv',
+        emission: result,
+        state: mergedState,
+        planNombre: plan || mergedState?.selectedPlan?.name,
+        frecuencia: frecuencia || mergedState?.rcv?.frecuencia,
+      });
+    } catch (feedErr) {
+      console.warn('[modulo-emision/emit] feed Nexus:', feedErr?.message || feedErr);
+    }
     return res.status(201).json({
       success: true, message: 'Poliza emitida exitosamente.',
       policy: {

@@ -12,17 +12,32 @@ export interface ProductConfig {
   id: ProductId;
   label: string;
   fullLabel: string;
-  /** Ramo La Mundial asociado (RCV=18, Funerario=9). 0 en flujo Exélixi genérico. */
+  /** Ramo La Mundial asociado (RCV=18, Funerario=9, Vida=1, AP=5). 0 en flujo Exélixi genérico. */
   cramo: number;
+  /** Código de producto La Mundial (57=Funerario, 76=Vida, 78=AP, 79=AP). */
+  cproducto?: string;
   /** True si el flujo incluye datos de vehículo (RCV). */
   hasVehicle: boolean;
   exelixiCatalog?: boolean;
   builderProductId?: string;
 }
 
+/** Ramo patrimonial por defecto. Solo aplica si el SSO no envía `cramo`. */
+export const PATRIMONIAL_RAMO_DEFAULT = parseInt(
+  import.meta.env.VITE_LAMUNDIAL_RAMO_PATRIMONIAL || '20',
+  10,
+);
+
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
-  rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
-  funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, hasVehicle: false },
+  rcv:          { id: 'rcv',          label: 'RCV',          fullLabel: 'Suscripción RCV',               cramo: 18, hasVehicle: true  },
+  funerario:    { id: 'funerario',    label: 'Funerario',    fullLabel: 'Seguro Funerario',              cramo: 9,  cproducto: '57', hasVehicle: false },
+  patrimoniales:{ id: 'patrimoniales',label: 'Patrimoniales',fullLabel: 'Seguro Patrimonial',           cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
+  /** Vida Individual La Mundial — cproducto 76, ramo 1 */
+  vida:         { id: 'vida',         label: 'Vida',         fullLabel: 'Seguro de Vida',                cramo: 1,  cproducto: '76', hasVehicle: false },
+  /** Accidentes Personales cproducto 78, ramo 5 */
+  ap:           { id: 'ap',           label: 'AP',           fullLabel: 'Accidentes Personales',         cramo: 5,  cproducto: '78', hasVehicle: false },
+  /** Accidentes Personales cproducto 79, ramo 5 */
+  ap79:         { id: 'ap79',         label: 'AP79',         fullLabel: 'Accidentes Personales (79)',    cramo: 5,  cproducto: '79', hasVehicle: false },
   'com-fam': { id: 'com-fam', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 28, hasVehicle: false },
   combinado_familiar: { id: 'combinado_familiar', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 28, hasVehicle: false },
   proveedor: { id: 'proveedor', label: 'Plan Proveedor', fullLabel: 'Planes con Proveedor', cramo: 28, hasVehicle: false },
@@ -34,7 +49,7 @@ export const RCV_RAMO_BINACIONAL = parseInt(
   10,
 );
 
-const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'com-fam', 'combinado_familiar', 'proveedor'];
+const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimoniales', 'vida', 'ap', 'ap79', 'com-fam', 'combinado_familiar', 'proveedor'];
 const STORAGE_KEY = 'exelixi_product';
 
 export interface ProductDetectHints {
@@ -48,18 +63,15 @@ export interface ProductDetectHints {
  * Detecta rcv|funerario y lo persiste en sessionStorage (Nexus verify / bridge).
  */
 export function persistProductFromHints(hints?: ProductDetectHints): ProductId | null {
-  if (hints?.product === 'funerario') {
-    try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
-    return 'funerario';
-  }
-  if (hints?.product === 'rcv') {
-    try { sessionStorage.setItem(STORAGE_KEY, 'rcv'); } catch { /* ignore */ }
-    return 'rcv';
+  const raw = hints?.product != null ? String(hints.product).trim() : '';
+  if (VALID_PRODUCTS.includes(raw as ProductId)) {
+    try { sessionStorage.setItem(STORAGE_KEY, raw); } catch { /* ignore */ }
+    return raw as ProductId;
   }
   if (hints?.url) {
     try {
       const fromUrl = new URL(hints.url, window.location.origin).searchParams.get('product');
-      if (fromUrl === 'funerario' || fromUrl === 'rcv') {
+      if (fromUrl && VALID_PRODUCTS.includes(fromUrl as ProductId)) {
         sessionStorage.setItem(STORAGE_KEY, fromUrl);
         return fromUrl as ProductId;
       }
@@ -69,6 +81,18 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
   if (label.includes('funerar')) {
     try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
     return 'funerario';
+  }
+  if (label.includes('patrimonial')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'patrimoniales'); } catch { /* ignore */ }
+    return 'patrimoniales';
+  }
+  if (label.includes('vida')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'vida'); } catch { /* ignore */ }
+    return 'vida';
+  }
+  if (label.includes('accidente') || label.includes(' ap ') || label.includes('ap79')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'ap'); } catch { /* ignore */ }
+    return 'ap';
   }
   return null;
 }
@@ -108,6 +132,16 @@ export function getProductConfig(): ProductConfig {
 
 export function isFunerario(): boolean {
   return getProductId() === 'funerario';
+}
+
+/** True si el producto usa el wizard de personas (funerario, vida, AP). */
+export function isFunerarioLike(): boolean {
+  const id = getProductId();
+  return id === 'funerario' || id === 'vida' || id === 'ap' || id === 'ap79';
+}
+
+export function isPatrimoniales(): boolean {
+  return getProductId() === 'patrimoniales';
 }
 
 export function isRcv(): boolean {

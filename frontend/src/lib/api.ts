@@ -3,19 +3,67 @@ import type { CanalVisibility } from './canal-visibility';
 import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
+import { useWizardStore } from '../store/wizardStore';
+import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
+import {
+  composeGestorCsubitem,
+  normalizeCentidad,
+  readMarketplaceActorSnapshot,
+  resolveGestorForQuery,
+} from './sso-metadata';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
-/** centidad/citem del JWT SSO — fallback si el proxy no reenvía metadata completa. */
-function appendCanalEntityQuery(qs: URLSearchParams): boolean {
-  const token = getNexusToken(NEXUS_TOKEN_KEY);
-  const meta = token ? decodeNexusTokenMetadata(token) : null;
-  if (!meta) return false;
+function scrubActorMetaForExclusion(meta: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...meta };
+  const composed = composeGestorCsubitem(out);
+  if (composed) {
+    out.cgestor = composed;
+    out.csubitem = composed;
+    return out;
+  }
+  delete out.csubitem;
+  delete out.cgestor;
+  delete out.cgestor_in;
+  return out;
+}
 
-  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+function appendGestorExclusionQuery(qs: URLSearchParams, meta: Record<string, unknown>): void {
+  const actor = scrubActorMetaForExclusion(meta);
+  const csubitem = composeGestorCsubitem(actor);
+  if (!csubitem) return;
+
+  qs.set('csubitem', csubitem);
+  qs.set('cgestor', csubitem);
+}
+
+/** centidad/citem del JWT SSO, snapshot bridge o metadataCanal (flujo tarjeta). */
+function appendCanalEntityQuery(qs: URLSearchParams): boolean {
+  const storeMeta = (
+    useWizardStore.getState().metadataCanal as Record<string, unknown> | null
+  ) ?? {};
+  const tarjetaMeta = shouldUseTarjetaPublicApi() ? readTarjetaMetadataCanal() : null;
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+
+  const snapshot = readMarketplaceActorSnapshot();
+  const meta: Record<string, unknown> = {
+    ...snapshot,
+    ...(tarjetaMeta || {}),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+  const gestorHint = resolveGestorForQuery({
+    ...snapshot,
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  });
+  if (gestorHint) meta.cgestor = gestorHint;
+
+  const centidad = normalizeCentidad(meta);
   const citemRaw = meta.citem
     ?? (centidad === 'P' ? meta.cproductor : null)
     ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
@@ -25,8 +73,156 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   if (citem) qs.set('citem', citem);
   if (meta.cproducto != null) qs.set('cproducto', String(meta.cproducto));
   if (meta.cramo != null) qs.set('cramo', String(meta.cramo));
+  appendGestorExclusionQuery(qs, meta);
 
-  return Boolean(centidad && citem);
+  if (centidad && citem) return true;
+
+  if (meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    if (!centidad) qs.set('centidad', 'P');
+    if (!citem) qs.set('citem', String(meta.cproductor).trim());
+    return true;
+  }
+
+  return Boolean(resolveGestorForQuery(meta));
+}
+
+const FUNERAL_CANAL_QUERY_KEYS = [
+  'centidad',
+  'citem',
+  'cgestor',
+  'cgestor_in',
+  'cproducto',
+  'cproductor',
+  'cusuario',
+  'ccanalalt',
+  'ccanalalt_in',
+  'cscanalalt',
+  'cscanalalt_in',
+] as const;
+
+/** Canal SSO del wizard funerario/vida/AP (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams, cproductoOverride?: string): boolean {
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+  const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
+  const meta: Record<string, unknown> = {
+    ...readMarketplaceActorSnapshot(),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+
+  for (const key of FUNERAL_CANAL_QUERY_KEYS) {
+    if (meta[key] != null && String(meta[key]).trim() !== '') {
+      qs.set(key, String(meta[key]).trim());
+    }
+  }
+
+  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const citemRaw = meta.citem
+    ?? (centidad === 'P' ? meta.cproductor : null)
+    ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
+  const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
+  if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
+  if (citem && !qs.get('citem')) qs.set('citem', citem);
+  if (!qs.get('centidad') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('centidad', 'P');
+  }
+  if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('citem', String(meta.cproductor).trim());
+  }
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    qs.set('cramo', String(meta.cramo).trim());
+  }
+  // El producto del SSO manda. El argumento solo cubre si el token no trae cproducto.
+  const fromSso = qs.get('cproducto');
+  const effectiveCproducto = (fromSso && fromSso.trim() !== '')
+    ? fromSso.trim()
+    : (cproductoOverride || '57');
+  qs.set('cproducto', effectiveCproducto);
+  // Para funerario (57) el SP usa ramo 45 internamente
+  if (effectiveCproducto === '57') qs.set('cramo', '45');
+  if (qs.get('cproductor') === '80080') qs.delete('cproductor');
+
+  return Boolean(
+    (centidad && citem)
+    || (meta.cproductor != null && String(meta.cproductor).trim() !== '')
+    || (meta.cgestor != null && String(meta.cgestor).trim() !== '')
+    || (meta.cgestor_in != null && String(meta.cgestor_in).trim() !== ''),
+  );
+}
+
+/** Metadata del canal SSO: snapshot marketplace → JWT → metadataCanal del wizard. */
+function readSsoCanalMeta(): Record<string, unknown> {
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+  const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
+  return {
+    ...readMarketplaceActorSnapshot(),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+}
+
+/**
+ * Ramo del cuestionario: el del flujo SSO, si no el del plan o el del producto.
+ */
+export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: number): number {
+  const sso = resolveSsoCramo();
+  if (sso != null) return sso;
+  const plan = Number(planCramo);
+  if (Number.isFinite(plan) && plan > 0) return plan;
+  const product = Number(productCramo);
+  if (Number.isFinite(product) && product > 0) return product;
+  return 9;
+}
+
+/**
+ * Ramo para cotizar: funerario (57 o sin producto) usa el del SSO como hoy;
+ * otro producto usa el ramo del plan elegido (el SSO trae el ramo del producto, ej. vida 47,
+ * pero el plan está tarifado en su ramo técnico, ej. 1). Igual que SysIP.
+ */
+export function resolveQuoteCramo(planCramo: number | undefined, fallback: number): number {
+  const prod = String(readSsoCanalMeta().cproducto ?? '').trim();
+  const plan = Number(planCramo);
+  const planOk = Number.isFinite(plan) && plan > 0;
+  if (prod && prod !== '57' && planOk) return plan;
+  return resolveSsoCramo() ?? (planOk ? plan : fallback);
+}
+
+/** Ramo enviado por el SSO. `null` si el canal no lo declara. */
+export function resolveSsoCramo(): number | null {
+  const raw = readSsoCanalMeta().cramo;
+  if (raw == null || String(raw).trim() === '') return null;
+  const cramo = parseInt(String(raw).trim(), 10);
+  return Number.isFinite(cramo) && cramo > 0 ? cramo : null;
+}
+
+/** Canal SSO genérico (JWT + sid + snapshot) sin forzar cproducto funerario 57. */
+function appendSsoCanalQuery(qs: URLSearchParams): void {
+  const meta = readSsoCanalMeta();
+
+  for (const key of FUNERAL_CANAL_QUERY_KEYS) {
+    if (meta[key] != null && String(meta[key]).trim() !== '') {
+      qs.set(key, String(meta[key]).trim());
+    }
+  }
+
+  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const citemRaw = meta.citem
+    ?? (centidad === 'P' ? meta.cproductor : null)
+    ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
+  const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
+  if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
+  if (citem && !qs.get('citem')) qs.set('citem', citem);
+  if (!qs.get('centidad') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('centidad', 'P');
+  }
+  if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('citem', String(meta.cproductor).trim());
+  }
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    qs.set('cramo', String(meta.cramo).trim());
+  }
 }
 
 function shouldUseBridgeRules(): boolean {
@@ -571,7 +767,12 @@ export const catalogoApi = {
     const hasEntity = appendCanalEntityQuery(qs);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
-    return api.get<{ success: boolean; planes: PlanRcv[]; canalVisibility?: CanalVisibility | null }>(
+    return api.get<{
+      success: boolean;
+      planes: PlanRcv[];
+      mensaje?: string;
+      canalVisibility?: CanalVisibility | null;
+    }>(
       `/catalogo/planes${query ? `?${query}` : ''}`,
     );
   },
@@ -592,10 +793,23 @@ export const catalogoApi = {
 //  Personas (producto Funerario, ramo 9) — planes y cotización
 // ──────────────────────────────────────────────────────────────────────
 
+export interface PlanParentescoPer {
+  cparen: number;
+  xparentesco: string;
+  min_edad: number;
+  max_edad: number;
+}
+
 export interface PlanPer {
   cplan: string;
   xplan?: string;
+  cramo?: number;
   cmoneda?: string;
+  nmax_dep?: number | null;
+  maxAsegurados?: number;
+  parentescos?: PlanParentescoPer[];
+  /** Días de vigencia (Viajero / maplanes_frec). */
+  ndias?: number | null;
 }
 
 /** Asegurado que se envía a la cotización de personas (formato amigable). */
@@ -611,15 +825,44 @@ export interface CotizacionPerPayload {
   asegurados: CotizacionPerAsegurado[];
   ifrecuencia: string;
   cramo?: number;
+  /** Viajero prorrata: días del plan elegido. */
+  ndias?: number;
+  fdesde?: string;
+  fhasta?: string;
 }
 
 export const personasApi = {
-  /** Planes de personas vigentes (ramo 9 = funerario por defecto). */
-  planes: (cramo = 9) =>
-    api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?cramo=${cramo}`),
+  /** Planes del cproducto que trae el SSO. El ramo del token se conserva salvo producto 57. */
+  planes: (cramo = 9) => {
+    const qs = new URLSearchParams();
+    qs.set('cramo', String(cramo));
+    appendFuneralCanalQuery(qs);
+    return api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?${qs.toString()}`);
+  },
   /** Cotización de personas (getCotizacionPer). */
   cotizar: (payload: CotizacionPerPayload) =>
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
+};
+
+export const patrimonialApi = {
+  /** El ramo del SSO manda; `cramo` solo se usa si el canal no lo declara. */
+  planes: (cramo?: number) => {
+    const qs = new URLSearchParams();
+    const ramo = resolveSsoCramo() ?? cramo;
+    if (ramo != null) qs.set('cramo', String(ramo));
+    appendSsoCanalQuery(qs);
+    return api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?${qs.toString()}`);
+  },
+  cotizar: (payload: {
+    cplan: string;
+    cramo?: number;
+    ifrecuencia?: string;
+    pdescuento?: number;
+    precargo?: number;
+  }) => {
+    const cramo = resolveSsoCramo() ?? payload.cramo;
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -678,7 +921,7 @@ export async function getFrecuenciasByPlan(cplan: string, cramo: number = 9): Pr
 //  Cuestionario de salud funerario (preguntas Exélixi + persistencia BD)
 // ──────────────────────────────────────────────────────────────────────
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestion {
   id: string;
@@ -689,11 +932,17 @@ export interface HealthQuestion {
   plans: string[];
   showIf?: { field: string; equals: boolean | string };
   options?: { value: string; label: string }[];
+  /** Si true, la respuesta debe ser Sí (p. ej. términos). Destildar deja el cuestionario incompleto. */
+  blockIfFalse?: boolean;
+  blockReason?: string;
 }
 
-export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
+export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number, cproducto?: string): Promise<HealthQuestion[]> {
+  const qs = new URLSearchParams({ cplan });
+  if (cramo != null && Number.isFinite(cramo) && cramo > 0) qs.set('cramo', String(cramo));
+  if (cproducto) qs.set('cproducto', cproducto);
   const { data } = await api.get<{ success: boolean; questions: HealthQuestion[] }>(
-    `/funeral/health-questions?cplan=${encodeURIComponent(cplan)}`,
+    `/funeral/health-questions?${qs.toString()}`,
   );
   return data?.questions ?? [];
 }
@@ -702,6 +951,7 @@ export interface SaveHealthAnswersPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomadorRif?: string;
   planName?: string;
   answers: Record<string, unknown>;
@@ -721,6 +971,7 @@ export interface SubmitFuneralReviewPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomador: Record<string, unknown>;
   asegurado?: Record<string, unknown>;
   sameInsured?: boolean;
@@ -738,12 +989,15 @@ export interface SubmitFuneralReviewPayload {
 
 export async function submitFuneralPolicyReview(
   payload: SubmitFuneralReviewPayload,
-): Promise<{ submission: FuneralSubmissionResult; scoring: { total: number } }> {
+): Promise<{
+  submission: FuneralSubmissionResult;
+  scoring: { total: number; verdict?: string; verdictMessage?: string };
+}> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
-      scoring: { total: number };
+      scoring: { total: number; verdict?: string; verdictMessage?: string };
     }>('/funeral/submissions', payload);
     return { submission: data.submission, scoring: data.scoring };
   } catch (err) {
@@ -836,15 +1090,11 @@ export async function getProveedores(params: {
   cci_rif?: string | number;
   cclave_num?: number;
 }): Promise<ProveedorItem[]> {
-  const mockItems: ProveedorItem[] = [
-    { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
-    { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
-  ];
-
-  try {
+  // Sin proveedores de ejemplo: si el servicio falla, el error llega a la pantalla.
+  {
     const qs = new URLSearchParams({
       cplan: params.cplan,
-      cramo: String(params.cramo ?? 28),
+      ...(params.cramo != null ? { cramo: String(params.cramo) } : {}),
     });
     if (params.centidad) qs.set('centidad', params.centidad);
     if (params.citem) qs.set('citem', params.citem);
@@ -879,15 +1129,13 @@ export async function getProveedores(params: {
         xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
         xcliente: String(item.xcliente || item.xproveedor || '').trim(),
         cplan: item.cplan || params.cplan,
-        cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
-        itiposerv: item.itiposerv || 'S',
+        cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : undefined),
+        itiposerv: item.itiposerv,
       }));
     }
-  } catch (err) {
-    console.warn('[getProveedores] valrep/proveedores fallback to mock items', err);
   }
 
-  return mockItems;
+  return [];
 }
 
 /**

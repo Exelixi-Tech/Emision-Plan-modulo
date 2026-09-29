@@ -118,19 +118,42 @@ export function PaymentStep() {
 
   async function handleRegisterProveedorPolicy(overridePoliza?: number | string) {
     const snap = useWizardStore.getState();
-    const poliza = overridePoliza || snap.policy?.cnpoliza || 10001;
+    const poliza = overridePoliza || snap.policy?.cnpoliza;
     const now = new Date();
     const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
 
     setProviderRegStatus('loading');
     setProviderRegError('');
 
-    const cciRifClean = Number(String(snap.selectedProveedor?.cci_rif ?? snap.cproveedor ?? '').replace(/\D/g, '')) || 123456789;
-    const claveNum = Number(snap.selectedProveedor?.cclave_num ?? snap.cclave_num ?? 1234);
-    const tipoServ = String(snap.selectedProveedor?.itiposerv ?? snap.itiposerv ?? 'S');
-    const plan = String(snap.selectedProveedor?.cplan ?? snap.cplan_proveedor ?? snap.selectedPlan?.cplan ?? 'IGEMA');
-    const ramo = Number(snap.selectedProveedor?.cramo ?? snap.cramo_proveedor ?? product.cramo ?? 28);
-    const usuario = snap.metadataCanal?.cusuario ? Number(snap.metadataCanal.cusuario) : 2764;
+    // Sin valores de relleno: si falta un dato no se escribe en Sis2000 (adproveedor).
+    const cciRifClean = Number(String(snap.selectedProveedor?.cci_rif ?? snap.cproveedor ?? '').replace(/\D/g, ''));
+    const claveNum = Number(snap.selectedProveedor?.cclave_num ?? snap.cclave_num);
+    const tipoServ = String(snap.selectedProveedor?.itiposerv ?? snap.itiposerv ?? '').trim();
+    const plan = String(snap.selectedProveedor?.cplan ?? snap.cplan_proveedor ?? snap.selectedPlan?.cplan ?? '').trim();
+    const ramo = Number(snap.selectedProveedor?.cramo ?? snap.cramo_proveedor ?? product.cramo);
+    const usuario = Number(snap.metadataCanal?.cusuario);
+    const mcosto = Number(quote?.mprima);
+    const mcostoext = Number(quote?.mprimaext ?? snap.selectedPlan?.priceNum);
+    const ptasamon = Number(quote?.ptasa);
+
+    const faltantes = ([
+      ['póliza', Boolean(poliza)],
+      ['RIF del proveedor', cciRifClean > 0],
+      ['clave del proveedor', claveNum > 0],
+      ['tipo de servicio', Boolean(tipoServ)],
+      ['plan', Boolean(plan)],
+      ['ramo', ramo > 0],
+      ['usuario (cusuario)', usuario > 0],
+      ['prima', mcosto > 0 && mcostoext > 0],
+      ['tasa', ptasamon > 0],
+    ] as const).filter(([, ok]) => !ok).map(([label]) => label);
+    if (!poliza || faltantes.length > 0) {
+      const msg = `Faltan datos para registrar el proveedor: ${faltantes.join(', ')}.`;
+      setProviderRegError(msg);
+      setProviderRegStatus('error');
+      toast.error('Error en registro de proveedor', msg);
+      throw new Error(msg);
+    }
 
     const payload: RegisterPolicyProveedorDto = {
       cpoliza: poliza,
@@ -145,10 +168,10 @@ export function PaymentStep() {
       cci_rif: cciRifClean,
       cclave_num: claveNum,
       itiposerv: tipoServ,
-      mcosto: Number(quote?.mprima ?? 500),
-      mcostoext: Number(quote?.mprimaext ?? snap.selectedPlan?.priceNum ?? 10),
+      mcosto,
+      mcostoext,
       cmoneda: 'D',
-      ptasamon: Number(quote?.ptasa ?? 50),
+      ptasamon,
       fingreso: now.toISOString(),
       cusuario: usuario,
     };
@@ -932,8 +955,8 @@ export function PaymentStep() {
             </div>
             <div>
               <span className="text-[0.65rem] uppercase text-slate-400 font-sans font-bold block">cplan / cramo</span>
-              <strong className="text-indigo-900">{useWizardStore.getState().cplan_proveedor || selectedPlan?.cplan || 'IGEMA'}</strong>
-              <span className="block text-[0.65rem] text-slate-500">Ramo: {useWizardStore.getState().cramo_proveedor ?? product.cramo ?? 28}</span>
+              <strong className="text-indigo-900">{useWizardStore.getState().cplan_proveedor || selectedPlan?.cplan || '—'}</strong>
+              <span className="block text-[0.65rem] text-slate-500">Ramo: {useWizardStore.getState().cramo_proveedor ?? product.cramo ?? '—'}</span>
             </div>
             <div>
               <span className="text-[0.65rem] uppercase text-slate-400 font-sans font-bold block">cclave_num</span>

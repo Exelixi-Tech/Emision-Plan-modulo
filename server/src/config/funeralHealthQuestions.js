@@ -46,7 +46,7 @@ const TIER = {
   ],
 };
 
-/** @typedef {'boolean' | 'text' | 'select'} HealthQuestionType */
+/** @typedef {'boolean' | 'text' | 'select' | 'multi_select'} HealthQuestionType */
 
 /**
  * @typedef {Object} HealthQuestion
@@ -62,113 +62,16 @@ const TIER = {
  * @property {number} [scoreIfFalse]
  * @property {number} [scoreIfFilled]
  * @property {Record<string, number>} [optionScores]
+ * @property {Record<string, 'reject'|'refer'|'score'>} [optionActions]
  * @property {boolean} [blockIfTrue]
  * @property {boolean} [blockIfFalse]
  * @property {string} [blockReason]
  */
 
+const { SIS2000_V4_CATALOG } = require('./funeralHealthQuestions.sis2000-v4');
+
 /** @type {HealthQuestion[]} */
-const CATALOG = [
-  // ── Base: todos los planes ────────────────────────────────────────────────
-  {
-    id: 'fuma',
-    type: 'boolean',
-    label: '¿Fuma o ha fumado en los últimos 12 meses?',
-    description: 'Incluye cigarrillos, tabaco, puros o vapeo.',
-    required: true,
-    plans: TIER.TODOS,
-    scoreIfTrue: 15,
-  },
-  {
-    id: 'diagnosticoEnfermedad',
-    type: 'boolean',
-    label: '¿Ha sido diagnosticado con alguna enfermedad grave?',
-    description: 'Cáncer, diabetes, hipertensión, cardiopatías, VIH, etc.',
-    required: true,
-    plans: TIER.TODOS,
-    scoreIfTrue: 40,
-  },
-  {
-    id: 'descripcionEnfermedad',
-    type: 'text',
-    label: 'Describa la enfermedad diagnosticada',
-    description: 'Indique enfermedad, tratamiento y fecha aproximada del diagnóstico.',
-    required: true,
-    plans: TIER.TODOS,
-    showIf: { field: 'diagnosticoEnfermedad', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'aceptaTerminos',
-    type: 'boolean',
-    label: 'Acepto los términos y condiciones',
-    description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
-    required: true,
-    plans: TIER.TODOS,
-    scoreIfFalse: 100,
-    blockIfFalse: true,
-    blockReason: 'Debe aceptar los términos y condiciones.',
-  },
-
-  // ── Intermedio en adelante (2.500$ – 7.500$): cplan 5, 6, 7, 8, 9 ───────
-  {
-    id: 'consumeAlcohol',
-    type: 'boolean',
-    label: '¿Consume alcohol de forma habitual?',
-    description: 'Más de 2 copas por semana de forma regular.',
-    required: true,
-    plans: [...TIER.INTERMEDIO, ...TIER.ALTO],
-    scoreIfTrue: 10,
-  },
-  {
-    id: 'hospitalizacionReciente',
-    type: 'boolean',
-    label: '¿Ha sido hospitalizado en los últimos 24 meses?',
-    required: true,
-    plans: [...TIER.INTERMEDIO, ...TIER.ALTO],
-    scoreIfTrue: 25,
-  },
-  {
-    id: 'motivoHospitalizacion',
-    type: 'text',
-    label: 'Motivo de la hospitalización',
-    required: true,
-    plans: [...TIER.INTERMEDIO, ...TIER.ALTO],
-    showIf: { field: 'hospitalizacionReciente', equals: true },
-    scoreIfFilled: 5,
-  },
-
-  // ── Alto (4.000$ – 7.500$): cplan 7, 8, 9 ───────────────────────────────
-  {
-    id: 'medicacionCronica',
-    type: 'boolean',
-    label: '¿Toma medicación de forma crónica?',
-    description: 'Medicamentos prescritos de forma continua.',
-    required: true,
-    plans: TIER.ALTO,
-    scoreIfTrue: 20,
-  },
-  {
-    id: 'detalleMedicacion',
-    type: 'text',
-    label: 'Indique los medicamentos',
-    required: true,
-    plans: TIER.ALTO,
-    showIf: { field: 'medicacionCronica', equals: true },
-    scoreIfFilled: 5,
-  },
-
-  // ── Solo plan máximo 7.500$ (cplan 9) ───────────────────────────────────
-  {
-    id: 'deporteRiesgo',
-    type: 'boolean',
-    label: '¿Practica deportes de alto riesgo?',
-    description: 'Paracaidismo, montañismo, buceo, carreras, etc.',
-    required: true,
-    plans: [PLAN.P7500],
-    scoreIfTrue: 30,
-  },
-];
+const CATALOG = SIS2000_V4_CATALOG;
 
 /**
  * @param {unknown} q
@@ -262,15 +165,30 @@ function getQuestionsForPlan(cplan) {
 }
 
 /**
- * Resuelve preguntas: parametrizador Nexus (si hay) → fallback catálogo local.
- * @param {string} cplan
- * @param {{ empresaId?: number }} [opts]
- * @returns {Promise<HealthQuestion[]>}
- */
-/**
  * Resuelve preguntas por plan + canal (metadata JWT).
  * El parametrizador guarda en healthQuestionsByCanal[canal]; legacy usa healthQuestions.
  */
+function parsePositiveCramo(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Ramo del cuestionario: el del plan elegido (vida, AP o funerario).
+ * El ramo del SSO solo se usa si el plan no trae ramo.
+ */
+function resolveHealthCramo(opts, meta) {
+  const fromPlan = parsePositiveCramo(opts.selectedPlan?.cramo);
+  if (fromPlan) return fromPlan;
+  const fromRequest = parsePositiveCramo(opts.cramo);
+  if (fromRequest) return fromRequest;
+  const fromFlow = parsePositiveCramo(meta?.cramo);
+  if (fromFlow) return fromFlow;
+  const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  if (prod === '57') return 45;
+  return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
+}
+
 async function resolveQuestionsForPlan(cplan, opts = {}) {
   const { resolveCanalKey, pickHealthQuestionsForCanal } = require('../lib/canalKey');
   // Como RCV: la config es por empresa del JWT; canal opcional; fallback default.
@@ -283,11 +201,28 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     ...(opts.canal ? { canal: opts.canal } : {}),
   };
   const canalKey = resolveCanalKey(meta);
+  const {
+    catalogForConsultedRamo,
+    catalogForProducto,
+    questionsStoredForRamo,
+  } = require('./healthQuestionsByRamo');
+  const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  // Primero el producto del SSO (76 vida, 78/79 AP, 57 funerario); si no viene, el ramo.
+  const byProducto = catalogForProducto(prod);
+  const cramo = byProducto ? byProducto.cramo : resolveHealthCramo(opts, meta);
+  const consulted = byProducto || catalogForConsultedRamo(cramo);
+  const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
+  const funerarioDeEsteProducto =
+    consulted?.kind === 'funerario' && (!prod || Boolean(byProducto));
 
-  let catalog = CATALOG;
-  let source = 'catalog';
+  let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
+  let source = funerarioDeEsteProducto
+    ? 'ramo-funerario'
+    : (ramoDirecto ? `ramo-${consulted.kind}` : 'sin-cuestionario');
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
+  let scoringRulesRaw = null;
+  let foundStoredRamo = false;
   try {
     const {
       fetchProductConfig,
@@ -301,6 +236,23 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       const cfg = await fetchProductConfig(eid, 'funerario', 'emision', {
         bypassCache: true,
       });
+      if (cfg?.healthScoringRules && !scoringRulesRaw) {
+        scoringRulesRaw = cfg.healthScoringRules;
+      }
+      if (ramoDirecto) {
+        const stored = questionsStoredForRamo(cfg, cramo);
+        if (stored) {
+          catalog = stored;
+          source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
+          empresaId = eid;
+          foundStoredRamo = true;
+          if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
+          break;
+        }
+        continue;
+      }
+      // La config por canal es la de funerario: otro producto no la hereda.
+      if (!funerarioDeEsteProducto) continue;
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
       const defaultList =
@@ -314,9 +266,13 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
             : [];
       hit.questions = applyDisabledFromDefault(hit.questions, defaultList);
       // Prioridad: match exacto de canal en la empresa del JWT
-      if (hit.source === 'nexus-canal' && eid === primaryEmpresa) {
+      if (
+        eid === primaryEmpresa &&
+        (hit.source === 'nexus-canal' || hit.source === 'nexus-empty')
+      ) {
         picked = hit;
         empresaId = eid;
+        if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
         break;
       }
       if (!picked) {
@@ -330,7 +286,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         empresaId = eid;
       }
     }
-    if (picked) {
+    if (picked && !foundStoredRamo) {
       catalog = picked.questions;
       source = picked.source;
       resolvedCanal = picked.resolvedCanal;
@@ -338,6 +294,10 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[funeralHealthQuestions] Nexus fallback: ${msg}`);
+  }
+  if (ramoDirecto && !foundStoredRamo && consulted) {
+    catalog = consulted.questions;
+    source = `ramo-${consulted.kind}`;
   }
   const filtered = filterQuestionsForPlan(filterEnabledQuestions(catalog), cplan);
   const questions = stripOrphanShowIf(filtered);
@@ -350,9 +310,10 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     .map((q) => q.id)
     .filter(Boolean);
   console.log(
-    `[funeralHealthQuestions] cplan=${cplan} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
+    `[funeralHealthQuestions] cplan=${cplan} cramo=${cramo} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
       (strippedShowIf.length ? ` strippedShowIf=${strippedShowIf.join(',')}` : ''),
   );
+  const { DEFAULT_SCORING_RULES } = require('../lib/funeralScoringRules');
   return {
     questions,
     source,
@@ -363,6 +324,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     triedEmpresas: candidates,
     canal: canalKey,
     resolvedCanal,
+    scoringRules: scoringRulesRaw ?? DEFAULT_SCORING_RULES,
   };
 }
 

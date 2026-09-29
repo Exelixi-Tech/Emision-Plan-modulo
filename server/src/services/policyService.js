@@ -29,6 +29,7 @@ const {
   getBaseUrl: getNestApiUrl,
 } = require('./nestApiClient');
 const { resolveIngresoCajaAfterPayment } = require('./collectionAfterPayment');
+const { activateTarjetaAfterEmit } = require('./tarjetaActivateAfterEmit');
 const {
   buildQuoteRequest,
   buildCalculatePlanCoberturasRequest,
@@ -128,10 +129,10 @@ function resolveClubArysFallbackUrl(iplaca) {
   const plate = String(iplaca || 'N').trim().toUpperCase();
   const bi =
     process.env.ARYS_AUTO_BI_PDF_URL
-    || 'https://qasys2000.lamundialdeseguros.com/assets/ArysAutoBi.pdf';
+    || 'https://sys2000.lamundialdeseguros.com/assets/ArysAutoBi.pdf';
   const trad =
     process.env.ARYS_TRADICIONAL_PDF_URL
-    || 'https://qasys2000.lamundialdeseguros.com/assets/Arys_Tradicional.pdf';
+    || 'https://sys2000.lamundialdeseguros.com/assets/Arys_Tradicional.pdf';
   return plate === 'B' ? bi : trad;
 }
 
@@ -512,6 +513,9 @@ async function quoteAndEmit(state, overrides = {}) {
       );
     }
   }
+
+  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión)
+  await activateTarjetaAfterEmit(state, emission, metadata);
 
   // 5.5) Generar anexo de Conductor Habitual si existe (solo RCV)
   let url_conductor_habitual = undefined;
