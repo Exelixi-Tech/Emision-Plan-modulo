@@ -8,7 +8,7 @@
 const express = require('express');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { upsertHealthAnswers, getHealthAnswers } = require('../services/healthDb');
-const { isFunerarioCplan, isPersonasCplan } = require('../lib/funerarioPlan');
+const { isPersonasCplan } = require('../lib/funerarioPlan');
 
 const router = express.Router();
 
