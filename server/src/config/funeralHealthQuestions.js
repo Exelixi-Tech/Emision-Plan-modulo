@@ -205,16 +205,13 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
-  const isFunerarioProduct = !prod || prod === '57';
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
-  const funerarioDeEsteProducto = (consulted?.kind === 'funerario' || isFunerarioProduct) && !ramoDirecto;
+  const funerarioDeEsteProducto = consulted?.kind === 'funerario' && (!prod || prod === '57');
 
-  let catalog = ramoDirecto
-    ? consulted.questions
-    : (funerarioDeEsteProducto ? consulted.questions : []);
-  let source = ramoDirecto
-    ? `ramo-${consulted.kind}`
-    : (funerarioDeEsteProducto ? 'ramo-funerario' : 'sin-cuestionario');
+  let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
+  let source = funerarioDeEsteProducto
+    ? 'ramo-funerario'
+    : (ramoDirecto ? `ramo-${consulted.kind}` : 'sin-cuestionario');
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
@@ -282,7 +279,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         empresaId = eid;
       }
     }
-    if (picked && !foundStoredRamo && !ramoDirecto) {
+    if (picked && !foundStoredRamo) {
       catalog = picked.questions;
       source = picked.source;
       resolvedCanal = picked.resolvedCanal;
