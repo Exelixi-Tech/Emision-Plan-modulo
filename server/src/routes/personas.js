@@ -106,11 +106,17 @@ router.get('/planes', async (req, res) => {
   const entity = sisOk ? rawEntity : null;
   const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
   const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
+  const queryCramo = req.query.cramo ? parseInt(String(req.query.cramo), 10) : null;
+  const metaCramo = meta.cramo ? parseInt(String(meta.cramo), 10) : null;
+  const cramo = (queryCramo && Number.isFinite(queryCramo) && queryCramo > 0)
+    ? queryCramo
+    : ((metaCramo && Number.isFinite(metaCramo) && metaCramo > 0)
+      ? metaCramo
+      : (meta.cproducto === '57' ? 45 : DEFAULT_RAMO));
+
+  const queryCproducto = req.query.cproducto != null && String(req.query.cproducto).trim() !== '' ? String(req.query.cproducto).trim() : null;
   const metaCproducto = meta.cproducto != null && String(meta.cproducto).trim() !== '' ? String(meta.cproducto).trim() : null;
-  const cproducto = metaCproducto || req.query.cproducto || (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
-  const cramo = cproducto === '57'
-    ? 45
-    : (meta.cramo ? parseInt(meta.cramo, 10) : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO));
+  const cproducto = queryCproducto || metaCproducto || (cramo === 45 || cramo === 9 ? (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57') : String(cramo));
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
