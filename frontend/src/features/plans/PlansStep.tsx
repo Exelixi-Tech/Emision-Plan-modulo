@@ -101,7 +101,10 @@ export function PlansStep() {
   const product = getProductConfig();
 
   // Detección de rol y sesión de Backoffice Sis2000
-  const effectiveMeta = getEffectiveSsoMetadata();
+  const effectiveMeta = {
+    ...getEffectiveSsoMetadata(),
+    ...(metadataCanal || {}),
+  };
   const showProductorSelector = shouldShowProductorSelector(effectiveMeta);
   const isUserProductor = isProductorRole(effectiveMeta);
 
