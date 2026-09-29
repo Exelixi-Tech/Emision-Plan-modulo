@@ -239,4 +239,19 @@ function catalogForProducto(cproducto) {
   return null;
 }
 
-module.exports = { catalogForConsultedRamo, catalogForProducto, questionsStoredForRamo, FUNERARIO };
+const PRODUCT_LABELS = { funerario: 'Funerario', vida: 'Vida', ap: 'Accidentes Personales' };
+
+/**
+ * Nombre del producto para los correos: funerario/vida/AP por cproducto;
+ * otro producto usa el xproducto del SSO. Sin dato: undefined (plantilla = Funerario).
+ * @param {{ cproducto?: unknown, xproducto?: unknown }} meta
+ * @returns {string | undefined}
+ */
+function productLabelFromMeta(meta) {
+  const byProd = catalogForProducto(meta?.cproducto);
+  if (byProd) return PRODUCT_LABELS[byProd.kind];
+  const x = String(meta?.xproducto ?? '').trim();
+  return x || undefined;
+}
+
+module.exports = { catalogForConsultedRamo, catalogForProducto, productLabelFromMeta, questionsStoredForRamo, FUNERARIO };
