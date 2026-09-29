@@ -184,7 +184,7 @@ const FUNERARIO = [
  */
 function storedRamoKey(cramo) {
   const n = Number(cramo);
-  if (n === 9 || n === 45 || n === 7) return '9';
+  if (n === 9) return '9';
   if (n === 1 || n === 5) return String(n);
   return '';
 }
@@ -206,7 +206,7 @@ function catalogForConsultedRamo(cramo) {
   const n = Number(cramo);
   if (n === 5) return { kind: 'ap', questions: AP };
   if (n === 1) return { kind: 'vida', questions: VIDA };
-  if (n === 9 || n === 45 || n === 7) return { kind: 'funerario', questions: FUNERARIO };
+  if (n === 9) return { kind: 'funerario', questions: FUNERARIO };
   return null;
 }
 

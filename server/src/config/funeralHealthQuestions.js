@@ -235,15 +235,17 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       if (cfg?.healthScoringRules && !scoringRulesRaw) {
         scoringRulesRaw = cfg.healthScoringRules;
       }
-      if (ramoDirecto) {
-        const stored = questionsStoredForRamo(cfg, cramo);
-        if (stored) {
-          catalog = stored;
-          source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
-          empresaId = eid;
-          foundStoredRamo = true;
-          if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
-          break;
+      if (ramoDirecto || !funerarioDeEsteProducto) {
+        if (ramoDirecto) {
+          const stored = questionsStoredForRamo(cfg, cramo);
+          if (stored) {
+            catalog = stored;
+            source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
+            empresaId = eid;
+            foundStoredRamo = true;
+            if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
+            break;
+          }
         }
         continue;
       }
