@@ -5,7 +5,7 @@ import {
   Loader2, AlertTriangle, Users, CalendarClock
 } from 'lucide-react';
 import type { FuneralPerson, Plan } from '../../types';
-import { personasApi, resolveSsoCramo, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import { personasApi, resolveQuoteCramo, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
@@ -295,7 +295,7 @@ export function FuneralPlansStep() {
     const vig = planNdias != null ? vigenciasDesdeNdias(planNdias) : null;
     personasApi.cotizar({
       cplan: planCode,
-      cramo: resolveSsoCramo() ?? planCramo(snapPlan, product.cramo),
+      cramo: resolveQuoteCramo(snapPlan?.cramo, product.cramo),
       ifrecuencia: 'A',
       ...(vig ?? {}),
       asegurados: aseguradosListos.map(({ a, idx }) => ({

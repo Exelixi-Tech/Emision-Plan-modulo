@@ -176,6 +176,19 @@ export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: num
   return 9;
 }
 
+/**
+ * Ramo para cotizar: funerario (57 o sin producto) usa el del SSO como hoy;
+ * otro producto usa el ramo del plan elegido (el SSO trae el ramo del producto, ej. vida 47,
+ * pero el plan está tarifado en su ramo técnico, ej. 1). Igual que SysIP.
+ */
+export function resolveQuoteCramo(planCramo: number | undefined, fallback: number): number {
+  const prod = String(readSsoCanalMeta().cproducto ?? '').trim();
+  const plan = Number(planCramo);
+  const planOk = Number.isFinite(plan) && plan > 0;
+  if (prod && prod !== '57' && planOk) return plan;
+  return resolveSsoCramo() ?? (planOk ? plan : fallback);
+}
+
 /** Ramo enviado por el SSO. `null` si el canal no lo declara. */
 export function resolveSsoCramo(): number | null {
   const raw = readSsoCanalMeta().cramo;
