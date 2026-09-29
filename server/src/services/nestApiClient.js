@@ -596,15 +596,39 @@ const FRECUENCIAS_GENERIC_FALLBACK = [
  * @returns {Promise<Array<{ code: number, label: string }>>}
  */
 async function getValrepBrokers() {
-  const response = await axios.post(
+  const urls = [
     `${getBaseUrl()}/api/v1/valrep/brokers`,
-    null,
-    await axiosOpts({ validateStatus: () => true }),
-  );
-  if (response.status >= 400 || response.data?.status === false) {
-    throw new Error(response.data?.message || `HTTP ${response.status} valrep/brokers`);
+    `${process.env.LAMUNDIAL_CARDS_URL || process.env.LAMUNDIAL_EMISSION_URL || 'https://qaapisys2000.lamundialdeseguros.com'}/api/v1/valrep/brokers`,
+    'https://apisys2000.lamundialdeseguros.com/api/v1/valrep/brokers',
+  ];
+
+  let raw = [];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const response = await axios.post(
+        url,
+        {},
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10_000,
+          validateStatus: () => true,
+        },
+      );
+      if (response.status >= 200 && response.status < 300 && response.data?.status !== false) {
+        raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+        if (raw.length > 0) break;
+      }
+    } catch (err) {
+      lastError = err;
+    }
   }
-  const raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+
+  if (!raw.length && lastError) {
+    throw lastError;
+  }
+
   return raw
     .map((b) => ({
       code: Number(b.cproductor),
