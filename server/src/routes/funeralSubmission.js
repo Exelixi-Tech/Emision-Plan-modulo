@@ -104,6 +104,7 @@ router.post('/submissions', async (req, res) => {
       metadata,
       cramo,
       selectedPlan,
+      cproducto: metadata.cproducto ?? body.cproducto,
     });
     const rules = parseScoringRules(scoringRules);
 

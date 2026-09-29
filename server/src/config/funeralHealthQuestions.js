@@ -201,12 +201,19 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     ...(opts.canal ? { canal: opts.canal } : {}),
   };
   const canalKey = resolveCanalKey(meta);
-  const { catalogForConsultedRamo, questionsStoredForRamo } = require('./healthQuestionsByRamo');
-  const cramo = resolveHealthCramo(opts, meta);
-  const consulted = catalogForConsultedRamo(cramo);
+  const {
+    catalogForConsultedRamo,
+    catalogForProducto,
+    questionsStoredForRamo,
+  } = require('./healthQuestionsByRamo');
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  // Primero el producto del SSO (76 vida, 78/79 AP, 57 funerario); si no viene, el ramo.
+  const byProducto = catalogForProducto(prod);
+  const cramo = byProducto ? byProducto.cramo : resolveHealthCramo(opts, meta);
+  const consulted = byProducto || catalogForConsultedRamo(cramo);
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
-  const funerarioDeEsteProducto = consulted?.kind === 'funerario' && (!prod || prod === '57');
+  const funerarioDeEsteProducto =
+    consulted?.kind === 'funerario' && (!prod || Boolean(byProducto));
 
   let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
   let source = funerarioDeEsteProducto
@@ -244,6 +251,8 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         }
         continue;
       }
+      // La config por canal es la de funerario: otro producto no la hereda.
+      if (!funerarioDeEsteProducto) continue;
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
       const defaultList =
