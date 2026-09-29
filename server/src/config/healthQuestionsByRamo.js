@@ -41,7 +41,16 @@ function select(id, label, options) {
     options,
     optionScores: {},
   };
-}
+}const ACEPTA_TERMINOS_QUESTION = {
+  id: 'aceptaTerminos',
+  type: 'boolean',
+  label: 'Acepto los términos y condiciones',
+  description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
+  required: true,
+  plans: ALL,
+  blockIfFalse: true,
+  blockReason: 'Debe aceptar los términos y condiciones.',
+};
 
 const AP = [
   select('manoDominante', '¿Cuál es su mano dominante?', [
@@ -80,6 +89,7 @@ const AP = [
       required: true,
     },
   ),
+  ACEPTA_TERMINOS_QUESTION,
 ];
 
 const VIDA = [
@@ -146,6 +156,7 @@ const VIDA = [
     '¿Padece, ha padecido o ha sido diagnosticado de alguna otra enfermedad, síntoma, lesión o anomalía que no se haya nombrado, o está en proceso de diagnóstico?',
     { id: 'otraCondicionDetalle', label: 'Especifique', required: true },
   ),
+  ACEPTA_TERMINOS_QUESTION,
 ];
 
 const FUNERARIO = [
@@ -164,6 +175,7 @@ const FUNERARIO = [
     '¿Ha padecido, padece o ha sido diagnosticado con patologías coronarias o cardíacas, cáncer, enfermedad renal o hepática crónica, o alguna condición médica grave o terminal?',
     { id: 'patologiaGraveDetalle', label: 'Especifique', required: true },
   ),
+  ACEPTA_TERMINOS_QUESTION,
 ];
 
 /**
