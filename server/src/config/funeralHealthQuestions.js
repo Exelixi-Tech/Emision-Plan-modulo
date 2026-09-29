@@ -232,7 +232,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       if (cfg?.healthScoringRules && !scoringRulesRaw) {
         scoringRulesRaw = cfg.healthScoringRules;
       }
-      if (ramoDirecto || !funerarioDeEsteProducto) {
+      if (ramoDirecto) {
         if (ramoDirecto) {
           const stored = questionsStoredForRamo(cfg, cramo);
           if (stored) {
