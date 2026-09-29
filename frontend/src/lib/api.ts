@@ -133,8 +133,11 @@ function appendFuneralCanalQuery(qs: URLSearchParams, cproductoOverride?: string
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     qs.set('cramo', String(meta.cramo).trim());
   }
-  // cproducto: el override del producto activo tiene prioridad sobre el JWT/session
-  const effectiveCproducto = cproductoOverride ?? (qs.get('cproducto') || null) ?? '57';
+  // El producto del SSO manda. El argumento solo cubre si el token no trae cproducto.
+  const fromSso = qs.get('cproducto');
+  const effectiveCproducto = (fromSso && fromSso.trim() !== '')
+    ? fromSso.trim()
+    : (cproductoOverride || '57');
   qs.set('cproducto', effectiveCproducto);
   // Para funerario (57) el SP usa ramo 45 internamente
   if (effectiveCproducto === '57') qs.set('cramo', '45');
@@ -816,16 +819,11 @@ export interface CotizacionPerPayload {
 }
 
 export const personasApi = {
-  /**
-   * Planes de personas del canal SSO.
-   * Para funerario: cproducto=57 (cramo 45 internamente).
-   * Para vida: cproducto=76, cramo=1.
-   * Para AP: cproducto=78 o 79, cramo=5.
-   */
-  planes: (cramo = 9, cproducto = '57') => {
+  /** Planes del cproducto que trae el SSO. El ramo del token se conserva salvo producto 57. */
+  planes: (cramo = 9) => {
     const qs = new URLSearchParams();
     qs.set('cramo', String(cramo));
-    appendFuneralCanalQuery(qs, cproducto);
+    appendFuneralCanalQuery(qs);
     return api.get<{ success: boolean; planes: PlanPer[] }>(`/personas/planes?${qs.toString()}`);
   },
   /** Cotización de personas (getCotizacionPer). */
