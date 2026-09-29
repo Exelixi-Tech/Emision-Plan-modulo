@@ -174,16 +174,16 @@ function parsePositiveCramo(value) {
 }
 
 /**
- * Ramo del cuestionario: el que llega en el SSO, si no el del plan o producto.
- * No usa el atajo de producto 57 antes que el ramo del flujo.
+ * Ramo del cuestionario: el del plan elegido (vida, AP o funerario).
+ * El ramo del SSO solo se usa si el plan no trae ramo.
  */
 function resolveHealthCramo(opts, meta) {
-  const fromFlow = parsePositiveCramo(meta?.cramo);
-  if (fromFlow) return fromFlow;
-  const fromRequest = parsePositiveCramo(opts.cramo);
-  if (fromRequest) return fromRequest;
   const fromPlan = parsePositiveCramo(opts.selectedPlan?.cramo);
   if (fromPlan) return fromPlan;
+  const fromRequest = parsePositiveCramo(opts.cramo);
+  if (fromRequest) return fromRequest;
+  const fromFlow = parsePositiveCramo(meta?.cramo);
+  if (fromFlow) return fromFlow;
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
   if (prod === '57') return 45;
   return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
