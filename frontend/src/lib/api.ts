@@ -728,10 +728,15 @@ export const catalogoApi = {
    * ctipo: 1=particular, 4=moto, 3=pick-up, etc.
    * iplaca: N=nacional, E=extranjera, B=binacional (spBuscaPlan bnacional).
    */
-  planesRcv: (ctipo?: number, iplaca?: 'N' | 'E' | 'B') => {
+  planesRcv: (ctipo?: number, iplaca?: 'N' | 'E' | 'B', cproductor?: number | string) => {
     const qs = new URLSearchParams();
     if (ctipo != null) qs.set('ctipo', String(ctipo));
     if (iplaca) qs.set('iplaca', iplaca);
+    if (cproductor != null && String(cproductor).trim() !== '') {
+      qs.set('cproductor', String(cproductor).trim());
+      qs.set('centidad', 'P');
+      qs.set('citem', String(cproductor).trim());
+    }
     const hasEntity = appendCanalEntityQuery(qs);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
@@ -878,6 +883,11 @@ export function getValrepList(domain: string): Promise<CatalogItem[]> {
 /**
  * Frecuencias dinámicas por plan y ramo.
  */
+/** Lista de productores / brokers para emisión backoffice */
+export function getBrokers(): Promise<CatalogItem[]> {
+  return _fetchValrep('/valrep/brokers');
+}
+
 export async function getFrecuenciasByPlan(cplan: string, cramo: number = 9): Promise<CatalogItem[]> {
   const { data } = await api.post<{ ok: boolean; items: CatalogItem[] }>('/valrep/frecuencia', { cplan, cramo });
   return data?.items ?? [];
