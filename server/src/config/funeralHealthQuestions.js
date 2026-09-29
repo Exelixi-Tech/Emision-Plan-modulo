@@ -205,28 +205,12 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
-  const isFunerarioProduct = !prod || prod === '57';
+  const isFunerarioProduct = !prod || prod === '57' || prod === '14' || cramo === 7 || cramo === 45 || cramo === 9;
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
-  const funerarioDeEsteProducto = consulted?.kind === 'funerario' && isFunerarioProduct;
+  const funerarioDeEsteProducto = consulted?.kind === 'funerario' || isFunerarioProduct;
 
-  if (!isFunerarioProduct && !ramoDirecto) {
-    const { DEFAULT_SCORING_RULES } = require('../lib/funeralScoringRules');
-    return {
-      questions: [],
-      source: 'sin-cuestionario',
-      catalogCount: 0,
-      skippedIds: [],
-      strippedShowIf: [],
-      empresaId: primaryEmpresa,
-      triedEmpresas: candidates,
-      canal: canalKey,
-      resolvedCanal: canalKey,
-      scoringRules: DEFAULT_SCORING_RULES,
-    };
-  }
-
-  let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
-  let source = funerarioDeEsteProducto
+  let catalog = (funerarioDeEsteProducto || consulted?.kind === 'funerario') ? consulted.questions : (ramoDirecto ? consulted.questions : []);
+  let source = (funerarioDeEsteProducto || consulted?.kind === 'funerario')
     ? 'ramo-funerario'
     : (ramoDirecto ? `ramo-${consulted.kind}` : 'sin-cuestionario');
   let empresaId = primaryEmpresa;
