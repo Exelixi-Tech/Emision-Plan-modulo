@@ -10,6 +10,12 @@ export const MARKETPLACE_ACTOR_KEYS = [
   'cscanalalt_in',
   'ccanalalt',
   'cscanalalt',
+  'origen',
+  'crol',
+  'allowPendingEmission',
+  'tipoEmision',
+  'cusuario',
+  'email',
 ] as const;
 
 const MODULE_TOKEN_KEYS = [
