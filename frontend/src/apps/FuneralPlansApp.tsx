@@ -68,10 +68,11 @@ function insuredLabel(person: { nombre?: string; apellido?: string; identificaci
 
 function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) {
   const first = Object.values(byInsured)[0] ?? {};
+  const accepts = first.aceptaTerminos !== false;
   return {
     diagnosticoEnfermedad: first.diagnosticoEnfermedad === true,
     descripcionEnfermedad: String(first.descripcionEnfermedad ?? ''),
-    aceptaTerminos: first.aceptaTerminos === true,
+    aceptaTerminos: accepts,
     healthAnswers: first,
     healthAnswersByInsured: byInsured,
     healthQuestionnaireDone: true,
@@ -206,7 +207,7 @@ export default function FuneralPlansApp() {
       ? healthInsureds
       : [{ key: 'aseg-0', label: 'Asegurado' }];
     const byInsured: Record<string, Record<string, unknown>> = {};
-    for (const person of people) byInsured[person.key] = {};
+    for (const person of people) byInsured[person.key] = { aceptaTerminos: true, noQuestions: true };
     return byInsured;
   }
 

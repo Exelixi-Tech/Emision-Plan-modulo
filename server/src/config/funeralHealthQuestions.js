@@ -205,8 +205,9 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const cramo = resolveHealthCramo(opts, meta);
   const consulted = catalogForConsultedRamo(cramo);
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  const isFunerarioProduct = !prod || prod === '57';
   const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
-  const funerarioDeEsteProducto = consulted?.kind === 'funerario' && (!prod || prod === '57');
+  const funerarioDeEsteProducto = consulted?.kind === 'funerario' && isFunerarioProduct;
 
   let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
   let source = funerarioDeEsteProducto
@@ -248,6 +249,9 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       }
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
+      if (!isFunerarioProduct && !ramoDirecto && (hit.source === 'nexus-canal-default' || hit.source === 'legacy')) {
+        continue;
+      }
       const defaultList =
         cfg?.healthQuestionsByCanal &&
         typeof cfg.healthQuestionsByCanal === 'object' &&
