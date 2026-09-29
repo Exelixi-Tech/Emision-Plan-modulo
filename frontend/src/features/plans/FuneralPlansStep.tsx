@@ -5,7 +5,7 @@ import {
   Loader2, AlertTriangle, Users, CalendarClock
 } from 'lucide-react';
 import type { FuneralPerson, Plan } from '../../types';
-import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import { personasApi, resolveSsoCramo, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
@@ -167,11 +167,10 @@ export function FuneralPlansStep() {
     setPlansError(false);
 
     const meta = useWizardStore.getState().metadataCanal as Record<string, unknown> | null;
-    const effectiveCproducto = (meta?.cproducto as string) ?? product.cproducto ?? '57';
     const effectiveCramo = meta?.cramo != null ? Number(meta.cramo) : product.cramo;
     const effectiveLabel = (meta?.xproducto as string) ?? product.label;
 
-    personasApi.planes(effectiveCramo, effectiveCproducto)
+    personasApi.planes(effectiveCramo)
       .then((res) => {
         if (cancelled) return;
         const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, effectiveLabel));
@@ -296,7 +295,7 @@ export function FuneralPlansStep() {
     const vig = planNdias != null ? vigenciasDesdeNdias(planNdias) : null;
     personasApi.cotizar({
       cplan: planCode,
-      cramo: planCramo(snapPlan, product.cramo),
+      cramo: resolveSsoCramo() ?? planCramo(snapPlan, product.cramo),
       ifrecuencia: 'A',
       ...(vig ?? {}),
       asegurados: aseguradosListos.map(({ a, idx }) => ({

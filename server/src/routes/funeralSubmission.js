@@ -10,7 +10,7 @@ const { parseScoringRules } = require('../lib/funeralScoringRules');
 const { upsertHealthAnswers } = require('../services/healthDb');
 const { createFuneralSubmission } = require('../services/nexusFuneralSubmission');
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
-const { isFunerarioCplan, isPersonasCplan } = require('../lib/funerarioPlan');
+const { isPersonasCplan } = require('../lib/funerarioPlan');
 const { resolveCanalKey } = require('../lib/canalKey');
 
 const router = express.Router();

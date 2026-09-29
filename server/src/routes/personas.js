@@ -21,8 +21,7 @@ const {
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
-const { isFunerarioCplan, isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
-const { fetchPlanesV2 } = require('../services/planesClient');
+const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -101,33 +100,6 @@ function mapAsegurado(a) {
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
   const meta = funeralCanalMeta(req);
-  const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
-  // Scoring de Vida (1) y Accidentes personales (5): el catálogo del ramo,
-  // sin el producto funerario 57 que siempre consulta el ramo 45.
-  if (req.query.catalogo === 'ramo' && (askedRamo === 1 || askedRamo === 5)) {
-    try {
-      const result = await fetchPlanesV2({ ...meta, cramo: askedRamo });
-      const planes = (result.planes || []).filter((p) => Number(p.cramo) === askedRamo);
-      res.set({
-        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-        Pragma: 'no-cache',
-        Expires: '0',
-      });
-      return res.json({
-        success: true,
-        planes,
-        canal: { cramo: askedRamo, catalogo: 'ramo' },
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[personas/planes] catalogo ramo', askedRamo, msg);
-      return res.status(502).json({
-        success: false,
-        code: 'PLANES_RAMO_ERROR',
-        message: `No se pudieron obtener los planes del ramo ${askedRamo}: ${msg}`,
-      });
-    }
-  }
   const rawEntity = resolveEntityContext(meta);
   const sisOk = rawEntity
     && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
