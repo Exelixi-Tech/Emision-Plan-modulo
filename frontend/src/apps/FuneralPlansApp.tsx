@@ -194,7 +194,10 @@ export default function FuneralPlansApp() {
     if (!selectedPlan?.cplan) return;
     setLoadingQuestions(true);
     try {
-      const effectiveCramo = metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo);
+      const planCramo = Number(selectedPlan.cramo);
+      const effectiveCramo = (planCramo === 1 || planCramo === 5 || planCramo === 9 || planCramo === 45)
+        ? planCramo
+        : (metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(planCramo, product.cramo));
       const effectiveCproducto = (metadataCanal?.cproducto as string) ?? product.cproducto;
       const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan, effectiveCramo, effectiveCproducto);
       setHealthQuestions(qs);
@@ -222,7 +225,10 @@ export default function FuneralPlansApp() {
       const sessionId = getSessionId();
       const packed = { byInsured };
 
-      const effectiveCramo = metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(Number(selectedPlan.cramo), product.cramo);
+      const planCramo = Number(selectedPlan.cramo);
+      const effectiveCramo = (planCramo === 1 || planCramo === 5 || planCramo === 9 || planCramo === 45)
+        ? planCramo
+        : (metadataCanal?.cramo != null ? Number(metadataCanal.cramo) : resolveQuestionnaireCramo(planCramo, product.cramo));
       const effectiveCproducto = (metadataCanal?.cproducto as string) ?? product.cproducto;
 
       await saveFuneralHealthAnswers({
