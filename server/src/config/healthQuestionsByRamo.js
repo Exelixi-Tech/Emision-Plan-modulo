@@ -41,16 +41,7 @@ function select(id, label, options) {
     options,
     optionScores: {},
   };
-}const ACEPTA_TERMINOS_QUESTION = {
-  id: 'aceptaTerminos',
-  type: 'boolean',
-  label: 'Acepto los términos y condiciones',
-  description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
-  required: true,
-  plans: ALL,
-  blockIfFalse: true,
-  blockReason: 'Debe aceptar los términos y condiciones.',
-};
+}
 
 const AP = [
   select('manoDominante', '¿Cuál es su mano dominante?', [
@@ -89,7 +80,6 @@ const AP = [
       required: true,
     },
   ),
-  ACEPTA_TERMINOS_QUESTION,
 ];
 
 const VIDA = [
@@ -156,7 +146,6 @@ const VIDA = [
     '¿Padece, ha padecido o ha sido diagnosticado de alguna otra enfermedad, síntoma, lesión o anomalía que no se haya nombrado, o está en proceso de diagnóstico?',
     { id: 'otraCondicionDetalle', label: 'Especifique', required: true },
   ),
-  ACEPTA_TERMINOS_QUESTION,
 ];
 
 const FUNERARIO = [
@@ -175,7 +164,6 @@ const FUNERARIO = [
     '¿Ha padecido, padece o ha sido diagnosticado con patologías coronarias o cardíacas, cáncer, enfermedad renal o hepática crónica, o alguna condición médica grave o terminal?',
     { id: 'patologiaGraveDetalle', label: 'Especifique', required: true },
   ),
-  ACEPTA_TERMINOS_QUESTION,
 ];
 
 /**
@@ -184,7 +172,7 @@ const FUNERARIO = [
  */
 function storedRamoKey(cramo) {
   const n = Number(cramo);
-  if (n === 9) return '9';
+  if (n === 45 || n === 9) return '9';
   if (n === 1 || n === 5) return String(n);
   return '';
 }
@@ -199,14 +187,16 @@ function questionsStoredForRamo(cfg, cramo) {
   const by = cfg?.healthQuestionsByRamo;
   if (!key || !by || typeof by !== 'object' || Array.isArray(by)) return null;
   if (!Object.prototype.hasOwnProperty.call(by, key)) return null;
-  return Array.isArray(by[key]) ? by[key] : null;
+  const list = Array.isArray(by[key]) ? by[key] : null;
+  if (list && list.length > 0) return list;
+  return null;
 }
 
 function catalogForConsultedRamo(cramo) {
   const n = Number(cramo);
   if (n === 5) return { kind: 'ap', questions: AP };
   if (n === 1) return { kind: 'vida', questions: VIDA };
-  if (n === 9) return { kind: 'funerario', questions: FUNERARIO };
+  if (n === 9 || n === 45) return { kind: 'funerario', questions: FUNERARIO };
   return null;
 }
 
