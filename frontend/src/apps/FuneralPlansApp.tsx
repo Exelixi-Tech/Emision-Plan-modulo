@@ -41,11 +41,10 @@ function questionnaireForPlan(
   const sso = meta?.cramo != null ? Number(meta.cramo) : NaN;
   const cramo = Number.isFinite(plan) && plan > 0
     ? plan
-    : (cproducto && cproducto !== '57'
-      ? (sso === 1 || sso === 5 ? sso : 0)
-      : (Number.isFinite(sso) && sso > 0 ? sso : fallbackCramo));
+    : (Number.isFinite(sso) && sso > 0 ? sso : fallbackCramo);
   return { cramo, cproducto };
 }
+
 
 function getSessionId(): string {
   try {
