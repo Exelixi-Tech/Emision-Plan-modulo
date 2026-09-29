@@ -200,4 +200,43 @@ function catalogForConsultedRamo(cramo) {
   return null;
 }
 
-module.exports = { catalogForConsultedRamo, questionsStoredForRamo, FUNERARIO };
+/** Ramo con el que se guarda cada cuestionario en product_config.healthQuestionsByRamo. */
+const RAMO_BY_KIND = { vida: 1, ap: 5, funerario: 9 };
+
+/**
+ * @param {string | undefined} raw lista separada por comas (.env)
+ * @param {string} fallback
+ * @returns {Set<string>}
+ */
+function productosFromEnv(raw, fallback) {
+  return new Set(
+    String(raw ?? fallback)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+}
+
+/**
+ * Cuestionario según el producto Sis2000 que manda el SSO.
+ * Vida 76 · AP 78 y 79 · Funerario 57 (configurable por .env).
+ * @param {unknown} cproducto
+ * @returns {{ kind: 'ap'|'vida'|'funerario', questions: object[], cramo: number } | null}
+ */
+function catalogForProducto(cproducto) {
+  const prod = String(cproducto ?? '').trim();
+  if (!prod) return null;
+  const env = process.env;
+  if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_FUNERARIO, env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57').has(prod)) {
+    return { kind: 'funerario', questions: FUNERARIO, cramo: RAMO_BY_KIND.funerario };
+  }
+  if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_VIDA, '76').has(prod)) {
+    return { kind: 'vida', questions: VIDA, cramo: RAMO_BY_KIND.vida };
+  }
+  if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_AP, '78,79').has(prod)) {
+    return { kind: 'ap', questions: AP, cramo: RAMO_BY_KIND.ap };
+  }
+  return null;
+}
+
+module.exports = { catalogForConsultedRamo, catalogForProducto, questionsStoredForRamo, FUNERARIO };
