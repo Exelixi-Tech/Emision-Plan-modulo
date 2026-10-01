@@ -40,6 +40,29 @@ function preferGestorCode(...vals) {
   return codes.find((c) => c.includes('-')) || codes[0];
 }
 
+/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
+const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter((v) => v !== '')
+  .map(Number)
+  .filter((n) => Number.isInteger(n));
+
+/**
+ * Misma regla que el selector del frontend: backoffice solo si el usuario es interno y no productor;
+ * marketplace solo si el productor de la sesión es 80080.
+ */
+function puedeElegirProductor(meta) {
+  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
+  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
+
+  if (origen === 'backoffice') {
+    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
+    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
+  }
+  return false;
+}
+
 /** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
@@ -53,7 +76,14 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
+  const usaSeleccion = puedeElegirProductor(mergedMeta) && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
     const vals = sources.map((src) => src?.[key]);
     const val = (key === 'cgestor' || key === 'cgestor_in')
       ? preferGestorCode(...vals)
