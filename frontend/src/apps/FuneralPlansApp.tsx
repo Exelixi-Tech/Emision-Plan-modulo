@@ -273,7 +273,7 @@ export default function FuneralPlansApp() {
         answers: packed,
       });
 
-      const { submission, scoring } = await submitFuneralPolicyReview({
+      const { submission, scoring, quote: quoteAjustada, premiumAdjust } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
         cramo: effectiveCramo,
@@ -297,6 +297,19 @@ export default function FuneralPlansApp() {
       });
 
       setFuneral(mapHealthToFuneral(byInsured, questions));
+      // Recargo/descuento por respuestas: Pagos cobra la prima ajustada (misma que emite el servidor).
+      if (premiumAdjust && quoteAjustada) {
+        const snap = useWizardStore.getState();
+        snap.setQuote({ ...(snap.quote ?? quoteAjustada), ...quoteAjustada }, snap.quoteVehicleSignature ?? '');
+        const netos = premiumAdjust.porAsegurado.filter((p) => p.netoPct !== 0);
+        toast.info(
+          'Prima ajustada por el cuestionario',
+          netos
+            .map((p) => `${p.label}: ${p.netoPct > 0 ? '+' : ''}${p.netoPct}%`)
+            .join(' · ') + ` → total ${premiumAdjust.quote.mprimaext.toFixed(2)}`,
+          8000,
+        );
+      }
       setHealthModalOpen(false);
       const verdict = (scoring as { verdict?: string }).verdict;
       const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
