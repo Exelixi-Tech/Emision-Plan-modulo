@@ -23,6 +23,8 @@ const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
+const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
+const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -365,7 +367,31 @@ router.post('/emision', async (req, res) => {
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
-    const cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+
+    // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud): la prima
+    //     ajustada es la que se cobra y la que viaja como mprimaext, como en la pasarela.
+    const meta0 = state.metadataCanal || {};
+    const { questions } = await resolveQuestionsForPlan(cplan, {
+      empresaId: Number(req.empresa?.id ?? process.env.EMPRESA_ID ?? 1) || 1,
+      metadata: meta0,
+      cramo,
+      cproducto: meta0.cproducto,
+      selectedPlan: state.selectedPlan,
+    });
+    const premiumAdjust = await adjustPremiumByAnswers({
+      questions,
+      persons: funeral.asegurados,
+      asegurados,
+      byInsured: funeral.healthAnswersByInsured,
+      quoteOne: (aseg) => personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia }),
+    });
+    if (premiumAdjust) {
+      console.log(
+        `[personas/emision] prima ajustada por cuestionario base=${premiumAdjust.base.mprimaext} final=${premiumAdjust.quote.mprimaext}`,
+      );
+      cotizacion = { ...cotizacion, ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || cotizacion.ptasa };
+    }
 
     // 2. Valida titular/plan (paso 5 — speeValidatePersonGeneral).
     const validatePayload = personasMapper.buildValidateEmissionPersonRequest(state, {
@@ -424,6 +450,8 @@ router.post('/emision', async (req, res) => {
         mprimaext: cotizacion.mprimaext,
         ptasa: cotizacion.ptasa,
       },
+      /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
+      ...(premiumAdjust ? { premiumAdjust } : {}),
     };
     const funeralRefs = resolveFuneralRefs(state);
     try {
