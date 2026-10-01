@@ -986,19 +986,43 @@ export interface SubmitFuneralReviewPayload {
   metadataCanal?: Record<string, unknown> | null;
 }
 
+/** Recargo/descuento del cuestionario aplicado a la prima (servidor). */
+export interface PremiumAdjust {
+  base: { mprima: number; mprimaext: number };
+  quote: { mprima: number; mprimaext: number; ptasa: number };
+  porAsegurado: {
+    key: string;
+    label: string;
+    recargoPct: number;
+    descuentoPct: number;
+    netoPct: number;
+    primaBaseExt: number;
+    primaAjustadaExt: number;
+  }[];
+}
+
 export async function submitFuneralPolicyReview(
   payload: SubmitFuneralReviewPayload,
 ): Promise<{
   submission: FuneralSubmissionResult;
   scoring: { total: number; verdict?: string; verdictMessage?: string };
+  quote?: PolicyQuote | null;
+  premiumAdjust?: PremiumAdjust | null;
 }> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
       scoring: { total: number; verdict?: string; verdictMessage?: string };
+      quote?: PolicyQuote | null;
+      premiumAdjust?: PremiumAdjust | null;
     }>('/funeral/submissions', payload);
-    return { submission: data.submission, scoring: data.scoring };
+    return {
+      submission: data.submission,
+      scoring: data.scoring,
+      quote: data.quote,
+      premiumAdjust: data.premiumAdjust,
+    };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
     const data = axErr.response?.data;
