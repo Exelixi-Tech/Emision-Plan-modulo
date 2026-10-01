@@ -21,6 +21,7 @@ const {
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
+const { isFunerarioCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -161,12 +162,23 @@ router.get('/planes', async (req, res) => {
 
 // ── POST /cotizacion ──────────────────────────────────────────────────────────
 router.post('/cotizacion', async (req, res) => {
-  const { cplan, ifrecuencia } = req.body || {};
-  const cramo = req.body?.cramo ? parseInt(req.body.cramo, 10) : DEFAULT_RAMO;
+  const { cplan, ifrecuencia, ndias } = req.body || {};
+  const cramo = resolvePersonasCramo({
+    bodyCramo: req.body?.cramo,
+    metadataCanal: req.nexusMetadata,
+    cproducto: req.nexusMetadata?.cproducto,
+  });
   const asegurados = Array.isArray(req.body?.asegurados) ? req.body.asegurados.map(mapAsegurado) : [];
 
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'cplan es obligatorio' });
+  }
+  if (!isFunerarioCplan(cplan)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_FUNERARIO',
+      message: `El plan ${cplan} no es válido para el producto personas.`,
+    });
   }
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe enviar al menos un asegurado' });
@@ -181,7 +193,13 @@ router.post('/cotizacion', async (req, res) => {
   }
 
   try {
-    const quote = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    const quote = await personasClient.getCotizacionPer({
+      cramo,
+      cplan,
+      asegurados,
+      ifrecuencia,
+      ...(ndias != null && Number(ndias) > 0 ? { ndias: Number(ndias) } : {}),
+    });
     res.json({
       success: true,
       mprima: quote.mprima,
@@ -272,13 +290,24 @@ router.post('/emision', async (req, res) => {
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
   const cplan = state?.selectedPlan?.cplan;
-  const cramo = DEFAULT_RAMO;
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state?.selectedPlan,
+    metadataCanal: state?.metadataCanal,
+    cproducto: state?.metadataCanal?.cproducto,
+  });
 
   if (!state || !state.tomador) {
     return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.tomador requerido.' });
   }
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
+  }
+  if (!isFunerarioCplan(cplan)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_FUNERARIO',
+      message: `El plan ${cplan} no es válido para el producto personas.`,
+    });
   }
 
   const ifrecuencia = frecuencia || funeral.frecuencia || 'A';

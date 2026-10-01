@@ -141,7 +141,7 @@ async function getPlanesPer(input) {
  * @param {{ cramo:number, cplan:string, asegurados:Array, ifrecuencia:string }} input
  * @returns {{ mprima:number, mprimaext:number, ptasa:number, raw:object }}
  */
-async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia }) {
+async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia, ndias }) {
   const endpoint = '/cotizacion';
   const body = {
     cramo: cramo || getConfig().cramo,
@@ -149,6 +149,7 @@ async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia }) {
     asegurados,
     ifrecuencia: ifrecuencia || 'A',
   };
+  if (ndias != null && Number(ndias) > 0) body.ndias = Number(ndias);
   const response = await post(endpoint, body);
   if (response.status >= 200 && response.status < 300 && response.data?.status === true) {
     const d = response.data.data ?? {};

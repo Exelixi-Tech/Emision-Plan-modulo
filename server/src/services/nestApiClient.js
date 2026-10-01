@@ -9,6 +9,7 @@ const {
   buildAuthHeaders,
   trackResponse,
 } = require('./nestTokenService');
+const { getNestMonitorAppIdHeader } = require('./monitorReporter');
 
 function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 60_000;
@@ -29,7 +30,10 @@ function buildHeaders(extra = {}) {
 
 async function axiosOpts(extra = {}) {
   return {
-    headers: await buildAuthHeaders(),
+    headers: {
+      ...(await buildAuthHeaders()),
+      ...getNestMonitorAppIdHeader(),
+    },
     timeout: getTimeout(),
     ...extra,
   };
@@ -420,6 +424,43 @@ async function validateEmissionAutoViaNestApi(params) {
   throw err;
 }
 
+// ── Moneda (tasa BCV por fecha) ──────────────────────────────────────────────
+
+/**
+ * @param {string} fechaYmd YYYY-MM-DD
+ * @returns {Promise<{ ptasa: number, fecha: string, source: string }>}
+ */
+async function getTasaBcvForDateViaNestApi(fechaYmd) {
+  const url = `${getBaseUrl()}/api/v1/moneda/tasa-bcv?fecha=${encodeURIComponent(fechaYmd)}`;
+  const response = trackResponse(await axios.get(url, await axiosOpts({
+    validateStatus: () => true,
+  })));
+
+  if (response.status >= 200 && response.status < 300) {
+    const data = response.data?.data ?? response.data;
+    const ptasa = Number(data?.ptasa ?? 0);
+    if (!(ptasa > 0)) {
+      const err = new Error('nest-api no retornó tasa BCV válida');
+      err.code = 'BCV_RATE_ERROR';
+      throw err;
+    }
+    return {
+      ptasa,
+      fecha: String(data?.fecha ?? fechaYmd).slice(0, 10),
+      source: String(data?.source ?? 'mavamonedas'),
+    };
+  }
+
+  const body = response.data ?? {};
+  const code = body.code || (response.status === 404 ? 'BCV_RATE_NOT_FOUND' : 'NEST_API_BCV_ERROR');
+  const err = new Error(
+    formatNestApiErrorMessage(body, `HTTP ${response.status} consultando tasa BCV en nest-api`),
+  );
+  err.code = code;
+  err.httpStatus = response.status;
+  throw err;
+}
+
 // ── INMA (catálogo vehículo) ─────────────────────────────────────────────────
 
 /** @returns {Promise<{ min: number, max: number }>} */
@@ -656,6 +697,7 @@ module.exports = {
   buildAuthHeaders,
   trackResponse,
   getTimeout,
+  getTasaBcvForDateViaNestApi,
   getInmaAnios,
   getInmaMarcas,
   getInmaModelos,

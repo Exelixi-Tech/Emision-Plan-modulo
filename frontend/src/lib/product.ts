@@ -20,9 +20,16 @@ export interface ProductConfig {
   builderProductId?: string;
 }
 
+/** Ramo patrimonial por defecto. Solo aplica si el SSO no envía `cramo`. */
+export const PATRIMONIAL_RAMO_DEFAULT = parseInt(
+  import.meta.env.VITE_LAMUNDIAL_RAMO_PATRIMONIAL || '20',
+  10,
+);
+
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
   rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
   funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, hasVehicle: false },
+  patrimoniales: { id: 'patrimoniales', label: 'Patrimoniales', fullLabel: 'Seguro Patrimonial', cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
 };
 
 /** Ramo externo maplanes para BINAC* (confirmado: cramo 28; también existe fila duplicada en 18). */
@@ -31,7 +38,7 @@ export const RCV_RAMO_BINACIONAL = parseInt(
   10,
 );
 
-const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario'];
+const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimoniales'];
 const STORAGE_KEY = 'exelixi_product';
 
 export interface ProductDetectHints {
@@ -45,18 +52,15 @@ export interface ProductDetectHints {
  * Detecta rcv|funerario y lo persiste en sessionStorage (Nexus verify / bridge).
  */
 export function persistProductFromHints(hints?: ProductDetectHints): ProductId | null {
-  if (hints?.product === 'funerario') {
-    try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
-    return 'funerario';
-  }
-  if (hints?.product === 'rcv') {
-    try { sessionStorage.setItem(STORAGE_KEY, 'rcv'); } catch { /* ignore */ }
-    return 'rcv';
+  const raw = hints?.product != null ? String(hints.product).trim() : '';
+  if (VALID_PRODUCTS.includes(raw as ProductId)) {
+    try { sessionStorage.setItem(STORAGE_KEY, raw); } catch { /* ignore */ }
+    return raw as ProductId;
   }
   if (hints?.url) {
     try {
       const fromUrl = new URL(hints.url, window.location.origin).searchParams.get('product');
-      if (fromUrl === 'funerario' || fromUrl === 'rcv') {
+      if (fromUrl && VALID_PRODUCTS.includes(fromUrl as ProductId)) {
         sessionStorage.setItem(STORAGE_KEY, fromUrl);
         return fromUrl as ProductId;
       }
@@ -66,6 +70,10 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
   if (label.includes('funerar')) {
     try { sessionStorage.setItem(STORAGE_KEY, 'funerario'); } catch { /* ignore */ }
     return 'funerario';
+  }
+  if (label.includes('patrimonial')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'patrimoniales'); } catch { /* ignore */ }
+    return 'patrimoniales';
   }
   return null;
 }
@@ -105,6 +113,10 @@ export function getProductConfig(): ProductConfig {
 
 export function isFunerario(): boolean {
   return getProductId() === 'funerario';
+}
+
+export function isPatrimoniales(): boolean {
+  return getProductId() === 'patrimoniales';
 }
 
 export function isRcv(): boolean {

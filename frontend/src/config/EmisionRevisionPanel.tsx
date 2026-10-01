@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Check, X, Loader2, ClipboardList, User, AlertTriangle,
   History, ExternalLink, FileDown, ArrowLeft,
-  RefreshCw, Mail, ShieldCheck, Inbox,
+  RefreshCw, Mail, ShieldCheck, Inbox, Phone,
 } from 'lucide-react';
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
@@ -41,10 +41,11 @@ type Submission = {
     tomador?: Record<string, unknown>;
     asegurado?: Record<string, unknown>;
     beneficiario?: Record<string, unknown>;
-    funeral?: {
-      frecuencia?: string;
-      beneficiarios?: Record<string, unknown>[];
-    };
+                funeral?: {
+                  frecuencia?: string;
+                  beneficiarios?: Record<string, unknown>[];
+                  asegurados?: Record<string, unknown>[];
+                };
     reviewAlerts?: {
       emails?: string[];
       notifiedAt?: string;
@@ -58,6 +59,10 @@ type Submission = {
       reason?: string;
       paymentEmailTo?: string;
       paymentEmailSent?: boolean;
+      paymentEmailError?: string;
+      clientEmailTo?: string;
+      clientEmailSent?: boolean;
+      clientEmailError?: string;
     };
     documents?: Record<string, {
       ocr?: Record<string, unknown>;
@@ -139,6 +144,23 @@ function personLabel(p?: Record<string, unknown>): string {
   const name = [p.nombre, p.apellido].filter(Boolean).join(' ').trim();
   const doc = [p.tipoDoc, p.identificacion].filter(Boolean).join('-').trim();
   return name || doc || '—';
+}
+
+function personPhone(p?: Record<string, unknown>): string {
+  if (!p) return '';
+  const raw = p.telefono ?? p.celular ?? p.telefono_tomador ?? p.phone;
+  return String(raw ?? '').trim();
+}
+
+function submissionPhone(sub: Submission): string {
+  const funeral = sub.snapshot?.funeral;
+  const firstInsured = Array.isArray(funeral?.asegurados) ? funeral.asegurados[0] : undefined;
+  return (
+    personPhone(sub.snapshot?.tomador)
+    || personPhone(sub.snapshot?.asegurado)
+    || personPhone(firstInsured)
+    || ''
+  );
 }
 
 type DocLink = { key: string; label: string; url: string; kind: 'policy' | 'annex' | 'upload' };
@@ -309,25 +331,40 @@ async function postRefresh(path: string, current: string): Promise<string | null
   return String(data.token);
 }
 
+async function bootstrapRevisionToken(): Promise<boolean> {
+  const { bootstrapPanelToken } = await import('./panelTokenBootstrap');
+  const token = await bootstrapPanelToken({
+    panel: 'revision',
+    empresaId: EMPRESA_ID || 1,
+  });
+  if (!token) return false;
+  replacePanelToken(token);
+  return true;
+}
+
 async function refreshRevisionToken(): Promise<boolean> {
   const current = readPanelToken();
-  if (!current) return false;
   try {
-    const scope = jwtScope(current);
-    const paths =
-      scope === 'config-panel'
-        ? ['/api/config/refresh-token', '/api/funeral-submissions/refresh-token']
-        : ['/api/funeral-submissions/refresh-token'];
-    let next: string | null = null;
-    for (const path of paths) {
-      next = await postRefresh(path, current);
-      if (next) break;
+    if (current) {
+      const scope = jwtScope(current);
+      const paths =
+        scope === 'config-panel'
+          ? ['/api/config/refresh-token', '/api/funeral-submissions/refresh-token']
+          : ['/api/funeral-submissions/refresh-token'];
+      let next: string | null = null;
+      for (const path of paths) {
+        next = await postRefresh(path, current);
+        if (next) break;
+      }
+      if (next) {
+        replacePanelToken(next);
+        return true;
+      }
     }
-    if (!next) return false;
-    replacePanelToken(next);
-    return true;
+    // Iframe SysIP: token ausente, tenant/SSO o firmado con otro JWT_SECRET.
+    return bootstrapRevisionToken();
   } catch {
-    return false;
+    return bootstrapRevisionToken();
   }
 }
 
@@ -653,6 +690,7 @@ function CompactSummaryCard({
   recNum?: string;
   emittedWhen?: string | null;
 }) {
+  const phone = submissionPhone(selected);
   return (
     <div className="revision-card overflow-hidden min-w-0">
       <BrandBar />
@@ -677,6 +715,14 @@ function CompactSummaryCard({
                   <span className="inline-flex items-center gap-1">
                     <User size={11} className="text-indigo-400" />
                     {selected.tomadorRif}
+                  </span>
+                )}
+                {phone && (
+                  <span className="inline-flex items-center gap-1">
+                    <Phone size={11} className="text-indigo-400" />
+                    <a href={`tel:${phone.replace(/\s/g, '')}`} className="text-indigo-700 font-semibold hover:underline">
+                      {phone}
+                    </a>
                   </span>
                 )}
                 {selected.tomadorEmail && (
@@ -722,6 +768,12 @@ function CompactSummaryCard({
             <dt className="text-[9px] font-bold text-slate-400 uppercase">Frecuencia</dt>
             <dd className="font-semibold text-slate-800 mt-0.5">
               {selected.snapshot?.funeral?.frecuencia || '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[9px] font-bold text-slate-400 uppercase">Teléfono</dt>
+            <dd className="font-semibold text-slate-800 mt-0.5">
+              {phone || <span className="text-slate-400 italic">Sin teléfono</span>}
             </dd>
           </div>
           <div>
@@ -1172,6 +1224,7 @@ export function EmisionRevisionPanel() {
               ) : (
                 list.map((s) => {
                   const pts = displayScoreTotal(s.scoreTotal, s.scoreBreakdown);
+                  const phone = submissionPhone(s);
                   return (
                   <button
                     key={s.id}
@@ -1196,6 +1249,7 @@ export function EmisionRevisionPanel() {
                         </span>
                         <p className="text-xs text-slate-500 mt-1 truncate">
                           {s.planName || `Plan ${s.cplan}`}
+                          {phone ? ` · ${phone}` : ''}
                         </p>
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <p className="text-[10px] text-slate-400">{formatDate(s.reviewedAt || s.createdAt)}</p>
@@ -1266,6 +1320,13 @@ export function EmisionRevisionPanel() {
                   <p className="text-xs text-rose-800 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
                     Rechazada{selected.reviewedAt ? ` ${formatDate(selected.reviewedAt)}` : ''}.
                     {selected.rejectReason ? ` Motivo: ${selected.rejectReason}` : ''}
+                    {selected.emailSent
+                      ? ' Correo de rechazo enviado al tomador.'
+                      : selected.emailError
+                        ? ` Correo al tomador no salió: ${selected.emailError}`
+                        : selected.tomadorEmail
+                          ? ' El correo de rechazo no se confirmó.'
+                          : ' Sin correo del tomador: no se envió aviso.'}
                   </p>
                 )}
                 {selected.estado === 'expired' && (

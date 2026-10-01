@@ -121,14 +121,25 @@ export function EmisionConfigPanel() {
 
     (async () => {
       try {
-        const panelToken =
+        // SysIP no se toca: si el JWT del iframe es inválido, mint fresco vía emision-api.
+        const { bootstrapPanelToken } = await import('./panelTokenBootstrap');
+        let panelToken =
           new URL(window.location.href).searchParams.get('token')?.trim() || '';
-        const headers: Record<string, string> = {};
-        if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
-        const res = await fetch(
-          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(String(cramo))}`,
-          { headers },
-        );
+        const minted = await bootstrapPanelToken({
+          panel: 'preguntas',
+          empresaId: EMPRESA_ID,
+        });
+        if (minted) panelToken = minted;
+        if (cancelled) return;
+
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (panelToken) {
+          headers.Authorization = `Bearer ${panelToken}`;
+          headers['x-nexus-token'] = panelToken;
+        }
+        const qs = new URLSearchParams({ cramo: String(cramo) });
+        if (panelToken) qs.set('nexus_token', panelToken);
+        const res = await fetch(`${moduleApiBase()}/personas/planes?${qs}`, { headers });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         const raw = Array.isArray(data?.planes) ? data.planes : [];

@@ -16,7 +16,7 @@ export function useSessionTokenDelegation() {
       const merged = mergeMarketplaceActorMetadata({ ...current, ...metadata });
       setMetadataCanal(merged);
       const product = merged.product ?? metadata.product;
-      if (product === 'funerario' || product === 'rcv') {
+      if (product) {
         persistProductFromHints({ product: String(product) });
       }
     });

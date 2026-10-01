@@ -22,7 +22,11 @@ const catalogoRoutes = require('./routes/catalogo');
 const personasRoutes = require('./routes/personas');
 const funeralHealthRoutes = require('./routes/funeralHealth');
 const funeralSubmissionRoutes = require('./routes/funeralSubmission');
+const patrimonialRoutes = require('./routes/patrimonial');
+const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
+const revisionPanelRoutes = require('./routes/revisionPanel');
 const nexusAuth      = require('./middleware/nexusAuth');
+const { reportExpressError } = require('./services/monitorReporter');
 
 const app = express();
 
@@ -53,6 +57,9 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// Mesa/config: mint JWT revision-panel sin nexus_token (iframe SysIP con token viejo).
+app.use('/api/revision', revisionPanelRoutes);
+
 // Multi-tenant: todas las rutas /api requieren nexus_token
 // Catálogos (valrep + INMA) consultados directamente desde Sis2000.
 app.use('/api/valrep',   nexusAuth, valrepRoutes);
@@ -62,13 +69,16 @@ app.use('/api/personas', nexusAuth, personasRoutes);
 // Cuestionario de salud funerario (preguntas Exélixi + persistencia local)
 app.use('/api/funeral', nexusAuth, funeralHealthRoutes);
 app.use('/api/funeral', nexusAuth, funeralSubmissionRoutes);
+app.use('/api/patrimonial', nexusAuth, patrimonialRoutes);
+app.use('/api/patrimonial', nexusAuth, patrimonialSubmissionRoutes);
 // Emisión genérica Exélixi (product-builder → nest-api product-emission)
 app.use('/api/exelixi', nexusAuth, exelixiRoutes);
 // Cotizaciones y emisiones La Mundial
 app.use('/api', nexusAuth, emisionRoutes);
 
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   console.error('[modulo-emision] error:', err);
+  reportExpressError(err, req);
   res.status(err.status || 500).json({ success: false, code: err.code || 'INTERNAL', message: err.message });
 });
 

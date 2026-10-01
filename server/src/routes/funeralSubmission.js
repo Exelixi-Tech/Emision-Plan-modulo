@@ -129,7 +129,9 @@ router.post('/submissions', async (req, res) => {
 
     const scoring = computePolicyHealthScore(questions, insureds, rules);
 
-    if (scoring.verdict === 'reject') {
+    // Solo el rechazo de una pregunta (términos, blockIfTrue, etc.) corta sin mesa.
+    // El rango "Alto" debe crear solicitud para que mesa técnica la vea.
+    if (scoring.forcedReject) {
       return res.status(422).json({
         success: false,
         code: 'HEALTH_BLOCKED',
@@ -209,9 +211,17 @@ router.post('/submissions', async (req, res) => {
       },
       verdict: scoring.verdict,
       reviewerEmails: rules.reviewerEmails,
-      notifyReviewers: scoring.verdict === 'referred',
+      notifyReviewers: scoring.verdict !== 'emit',
       autoApprove: scoring.verdict === 'emit',
     });
+
+    const autoPayOk = scoring.verdict === 'emit' && submission?.estado === 'approved';
+    const clientVerdict = autoPayOk ? 'emit' : scoring.verdict === 'emit' ? 'referred' : scoring.verdict;
+    const clientMessage = autoPayOk
+      ? scoring.verdictMessage
+      : scoring.verdict === 'emit'
+        ? 'Un técnico revisará tu solicitud antes de continuar al pago.'
+        : scoring.verdictMessage;
 
     return res.status(201).json({
       success: true,
@@ -220,8 +230,8 @@ router.post('/submissions', async (req, res) => {
         total: scoring.total,
         breakdown: scoring.breakdown,
         blocked: scoring.blocked,
-        verdict: scoring.verdict,
-        verdictMessage: scoring.verdictMessage,
+        verdict: clientVerdict,
+        verdictMessage: clientMessage,
         perInsured: scoring.perInsured?.map((p) => ({
           key: p.key,
           label: p.label,
@@ -229,7 +239,7 @@ router.post('/submissions', async (req, res) => {
           verdict: p.scoring.verdict,
         })),
       },
-      message: scoring.verdictMessage,
+      message: clientMessage,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

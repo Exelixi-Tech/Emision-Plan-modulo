@@ -5,6 +5,11 @@ export interface PlanParentesco {
   max_edad: number;
 }
 
+/** Plan devuelto por valrep/planes/producto (numérico o alfanumérico). */
+export function isFunerarioCplan(cplan?: string | null): boolean {
+  return String(cplan || '').trim().length > 0;
+}
+
 export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolean {
   if (!parentescos?.length) return false;
   return parentescos.length === 1 && Number(parentescos[0].cparen) === 1;

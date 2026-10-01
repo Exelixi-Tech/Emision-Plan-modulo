@@ -12,7 +12,7 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario';
+export type ProductId = 'rcv' | 'funerario' | 'patrimoniales';
 
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -119,6 +119,8 @@ export interface PlanParentesco {
 export interface Plan {
   /** Código del plan en Sis2000 (ej. "RCVBAS", "Auto"). Se envía al backend en quote/emit. */
   cplan?: string;
+  /** Ramo Sis2000 del plan (puede diferir del cramo SSO en productos multi-ramo). */
+  cramo?: number;
   name: string;
   price: string;
   priceNum: number;
@@ -139,6 +141,8 @@ export interface Plan {
   nmax_dep?: number | null;
   /** Tope de personas en la póliza: titular + nmax_dep. */
   maxAsegurados?: number;
+  /** Días de vigencia (Viajero / maplanes_frec.ndias). */
+  ndias?: number | null;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
@@ -201,6 +205,13 @@ export interface FuneralData {
   healthQuestionnaireDone?: boolean;
 }
 
+/** Datos del bien asegurado (producto patrimoniales). */
+export interface PatrimonialesData {
+  datosBien: string;
+  tipo: string;
+  descripcion: string;
+}
+
 export interface VehicleData {
   placa: string;
   /** Tipo de placa: nacional (formato venezolano AAA000A/AAA000) o extranjera. */
@@ -245,6 +256,10 @@ export interface PolicyCoverageLine {
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
+  /** Alias Sis2000 / quote patrimonial. */
+  xcobertura?: string;
+  msuma?: number;
+  msumamax?: number;
 }
 
 export interface PolicyQuote {
@@ -292,6 +307,8 @@ export interface WizardState {
   tomador: TomadorData;
   /** Datos del producto Funerario (personas). Solo se usa si product = 'funerario'. */
   funeral: FuneralData;
+  /** Datos del bien (patrimoniales). */
+  patrimoniales?: PatrimonialesData;
   /** Frecuencia de pago RCV (plan automóvil). */
   rcv: RcvPlanData;
   /** true cuando la frecuencia activa es M/T/S (propaga a Pagos vía bridge). */
