@@ -104,14 +104,28 @@ export function isBackofficeSession(meta: Record<string, unknown>): boolean {
   return origen === 'backoffice' || allowPending;
 }
 
+/** crol interno de Sis2000 (técnico/administrativo): viene informado y no es productor (5/8). */
+export function isTecnicoRole(meta: Record<string, unknown>): boolean {
+  const raw = meta.crol;
+  if (raw === undefined || raw === null || String(raw).trim() === '') return false;
+  const crol = Number(raw);
+  return Number.isFinite(crol) && crol !== 5 && crol !== 8;
+}
+
 /**
- * En Sis2000:
- * - Rol Productor (crol 5 u 8): NO ve el selector (toma su propio código de productor logueado).
- * - Otros roles (crol 1, 2, 3, etc.): SÍ ven el selector para asociar la emisión.
+ * Selector de productor: solo el técnico (rol interno de Sis2000).
+ * - Rol Productor (crol 5 u 8): NO lo ve (toma su propio código).
+ * - Sin crol (portal, canales, intermediarios): NO lo ve; usa el productor de la sesión.
+ * - Rol interno (crol 1, 2, 3, …): SÍ lo ve para asociar la emisión.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
   // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
   if (isProductorRole(meta)) {
+    return false;
+  }
+
+  // Sin crol interno (portal / canal / intermediario) no se muestra
+  if (!isTecnicoRole(meta)) {
     return false;
   }
 
@@ -121,7 +135,7 @@ export function shouldShowProductorSelector(meta: Record<string, unknown>): bool
     return false;
   }
 
-  // Para todos los demás roles en Sis2000, SÍ se muestra el selector
+  // Técnico interno de Sis2000: SÍ se muestra el selector
   return true;
 }
 

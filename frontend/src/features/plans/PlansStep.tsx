@@ -149,6 +149,8 @@ export function PlansStep() {
       centidad: 'P',
       citem: val,
       xproductor: lbl,
+      /** El servidor emite con este productor (no con el del token) si el rol es técnico. */
+      productorSeleccionado: true,
     });
     setRcv({
       cproductor: val,

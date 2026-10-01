@@ -53,7 +53,17 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
+  const rawCrol = nexusMetadata?.crol ?? state.metadataCanal?.crol;
+  const crolNum = rawCrol != null && String(rawCrol).trim() !== '' ? Number(rawCrol) : NaN;
+  const esTecnico = Number.isFinite(crolNum) && crolNum !== 5 && crolNum !== 8;
+  const usaSeleccion = esTecnico && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
     const vals = sources.map((src) => src?.[key]);
     const val = (key === 'cgestor' || key === 'cgestor_in')
       ? preferGestorCode(...vals)
