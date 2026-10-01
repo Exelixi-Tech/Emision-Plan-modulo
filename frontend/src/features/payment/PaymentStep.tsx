@@ -897,6 +897,7 @@ export function PaymentStep() {
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white grid place-items-center shadow-md shadow-indigo-100">
                 <Building2 size={18} />
               </div>
+              {/*
               <div>
                 <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                   Registro de Proveedor en Póliza
@@ -908,6 +909,7 @@ export function PaymentStep() {
                   Inserta dinámicamente el proveedor asociado al emitir Combinado Familiar.
                 </p>
               </div>
+              */}
             </div>
 
             <button
