@@ -6,7 +6,7 @@ import type { PaymentMethod } from '../../types';
 import {
   Smartphone, Lock, ShieldCheck, KeyRound,
   Check, Receipt, Sparkles, Loader2, BadgeCheck, AlertTriangle,
-  CheckCircle2, XCircle, RefreshCw, Send, ClipboardCheck, Building2,
+  CheckCircle2, XCircle, RefreshCw, Send, ClipboardCheck,
 } from 'lucide-react';
 import { formatQuoteUsdMoney, formatQuoteVesLabel, formatQuoteVesPaymentInput, formatQuoteTasa } from '../../lib/money';
 import { resolveFrecuenciaAmounts, resolveWizardFrecuenciaCode, resolveRcvQuoteBasis } from '../../lib/frecuencia';
@@ -92,9 +92,10 @@ export function PaymentStep() {
   const [verifyError, setVerifyError] = useState<string>('');
 
   // ── Registro de Proveedor en Póliza (Combinado Familiar / adproveedor) ────
-  const [providerRegStatus, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [providerRegResult, setProviderRegResult] = useState<any>(null);
-  const [providerRegError, setProviderRegError] = useState<string>('');
+  // Panel de registro oculto: se conservan los setters (registro automático al pagar).
+  const [, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [, setProviderRegResult] = useState<any>(null);
+  const [, setProviderRegError] = useState<string>('');
 
   // ── SyPago Débito OTP ─────────────────────────────────────────────────
   const [otpDocType, setOtpDocType] = useState('V');
