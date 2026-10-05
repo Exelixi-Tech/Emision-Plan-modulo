@@ -69,6 +69,35 @@ const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 
+/** Ramos con prima por días (viajero ramo 5 y viaje local ramo 25). */
+const VIAJERO_RAMOS = new Set([5, 25]);
+
+/** Productos Viajero (25) y Viajero Local (26): planes por producto con ndias (maplanes_frec). */
+const VIAJERO_PRODUCTOS = new Set(['25', '26']);
+
+/** Fraccionadas: Pagos aún cobra la prima anual en personas, así que se emite Anual. */
+const FRECUENCIAS_FRACCIONADAS = new Set(['M', 'T', 'S', 'C']);
+
+function personasIfrecuencia(code) {
+  const c = String(code || 'A').trim().toUpperCase().charAt(0) || 'A';
+  return FRECUENCIAS_FRACCIONADAS.has(c) ? 'A' : c;
+}
+
+/** Viajero: vigencia desde hoy por los días del plan (igual que la cotización del wizard). */
+function resolveViajeroVigencia(selectedPlan, cramo) {
+  if (!VIAJERO_RAMOS.has(Number(cramo))) return null;
+  let ndias = Number(selectedPlan?.ndias);
+  if (!Number.isFinite(ndias) || ndias <= 0) {
+    const m = String(selectedPlan?.name ?? selectedPlan?.tag ?? '').match(/(\d+)\s*d[ií]as?/i);
+    ndias = m ? Number(m[1]) : NaN;
+  }
+  if (!Number.isFinite(ndias) || ndias <= 0) return null;
+  const fdesde = personasMapper._internal.todayYmd();
+  const hasta = new Date(`${fdesde}T00:00:00Z`);
+  hasta.setUTCDate(hasta.getUTCDate() + ndias - 1);
+  return { ndias, fdesde, fhasta: hasta.toISOString().slice(0, 10) };
+}
+
 /** Fusiona metadata JWT con query (mismo criterio que RCV /catalogo/planes). */
 function funeralCanalMeta(req) {
   const meta = { ...(req.nexusMetadata || {}) };
@@ -106,7 +135,9 @@ router.get('/planes', async (req, res) => {
   const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
   // Scoring de Vida (1) y Accidentes personales (5): el catálogo del ramo,
   // sin el producto funerario 57 que siempre consulta el ramo 45.
-  if (req.query.catalogo === 'ramo' || askedRamo === 1 || askedRamo === 5) {
+  // Viajero (25/26) también es ramo 5, pero sus planes van por producto (ndias).
+  const viajeroProducto = VIAJERO_PRODUCTOS.has(String(meta.cproducto ?? '').trim());
+  if (req.query.catalogo === 'ramo' || (!viajeroProducto && (askedRamo === 1 || askedRamo === 5))) {
     try {
       const targetRamo = Number.isFinite(askedRamo) ? askedRamo : 1;
       const result = await fetchPlanesV2({ ...meta, cramo: targetRamo });
@@ -346,7 +377,8 @@ router.post('/emision', async (req, res) => {
     });
   }
 
-  const ifrecuencia = frecuencia || funeral.frecuencia || 'A';
+  const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
+  const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo);
   const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
     tomador: state.tomador,
     asegurado: state.asegurado,
@@ -367,7 +399,7 @@ router.post('/emision', async (req, res) => {
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
-    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia, ...(vigencia ?? {}) });
 
     // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud): la prima
     //     ajustada es la que se cobra y la que viaja como mprimaext, como en la pasarela.
@@ -384,7 +416,8 @@ router.post('/emision', async (req, res) => {
       persons: funeral.asegurados,
       asegurados,
       byInsured: funeral.healthAnswersByInsured,
-      quoteOne: (aseg) => personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia }),
+      quoteOne: (aseg) =>
+        personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia, ...(vigencia ?? {}) }),
     });
     if (premiumAdjust) {
       console.log(
@@ -414,6 +447,10 @@ router.post('/emision', async (req, res) => {
       cotizacion,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    if (vigencia) {
+      payload.fdesde = vigencia.fdesde;
+      payload.fhasta = vigencia.fhasta;
+    }
 
     const meta = state.metadataCanal || {};
     console.log(

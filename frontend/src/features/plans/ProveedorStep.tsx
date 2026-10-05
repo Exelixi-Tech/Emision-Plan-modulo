@@ -18,6 +18,7 @@ import { decodeNexusTokenMetadata, getNexusToken } from '../../lib/nexus-token-c
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { frecuenciasPersonas } from '../../lib/frecuencia';
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -157,7 +158,7 @@ export function ProveedorStep() {
     getFrecuenciasByPlan(planCode, resolveQuoteCramo(selectedPlan?.cramo, product.cramo))
       .then((items) => {
         if (!cancelled) {
-          const result = items.length > 0 ? items : FALLBACK_FRECUENCIAS;
+          const result = frecuenciasPersonas(items.length > 0 ? items : FALLBACK_FRECUENCIAS, [FALLBACK_FRECUENCIAS[0]]);
           setApiFrecuencias(result);
           const currentValid = result.find((i) => String(i.code) === funeral.frecuencia);
           if (!currentValid && result.length > 0) {
@@ -167,7 +168,7 @@ export function ProveedorStep() {
       })
       .catch(() => {
         if (!cancelled) {
-          setApiFrecuencias(FALLBACK_FRECUENCIAS);
+          setApiFrecuencias([FALLBACK_FRECUENCIAS[0]]);
           setFuneral({ frecuencia: 'A' });
         }
       })

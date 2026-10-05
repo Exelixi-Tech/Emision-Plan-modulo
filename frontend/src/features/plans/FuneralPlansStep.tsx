@@ -11,6 +11,7 @@ import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { syncTitularFromTomador } from '../../lib/funeral-sync';
+import { frecuenciasPersonas } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
 function emptyTitular(): FuneralPerson {
@@ -211,7 +212,7 @@ export function FuneralPlansStep() {
     getFrecuenciasByPlan(planCode, planCramo(selectedPlan, product.cramo))
       .then((items) => {
         if (cancelled) return;
-        const list = items.length ? items : FRECUENCIAS_PERSONAS_FALLBACK;
+        const list = frecuenciasPersonas(items, FRECUENCIAS_PERSONAS_FALLBACK);
         setApiFrecuencias(list);
         const currentValid = list.find((i) => String(i.code) === funeral.frecuencia);
         if (!currentValid) {
@@ -306,6 +307,14 @@ export function FuneralPlansStep() {
     })
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;
+        if (!(Number(r.data.mprimaext) > 0)) {
+          // Sin tarifa en Sis2000 para este plan/edad: no se puede cobrar ni emitir.
+          const message = 'Este plan no tiene tarifa para los asegurados indicados. Elige otro plan.';
+          useWizardStore.getState().clearQuote();
+          useWizardStore.getState().setQuoteState('error', message);
+          toast.warning('Plan sin tarifa', message, 9000);
+          return;
+        }
         useWizardStore.getState().setQuote(
           { mprima: r.data.mprima, mprimaext: r.data.mprimaext, ptasa: r.data.ptasa },
           quoteSig,
