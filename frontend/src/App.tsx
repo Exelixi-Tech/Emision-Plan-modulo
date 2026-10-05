@@ -11,7 +11,8 @@ import { DevFlowSwitcher } from './components/DevFlowSwitcher';
 type FlowType = 'proveedor' | 'funerario' | 'rcv' | 'exelixi';
 
 function resolveInitialFlow(): FlowType {
-  if (typeof window !== 'undefined') {
+  // El selector por query param solo está habilitado en modo desarrollo
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
     const flow = (params.get('flow') || params.get('view') || params.get('preview') || '').toLowerCase();
     if (flow === 'proveedor' || flow === 'plan-proveedor' || flow === 'proveedores') return 'proveedor';
@@ -25,7 +26,7 @@ function resolveInitialFlow(): FlowType {
 }
 
 /**
- * Enrutador por producto con soporte para vista directa de Plan Proveedor sin tokens.
+ * Enrutador por producto.
  */
 export default function App() {
   useSessionTokenDelegation();
@@ -69,7 +70,9 @@ export default function App() {
   return (
     <>
       {renderApp()}
-      <DevFlowSwitcher currentFlow={activeFlow} onSelectFlow={handleSelectFlow} />
+      {import.meta.env.DEV && (
+        <DevFlowSwitcher currentFlow={activeFlow} onSelectFlow={handleSelectFlow} />
+      )}
     </>
   );
 }

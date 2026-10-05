@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import type { CanalVisibility } from './canal-visibility';
-import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
+import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine, ProveedorItem } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 
@@ -792,16 +792,7 @@ export async function validateFuneralEmission(payload: {
   }
 }
 
-export interface ProveedorItem {
-  xproveedor?: string;
-  xcliente?: string;
-  cci_rif: number | string;
-  cplan?: string;
-  cramo?: number;
-  cclave_num?: number;
-  itiposerv?: string;
-  [key: string]: any;
-}
+export type { ProveedorItem };
 
 export interface RegisterPolicyProveedorDto {
   cpoliza?: number | string;
@@ -836,90 +827,61 @@ export async function getProveedores(params: {
   cci_rif?: string | number;
   cclave_num?: number;
 }): Promise<ProveedorItem[]> {
-  const mockItems: ProveedorItem[] = [
-    { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
-    { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
-  ];
+  const qs = new URLSearchParams({
+    cplan: params.cplan,
+    cramo: String(params.cramo ?? 28),
+  });
+  if (params.centidad) qs.set('centidad', params.centidad);
+  if (params.citem) qs.set('citem', params.citem);
+  if (params.cci_rif) qs.set('cci_rif', String(params.cci_rif));
+  if (params.cclave_num != null) qs.set('cclave_num', String(params.cclave_num));
 
-  try {
-    const qs = new URLSearchParams({
-      cplan: params.cplan,
-      cramo: String(params.cramo ?? 28),
-    });
-    if (params.centidad) qs.set('centidad', params.centidad);
-    if (params.citem) qs.set('citem', params.citem);
-    if (params.cci_rif) qs.set('cci_rif', String(params.cci_rif));
-    if (params.cclave_num != null) qs.set('cclave_num', String(params.cclave_num));
+  const response = await api.get<{
+    ok?: boolean;
+    items?: ProveedorItem[];
+    data?: ProveedorItem[] | { items?: ProveedorItem[] };
+  }>(`/valrep/proveedores?${qs.toString()}`);
 
-    const response = await api.get<{
-      ok?: boolean;
-      items?: ProveedorItem[];
-      data?: ProveedorItem[] | { items?: ProveedorItem[] };
-    }>(`/valrep/proveedores?${qs.toString()}`);
-
-    const resData = response.data;
-    let list: ProveedorItem[] = [];
-    if (resData?.items && Array.isArray(resData.items) && resData.items.length > 0) {
-      list = resData.items;
-    } else if (Array.isArray(resData?.data) && resData.data.length > 0) {
-      list = resData.data;
-    } else if (
-      typeof resData?.data === 'object' &&
-      resData.data !== null &&
-      'items' in resData.data &&
-      Array.isArray((resData.data as { items?: ProveedorItem[] }).items) &&
-      (resData.data as { items?: ProveedorItem[] }).items!.length > 0
-    ) {
-      list = (resData.data as { items?: ProveedorItem[] }).items!;
-    }
-
-    if (list.length > 0) {
-      return list.map((item) => ({
-        ...item,
-        xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
-        xcliente: String(item.xcliente || item.xproveedor || '').trim(),
-        cplan: item.cplan || params.cplan,
-        cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
-        itiposerv: item.itiposerv || 'S',
-      }));
-    }
-  } catch (err) {
-    console.warn('[getProveedores] valrep/proveedores fallback to mock items', err);
+  const resData = response.data;
+  let list: ProveedorItem[] = [];
+  if (resData?.items && Array.isArray(resData.items)) {
+    list = resData.items;
+  } else if (Array.isArray(resData?.data)) {
+    list = resData.data;
+  } else if (
+    typeof resData?.data === 'object' &&
+    resData.data !== null &&
+    'items' in resData.data &&
+    Array.isArray((resData.data as { items?: ProveedorItem[] }).items)
+  ) {
+    list = (resData.data as { items?: ProveedorItem[] }).items!;
   }
 
-  return mockItems;
+  return list.map((item) => ({
+    ...item,
+    xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
+    xcliente: String(item.xcliente || item.xproveedor || '').trim(),
+    cplan: item.cplan || params.cplan,
+    cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
+    itiposerv: item.itiposerv || 'S',
+  }));
 }
 
 /**
  * Registra un proveedor asociado a una póliza en dbo.adproveedor vía
- * POST /api/v1/partner/starter/proveedores/register-policy.
+ * POST /valrep/proveedores/register-policy (proxy backend).
  */
 export async function registerPolicyProveedor(
   payload: RegisterPolicyProveedorDto,
 ): Promise<{ status?: boolean; ok?: boolean; message?: string; data?: any }> {
-  try {
-    const response = await api.post<{
-      ok?: boolean;
-      status?: boolean;
-      message?: string;
-      data?: any;
-    }>('/valrep/proveedores/register-policy', payload);
-    return response.data;
-  } catch (err) {
-    // Intento directo con apikey de partner si el proxy local no responde
-    try {
-      const directUrl = 'https://nexusqa.exelixitech.com/nest-api-docs/api/v1/partner/starter/proveedores/register-policy';
-      const directResp = await axios.post(directUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: '2b7dd2e40dad443a2e9ab4c9951f4489341184e7b6d1b3eb1241f39fb7572f2c',
-        },
-      });
-      return directResp.data;
-    } catch {
-      throw err;
-    }
-  }
+  const response = await api.post<{
+    ok?: boolean;
+    status?: boolean;
+    message?: string;
+    data?: any;
+  }>('/valrep/proveedores/register-policy', payload);
+  return response.data;
 }
+
 
 

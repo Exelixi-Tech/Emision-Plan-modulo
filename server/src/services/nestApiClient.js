@@ -615,16 +615,9 @@ async function getValrepProveedores(params = {}) {
   }
 
   const payload = response.data?.data || response.data;
-  let rawItems = Array.isArray(payload)
+  const rawItems = Array.isArray(payload)
     ? payload
     : payload?.proveedores || payload?.items || payload?.data || [];
-
-  if (!rawItems.length) {
-    rawItems = [
-      { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
-      { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: 28, cplan: 'IGEMA' },
-    ];
-  }
 
   const mapped = rawItems.map((p) => {
     const name = String(p.xcliente || p.xproveedor || p.label || '').trim();

@@ -2,6 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { verifyNexusAccess, resolveNexusApiUrl, type NexusVerifyResult } from './nexus-core';
 import { persistProductFromHints } from '../lib/product';
 import { persistCotizadorFromHints } from '../lib/cotizador-flow';
+import { getNexusToken } from '../lib/nexus-token-client';
+
+const MODULE_TOKEN_KEY = 'nexus_access_token_emision';
+
+function hasNexusAccessToken(): boolean {
+  return Boolean(getNexusToken(MODULE_TOKEN_KEY));
+}
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 interface NexusContextValue {
@@ -17,6 +24,80 @@ export function useNexus(): NexusContextValue {
   return ctx;
 }
 
+// ─── Pantalla de bloqueo / loading ───────────────────────────────────────────
+function NexusScreen({ type, reason, onRetry }: {
+  type: 'loading' | 'blocked';
+  reason?: string;
+  onRetry?: () => Promise<void>;
+}) {
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    await onRetry?.();
+    setRetrying(false);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, display: 'flex',
+      alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(135deg, #0C133A 0%, #1a2460 100%)',
+      fontFamily: 'Inter, system-ui, sans-serif', zIndex: 9999,
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: '1.25rem',
+        padding: '3rem 2.5rem', maxWidth: 420, width: '90%',
+        textAlign: 'center', boxShadow: '0 25px 50px rgba(0,0,0,0.35)',
+      }}>
+        {type === 'loading' ? (
+          <>
+            <div style={{
+              width: 44, height: 44,
+              border: '3px solid #e5e7eb', borderTopColor: '#ED7423',
+              borderRadius: '50%', margin: '0 auto 1.5rem',
+              animation: 'nexusSpin 0.8s linear infinite',
+            }} />
+            <p style={{ fontSize: '0.95rem', color: '#475569' }}>Verificando acceso…</p>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0C133A', margin: '0 0 0.75rem' }}>
+              Acceso no disponible
+            </h1>
+            <p style={{ fontSize: '0.95rem', color: '#475569', margin: '0 0 0.5rem', lineHeight: 1.5 }}>
+              {reason}
+            </p>
+            <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.75rem' }}>
+              Si cree que esto es un error, contacte a su administrador.
+            </p>
+            {onRetry && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                style={{
+                  marginTop: '1.5rem',
+                  padding: '0.6rem 1.5rem',
+                  background: retrying ? '#e5e7eb' : '#0C133A',
+                  color: retrying ? '#9ca3af' : '#fff',
+                  border: 'none', borderRadius: '0.5rem',
+                  fontSize: '0.9rem', fontWeight: 600,
+                  cursor: retrying ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                {retrying ? 'Verificando…' : '🔄 Reintentar'}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <style>{`@keyframes nexusSpin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 // ─── NexusGuard ───────────────────────────────────────────────────────────────
 interface NexusGuardProps {
   children: React.ReactNode;
@@ -30,6 +111,14 @@ interface GuardState {
   empresa?: NexusVerifyResult['empresa'];
   submodulo?: NexusVerifyResult['submodulo'];
   reason?: string;
+}
+
+/** Detecta si venimos de un flujo encadenado (bridge ya validó el token). */
+function isChainedFlow(): boolean {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return Boolean(params.get('sid') && params.get('nexus_token'));
+  } catch { return false; }
 }
 
 const DEFAULT_DEV_EMPRESA = {
@@ -48,59 +137,51 @@ const DEFAULT_DEV_SUBMODULO = {
 };
 
 export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) {
-  // Siempre permitimos acceso directo sin bloquear por token en desarrollo o modo standalone
-  const [state, setState] = useState<GuardState>({
-    status: 'active',
-    empresa: DEFAULT_DEV_EMPRESA,
-    submodulo: DEFAULT_DEV_SUBMODULO,
-  });
+  // Modo standalone dev opcional (solo en DEV)
+  if (import.meta.env.DEV && import.meta.env.VITE_DISABLE_NEXUS_GUARD === 'true' && !hasNexusAccessToken() && !isChainedFlow()) {
+    return (
+      <NexusContext.Provider
+        value={{
+          empresa: DEFAULT_DEV_EMPRESA,
+          submodulo: DEFAULT_DEV_SUBMODULO,
+        }}
+      >
+        {children}
+      </NexusContext.Provider>
+    );
+  }
+
+  // Si venimos del bridge (hay sid + nexus_token), mostramos el contenido
+  // de inmediato y verificamos en background para no interrumpir la UX.
+  const chained = isChainedFlow();
+  const [state, setState] = useState<GuardState>({ status: chained ? 'active' : 'loading' });
   const nexusApiUrl = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
   const isMounted = useRef(true);
 
   const doVerify = useCallback(async () => {
     if (!nexusApiUrl) {
-      // Sin URL de Nexus, continuar en modo standalone activo
-      setState({
-        status: 'active',
-        empresa: DEFAULT_DEV_EMPRESA,
-        submodulo: DEFAULT_DEV_SUBMODULO,
-      });
+      setState({ status: 'blocked', reason: 'VITE_NEXUS_API_URL no está definida en .env' });
       return;
     }
-    try {
-      const result = await verifyNexusAccess(nexusApiUrl);
-      if (!isMounted.current) return;
-      if (result.active) {
-        if (result.submodulo) {
-          persistProductFromHints({
-            url: result.submodulo.url,
-            nombre: result.submodulo.nombre,
-            moduloNombre: result.submodulo.moduloNombre,
-            product: result.product,
-          });
-          persistCotizadorFromHints({
-            url: result.submodulo.url,
-            nombre: result.submodulo.nombre,
-            moduloNombre: result.submodulo.moduloNombre,
-          });
-        }
-        setState({ status: 'active', empresa: result.empresa, submodulo: result.submodulo });
-      } else {
-        // En lugar de bloquear, mantenemos activo el estado standalone para no interrumpir el desarrollo
-        setState((prev) => ({
-          status: 'active',
-          empresa: prev.empresa || DEFAULT_DEV_EMPRESA,
-          submodulo: prev.submodulo || DEFAULT_DEV_SUBMODULO,
-        }));
+    const result = await verifyNexusAccess(nexusApiUrl);
+    if (!isMounted.current) return;
+    if (result.active) {
+      if (result.submodulo) {
+        persistProductFromHints({
+          url: result.submodulo.url,
+          nombre: result.submodulo.nombre,
+          moduloNombre: result.submodulo.moduloNombre,
+          product: result.product,
+        });
+        persistCotizadorFromHints({
+          url: result.submodulo.url,
+          nombre: result.submodulo.nombre,
+          moduloNombre: result.submodulo.moduloNombre,
+        });
       }
-    } catch {
-      if (isMounted.current) {
-        setState((prev) => ({
-          status: 'active',
-          empresa: prev.empresa || DEFAULT_DEV_EMPRESA,
-          submodulo: prev.submodulo || DEFAULT_DEV_SUBMODULO,
-        }));
-      }
+      setState({ status: 'active', empresa: result.empresa, submodulo: result.submodulo });
+    } else {
+      setState({ status: 'blocked', reason: result.reason });
     }
   }, [nexusApiUrl]);
 
@@ -115,6 +196,24 @@ export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) 
     const id = setInterval(doVerify, recheckInterval * 1000);
     return () => clearInterval(id);
   }, [doVerify, recheckInterval]);
+
+  useEffect(() => {
+    const origFetch = window.fetch;
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const res = await origFetch(...args);
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url ?? '';
+      if (!url.includes('/api/access/verify') && (res.status === 401 || res.status === 403)) {
+        doVerify();
+      }
+      return res;
+    };
+    return () => { window.fetch = origFetch; };
+  }, [doVerify]);
+
+  if (state.status === 'loading') return <NexusScreen type="loading" />;
+  if (state.status === 'blocked') return (
+    <NexusScreen type="blocked" reason={state.reason} onRetry={doVerify} />
+  );
 
   return (
     <NexusContext.Provider value={{ empresa: state.empresa, submodulo: state.submodulo }}>
