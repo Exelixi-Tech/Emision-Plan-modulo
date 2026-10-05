@@ -369,8 +369,10 @@ router.post('/emision', async (req, res) => {
     // 1. Cotiza para obtener la prima autoritativa.
     let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
 
-    // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud): la prima
-    //     ajustada es la que se cobra y la que viaja como mprimaext, como en la pasarela.
+    // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud).
+    //     La prima ajustada es la que se cobra (ingreso de caja / registro). A Sis2000 va la
+    //     prima base y el % de cada asegurado: el SP v3 aplica el % por tarifa en pepoltar_ind.
+    const cotizacionBase = cotizacion;
     const meta0 = state.metadataCanal || {};
     const { questions } = await resolveQuestionsForPlan(cplan, {
       empresaId: Number(req.empresa?.id ?? process.env.EMPRESA_ID ?? 1) || 1,
@@ -411,9 +413,21 @@ router.post('/emision', async (req, res) => {
     // 3. Construye el payload de emisión y emite.
     const { payload, metadata } = personasMapper.buildEmissionPersonRequest(
       state,
-      cotizacion,
+      cotizacionBase,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    // % de recargo/descuento por asegurado (mismo orden que funeral.asegurados; el 0 es el titular).
+    if (premiumAdjust && Array.isArray(payload.asegurados)) {
+      premiumAdjust.porAsegurado.forEach((row, idx) => {
+        const aseg = payload.asegurados[idx];
+        if (!aseg) return;
+        if (row.recargoPct > 0) aseg.precargo = row.recargoPct;
+        if (row.descuentoPct > 0) aseg.pdescuento = row.descuentoPct;
+      });
+      const titular = premiumAdjust.porAsegurado[0];
+      if (titular?.recargoPct > 0) payload.precargo_titular = titular.recargoPct;
+      if (titular?.descuentoPct > 0) payload.pdescuento_titular = titular.descuentoPct;
+    }
 
     const meta = state.metadataCanal || {};
     console.log(
