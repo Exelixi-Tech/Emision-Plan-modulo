@@ -39,13 +39,6 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
   };
 }
 
-const FALLBACK_FRECUENCIAS: CatalogItem[] = [
-  { code: 'A', label: 'Pago anual' },
-  { code: 'S', label: 'Pago semestral' },
-  { code: 'T', label: 'Pago trimestral' },
-  { code: 'M', label: 'Pago mensual' },
-];
-
 export function ProveedorStep() {
   const {
     funeral,
@@ -80,6 +73,7 @@ export function ProveedorStep() {
   // ── Proveedores de Servicio ───────────────────────────────────────────────
   const [proveedores, setProveedores] = useState<ProveedorItem[]>([]);
   const [loadingProveedores, setLoadingProveedores] = useState(false);
+  const [proveedoresError, setProveedoresError] = useState(false);
 
   // ── Carga de planes de personas / salud ───────────────────────────────────
   useEffect(() => {
@@ -125,18 +119,17 @@ export function ProveedorStep() {
     getFrecuenciasByPlan(planCode, resolveQuoteCramo(selectedPlan?.cramo, product.cramo))
       .then((items) => {
         if (!cancelled) {
-          const result = frecuenciasPersonas(items.length > 0 ? items : FALLBACK_FRECUENCIAS, [FALLBACK_FRECUENCIAS[0]]);
-          setApiFrecuencias(result);
-          const currentValid = result.find((i) => String(i.code) === funeral.frecuencia);
-          if (!currentValid && result.length > 0) {
-            setFuneral({ frecuencia: String(result[0].code) });
+          setApiFrecuencias(items);
+          const currentValid = items.find((i) => String(i.code) === funeral.frecuencia);
+          if (!currentValid && items.length > 0) {
+            setFuneral({ frecuencia: String(items[0].code) });
           }
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('Error al cargar frecuencias:', err);
         if (!cancelled) {
-          setApiFrecuencias([FALLBACK_FRECUENCIAS[0]]);
-          setFuneral({ frecuencia: 'A' });
+          setApiFrecuencias([]);
         }
       })
       .finally(() => {
@@ -151,12 +144,14 @@ export function ProveedorStep() {
     const planCode = selectedPlan?.cplan;
     if (!planCode) {
       setProveedores([]);
+      setProveedoresError(false);
       setCproveedor(undefined, undefined);
       return;
     }
 
     let cancelled = false;
     setLoadingProveedores(true);
+    setProveedoresError(false);
 
     // Obtener centidad y citem desde metadataCanal o token SSO
     const token = getNexusToken('nexus_access_token_emision') || getNexusToken('nexus_access_token');
@@ -194,10 +189,9 @@ export function ProveedorStep() {
       .catch((err) => {
         console.error('Error al consultar proveedores:', err);
         if (!cancelled) {
-          // Sin proveedores de ejemplo: se muestra el error real.
           setProveedores([]);
+          setProveedoresError(true);
           setSelectedProveedor(null);
-          toast.error('Error al consultar proveedores', 'No se pudieron cargar los proveedores del plan.');
         }
       })
       .finally(() => {
@@ -430,6 +424,8 @@ export function ProveedorStep() {
             >
               {loadingProveedores ? (
                 <option value="">Consultando valrep/proveedores...</option>
+              ) : proveedoresError ? (
+                <option value="">Error al cargar proveedores de servicio</option>
               ) : proveedores.length === 0 ? (
                 <option value="">Sin proveedores disponibles</option>
               ) : (

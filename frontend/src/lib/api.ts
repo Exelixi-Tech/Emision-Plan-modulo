@@ -1120,52 +1120,44 @@ export async function getProveedores(params: {
   cci_rif?: string | number;
   cclave_num?: number;
 }): Promise<ProveedorItem[]> {
-  // Sin proveedores de ejemplo: si el servicio falla, el error llega a la pantalla.
-  {
-    const qs = new URLSearchParams({
-      cplan: params.cplan,
-      ...(params.cramo != null ? { cramo: String(params.cramo) } : {}),
-    });
-    if (params.centidad) qs.set('centidad', params.centidad);
-    if (params.citem) qs.set('citem', params.citem);
-    if (params.cci_rif) qs.set('cci_rif', String(params.cci_rif));
-    if (params.cclave_num != null) qs.set('cclave_num', String(params.cclave_num));
+  const qs = new URLSearchParams({
+    cplan: params.cplan,
+    cramo: String(params.cramo ?? 28),
+  });
+  if (params.centidad) qs.set('centidad', params.centidad);
+  if (params.citem) qs.set('citem', params.citem);
+  if (params.cci_rif) qs.set('cci_rif', String(params.cci_rif));
+  if (params.cclave_num != null) qs.set('cclave_num', String(params.cclave_num));
 
-    const response = await api.get<{
-      ok?: boolean;
-      items?: ProveedorItem[];
-      data?: ProveedorItem[] | { items?: ProveedorItem[] };
-    }>(`/valrep/proveedores?${qs.toString()}`);
+  const response = await api.get<{
+    ok?: boolean;
+    items?: ProveedorItem[];
+    data?: ProveedorItem[] | { items?: ProveedorItem[] };
+  }>(`/valrep/proveedores?${qs.toString()}`);
 
-    const resData = response.data;
-    let list: ProveedorItem[] = [];
-    if (resData?.items && Array.isArray(resData.items) && resData.items.length > 0) {
-      list = resData.items;
-    } else if (Array.isArray(resData?.data) && resData.data.length > 0) {
-      list = resData.data;
-    } else if (
-      typeof resData?.data === 'object' &&
-      resData.data !== null &&
-      'items' in resData.data &&
-      Array.isArray((resData.data as { items?: ProveedorItem[] }).items) &&
-      (resData.data as { items?: ProveedorItem[] }).items!.length > 0
-    ) {
-      list = (resData.data as { items?: ProveedorItem[] }).items!;
-    }
-
-    if (list.length > 0) {
-      return list.map((item) => ({
-        ...item,
-        xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
-        xcliente: String(item.xcliente || item.xproveedor || '').trim(),
-        cplan: item.cplan || params.cplan,
-        cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : undefined),
-        itiposerv: item.itiposerv,
-      }));
-    }
+  const resData = response.data;
+  let list: ProveedorItem[] = [];
+  if (resData?.items && Array.isArray(resData.items)) {
+    list = resData.items;
+  } else if (Array.isArray(resData?.data)) {
+    list = resData.data;
+  } else if (
+    typeof resData?.data === 'object' &&
+    resData.data !== null &&
+    'items' in resData.data &&
+    Array.isArray((resData.data as { items?: ProveedorItem[] }).items)
+  ) {
+    list = (resData.data as { items?: ProveedorItem[] }).items!;
   }
 
-  return [];
+  return list.map((item) => ({
+    ...item,
+    xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
+    xcliente: String(item.xcliente || item.xproveedor || '').trim(),
+    cplan: item.cplan || params.cplan,
+    cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
+    itiposerv: item.itiposerv || 'S',
+  }));
 }
 
 /**
