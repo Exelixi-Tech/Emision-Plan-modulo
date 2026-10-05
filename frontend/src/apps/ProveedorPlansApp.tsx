@@ -69,10 +69,10 @@ export default function ProveedorPlansApp() {
               <div className="flex-1 min-w-0">
                 <h4 className="font-bold text-base text-emerald-900 flex items-center gap-2">
                   <ShieldCheck size={18} className="text-emerald-600" />
-                  Emisión Validada Correctamente
+                  Plan y Proveedor Seleccionados
                 </h4>
                 <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
-                  Los datos del formulario fueron preparados y empaquetados para el envío:
+                  Resumen de la selección para continuar con el flujo:
                 </p>
                 <div className="mt-3 p-3 bg-white/80 rounded-xl border border-emerald-200/80 font-mono text-xs text-slate-800 space-y-1">
                   <div><strong>cplan:</strong> <span className="text-indigo-600 font-bold">"{selectedPlan?.cplan}"</span> ({selectedPlan?.name})</div>

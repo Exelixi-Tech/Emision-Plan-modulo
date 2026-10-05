@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import type { CanalVisibility } from './canal-visibility';
-import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
+import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine, ProveedorItem } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
@@ -1085,16 +1085,7 @@ export async function validateFuneralEmission(payload: {
   }
 }
 
-export interface ProveedorItem {
-  xproveedor?: string;
-  xcliente?: string;
-  cci_rif: number | string;
-  cplan?: string;
-  cramo?: number;
-  cclave_num?: number;
-  itiposerv?: string;
-  [key: string]: any;
-}
+export type { ProveedorItem };
 
 export interface RegisterPolicyProveedorDto {
   cpoliza?: number | string;
@@ -1179,34 +1170,19 @@ export async function getProveedores(params: {
 
 /**
  * Registra un proveedor asociado a una póliza en dbo.adproveedor vía
- * POST /api/v1/partner/starter/proveedores/register-policy.
+ * POST /valrep/proveedores/register-policy (proxy backend).
  */
 export async function registerPolicyProveedor(
   payload: RegisterPolicyProveedorDto,
 ): Promise<{ status?: boolean; ok?: boolean; message?: string; data?: any }> {
-  try {
-    const response = await api.post<{
-      ok?: boolean;
-      status?: boolean;
-      message?: string;
-      data?: any;
-    }>('/valrep/proveedores/register-policy', payload);
-    return response.data;
-  } catch (err) {
-    // Intento directo con apikey de partner si el proxy local no responde
-    try {
-      const directUrl = 'https://nexusqa.exelixitech.com/nest-api-docs/api/v1/partner/starter/proveedores/register-policy';
-      const directResp = await axios.post(directUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: '2b7dd2e40dad443a2e9ab4c9951f4489341184e7b6d1b3eb1241f39fb7572f2c',
-        },
-      });
-      return directResp.data;
-    } catch {
-      throw err;
-    }
-  }
+  const response = await api.post<{
+    ok?: boolean;
+    status?: boolean;
+    message?: string;
+    data?: any;
+  }>('/valrep/proveedores/register-policy', payload);
+  return response.data;
 }
+
 
 
