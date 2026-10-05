@@ -628,7 +628,7 @@ async function getValrepProveedores(params = {}) {
   }
 
   const payload = response.data?.data || response.data;
-  let rawItems = Array.isArray(payload)
+  const rawItems = Array.isArray(payload)
     ? payload
     : payload?.proveedores || payload?.items || payload?.data || [];
 
