@@ -155,7 +155,12 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
 
   const metadata = state.metadataCanal || {};
 
-  const cramo = metadata.cramo ? parseInt(metadata.cramo, 10) : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state.selectedPlan,
+    selectedProveedor: state.selectedProveedor,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  });
   const productor = metadata.cproductor ? parseInt(metadata.cproductor, 10) : (parseInt(process.env.LAMUNDIAL_PRODUCTOR, 10) || 80080);
   const ctipocanal = metadata.ctipocanal !== undefined && String(metadata.ctipocanal).trim() !== ''
     ? metadata.ctipocanal
@@ -278,9 +283,12 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
   const titular = asegurados[0] || {};
   const metadata = state.metadataCanal || {};
 
-  const cramo = metadata.cramo
-    ? parseInt(metadata.cramo, 10)
-    : (parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9);
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state.selectedPlan,
+    selectedProveedor: state.selectedProveedor,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  });
   const plan = overrides.plan || state.selectedPlan?.cplan || '';
   const femision = overrides.fechaEmision || todayYmd();
 
@@ -305,10 +313,80 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
   };
 }
 
+/**
+ * Construye el payload para registrar el proveedor en la póliza (RegisterPolicyProveedorDto)
+ * vía POST /api/v1/partner/starter/proveedores/register-policy.
+ *
+ * @param {object} state - wizardState (selectedProveedor, metadataCanal, etc.)
+ * @param {object} emitted - { cnpoliza, cnrecibo, ... }
+ * @param {object} [cotizacion] - { mprima, mprimaext, ptasa }
+ * @param {object} [overrides]
+ * @returns {object|null}
+ */
+function buildRegisterPolicyProveedorRequest(state, emitted, cotizacion = {}, overrides = {}) {
+  const proveedor = state?.selectedProveedor || (state?.cproveedor ? {
+    cci_rif: state.cproveedor,
+    cclave_num: state.cclave_num,
+    itiposerv: state.itiposerv,
+    cplan: state.cplan_proveedor,
+    cramo: state.cramo_proveedor,
+    xcliente: state.xproveedor,
+  } : null);
+
+  if (!proveedor) return null;
+
+  const poliza = overrides.poliza || emitted?.cnpoliza || emitted?.cpoliza || emitted?.number;
+  if (!poliza) return null;
+
+  const now = new Date();
+  const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+  const metadata = state?.metadataCanal || {};
+
+  const cciRifClean = Number(String(proveedor.cci_rif ?? state?.cproveedor ?? '').replace(/\D/g, ''));
+  const claveNum = Number(proveedor.cclave_num ?? state?.cclave_num) || 0;
+  const tipoServ = String(proveedor.itiposerv ?? state?.itiposerv ?? '').trim();
+  const plan = overrides.plan || String(proveedor.cplan ?? state?.cplan_proveedor ?? state?.selectedPlan?.cplan ?? '').trim();
+  const ramo = Number(proveedor.cramo ?? state?.cramo_proveedor ?? resolvePersonasCramo({
+    selectedPlan: state?.selectedPlan,
+    selectedProveedor: proveedor,
+    metadataCanal: metadata,
+    cproducto: metadata.cproducto,
+  }));
+  const usuario = metadata.cusuario ? parseInt(metadata.cusuario, 10) : 0;
+  const mcosto = Number(cotizacion.mprima ?? 0);
+  const mcostoext = Number(cotizacion.mprimaext ?? state?.selectedPlan?.priceNum ?? 0);
+  const ptasamon = Number(cotizacion.ptasa ?? 0);
+
+  const fdesde = overrides.fdesde || todayYmd();
+  const fhasta = overrides.fhasta || nextYear.toISOString().slice(0, 10);
+
+  return {
+    cpoliza: poliza,
+    fanopol: now.getFullYear(),
+    fmespol: now.getMonth() + 1,
+    cramo: ramo,
+    ccerti: 1,
+    cplan: plan,
+    u_version: 'A',
+    fdesde,
+    fhasta,
+    cci_rif: cciRifClean,
+    cclave_num: claveNum,
+    itiposerv: tipoServ,
+    mcosto,
+    mcostoext,
+    cmoneda: 'D',
+    ptasamon,
+    fingreso: now.toISOString(),
+    cusuario: usuario,
+  };
+}
+
 module.exports = {
   buildAseguradosForQuote,
   buildEmissionPersonRequest,
   buildValidateEmissionPersonRequest,
+  buildRegisterPolicyProveedorRequest,
   edadDesdeFecha,
   resolveNedadAsegurado,
   _internal: {
