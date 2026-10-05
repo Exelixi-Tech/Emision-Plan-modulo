@@ -287,6 +287,8 @@ async function createEmissionAutoViaNestApi(payload) {
       message: result.message,
       fanopol: result.fanopol,
       fmespol: result.fmespol,
+      cpoliza: result.cpoliza != null ? Number(result.cpoliza) : undefined,
+      casegurado: result.casegurado != null ? Number(result.casegurado) : undefined,
       _raw: body,
     };
   }
@@ -534,27 +536,85 @@ async function getValrepList(domain) {
     .filter((it) => it.code !== '' && it.label !== '');
 }
 
-/** @returns {Promise<Array<{ code: string, label: string }>>} */
+const RAMO_PERSONAS = 9;
+const FRECUENCIAS_PERSONAS_FALLBACK = [{ cvalor: 'A', xdescripcion: 'ANUAL' }];
+const FRECUENCIAS_GENERIC_FALLBACK = [
+  { cvalor: 'A', xdescripcion: 'Anual' },
+  { cvalor: 'S', xdescripcion: 'Semestral' },
+  { cvalor: 'T', xdescripcion: 'Trimestral' },
+  { cvalor: 'M', xdescripcion: 'Mensual' },
+];
+
+/**
+ * Frecuencias por plan. Ramo 9 (funerario/personas): si nest-api no tiene
+ * filas en maplanes_frec, devolver ANUAL como SysIP persons-alt (nunca 502).
+ * @returns {Promise<Array<{ code: string, label: string, ndias?: number|null }>>}
+ */
+/**
+ * Productores / Brokers desde Sis2000 (POST /api/v1/valrep/brokers)
+ * @returns {Promise<Array<{ code: number, label: string }>>}
+ */
+async function getValrepBrokers() {
+  const urls = [
+    `${getBaseUrl()}/api/v1/valrep/brokers`,
+    `${process.env.LAMUNDIAL_CARDS_URL || process.env.LAMUNDIAL_EMISSION_URL || 'https://qaapisys2000.lamundialdeseguros.com'}/api/v1/valrep/brokers`,
+    'https://apisys2000.lamundialdeseguros.com/api/v1/valrep/brokers',
+  ];
+
+  let raw = [];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const response = await axios.post(
+        url,
+        {},
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10_000,
+          validateStatus: () => true,
+        },
+      );
+      if (response.status >= 200 && response.status < 300 && response.data?.status !== false) {
+        raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+        if (raw.length > 0) break;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!raw.length && lastError) {
+    throw lastError;
+  }
+
+  return raw
+    .map((b) => ({
+      code: Number(b.cproductor),
+      label: String(b.xproductor ?? '').trim(),
+    }))
+    .filter((it) => it.code > 0 && it.label !== '')
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function getValrepFrecuencias(cplan, cramo) {
   const body = { cplan };
   if (cramo != null) body.cramo = cramo;
+  const isPersonas = Number(cramo) === RAMO_PERSONAS;
   const response = await axios.post(
     `${getBaseUrl()}/api/v1/valrep/frecuencia`,
     body,
     await axiosOpts({ validateStatus: () => true }),
   );
-  if (response.status >= 400 || !response.data?.status) {
-    throw new Error(response.data?.message || `HTTP ${response.status} consultando frecuencias`);
+  const msg = response.data?.message || `HTTP ${response.status} consultando frecuencias`;
+  const emptyPlan = /frecuencias para el plan/i.test(String(msg));
+  if ((response.status >= 400 || !response.data?.status) && !(isPersonas && emptyPlan)) {
+    throw new Error(msg);
   }
-  const payload = response.data.data || response.data;
+  const payload = response.data.data || response.data || {};
   let rawItems = payload.frecuencias || payload.plan || payload.items || [];
   if (!rawItems.length) {
-    rawItems = [
-      { cvalor: 'A', xdescripcion: 'Anual' },
-      { cvalor: 'S', xdescripcion: 'Semestral' },
-      { cvalor: 'T', xdescripcion: 'Trimestral' },
-      { cvalor: 'M', xdescripcion: 'Mensual' },
-    ];
+    rawItems = isPersonas ? FRECUENCIAS_PERSONAS_FALLBACK : FRECUENCIAS_GENERIC_FALLBACK;
   }
   const mapped = rawItems.map((f) => ({
     code: f.cvalor || f.ifrecuencia || f.code,
@@ -628,7 +688,7 @@ async function getValrepProveedores(params = {}) {
       cclave_num: p.cclave_num != null && !Number.isNaN(Number(p.cclave_num)) ? Number(p.cclave_num) : null,
       cplan: p.cplan != null ? String(p.cplan).trim() : (params.cplan ? String(params.cplan).trim() : null),
       cramo: p.cramo != null && !Number.isNaN(Number(p.cramo)) ? Number(p.cramo) : (params.cramo ? Number(params.cramo) : null),
-      itiposerv: p.itiposerv != null ? String(p.itiposerv).trim() : 'S',
+      itiposerv: p.itiposerv != null ? String(p.itiposerv).trim() : '',
     };
   });
 
@@ -747,6 +807,7 @@ module.exports = {
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
+  getValrepBrokers,
   getValrepProveedores,
   registerPolicyProveedorViaNestApi,
 };

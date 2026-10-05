@@ -15,6 +15,7 @@ const express = require('express');
 const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 
 const router = express.Router();
 
@@ -52,7 +53,17 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
+  const rawCrol = nexusMetadata?.crol ?? state.metadataCanal?.crol;
+  const crolNum = rawCrol != null && String(rawCrol).trim() !== '' ? Number(rawCrol) : NaN;
+  const esTecnico = Number.isFinite(crolNum) && crolNum !== 5 && crolNum !== 8;
+  const usaSeleccion = esTecnico && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
     const vals = sources.map((src) => src?.[key]);
     const val = (key === 'cgestor' || key === 'cgestor_in')
       ? preferGestorCode(...vals)
@@ -230,6 +241,18 @@ router.post('/policies/emit', async (req, res) => {
       empresaNombre: req.empresa?.nombre,
       authToken: req.nexusToken,
     });
+    try {
+      await registerIssuedPolicy({
+        empresaId: req.empresa?.id,
+        producto: 'rcv',
+        emission: result,
+        state: mergedState,
+        planNombre: plan || mergedState?.selectedPlan?.name,
+        frecuencia: frecuencia || mergedState?.rcv?.frecuencia,
+      });
+    } catch (feedErr) {
+      console.warn('[modulo-emision/emit] feed Nexus:', feedErr?.message || feedErr);
+    }
     return res.status(201).json({
       success: true, message: 'Poliza emitida exitosamente.',
       policy: {

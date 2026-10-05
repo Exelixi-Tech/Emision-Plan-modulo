@@ -1,7 +1,7 @@
 /**
  * Rutas del producto Funerario (personas) — ramo 9.
  *
- *   GET  /api/personas/planes?cramo=9   → planes vigentes de personas
+ *   GET  /api/personas/planes?cramo=9   → planes del canal SSO (no lista fija)
  *   POST /api/personas/cotizacion       → cotización (getCotizacionPer)
  *   POST /api/personas/validacion       → póliza vigente (paso 4, antes del técnico)
  *   POST /api/personas/emision          → cotiza + valida + emite (pasos 4–6)
@@ -18,6 +18,7 @@ const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterP
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
+const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
@@ -69,6 +70,55 @@ const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 
+/** Ramos con prima por días (viajero ramo 5 y viaje local ramo 25). */
+const VIAJERO_RAMOS = new Set([5, 25]);
+
+/** Productos Viajero (25) y Viajero Local (26): planes por producto con ndias (maplanes_frec). */
+const VIAJERO_PRODUCTOS = new Set(['25', '26']);
+
+/** Fraccionadas: Pagos aún cobra la prima anual en personas, así que se emite Anual. */
+const FRECUENCIAS_FRACCIONADAS = new Set(['M', 'T', 'S', 'C']);
+
+function personasIfrecuencia(code) {
+  const c = String(code || 'A').trim().toUpperCase().charAt(0) || 'A';
+  return FRECUENCIAS_FRACCIONADAS.has(c) ? 'A' : c;
+}
+
+/** Viajero: vigencia desde hoy por los días del plan (igual que la cotización del wizard). */
+function resolveViajeroVigencia(selectedPlan, cramo) {
+  if (!VIAJERO_RAMOS.has(Number(cramo))) return null;
+  let ndias = Number(selectedPlan?.ndias);
+  if (!Number.isFinite(ndias) || ndias <= 0) {
+    const m = String(selectedPlan?.name ?? selectedPlan?.tag ?? '').match(/(\d+)\s*d[ií]as?/i);
+    ndias = m ? Number(m[1]) : NaN;
+  }
+  if (!Number.isFinite(ndias) || ndias <= 0) return null;
+  const fdesde = personasMapper._internal.todayYmd();
+  const hasta = new Date(`${fdesde}T00:00:00Z`);
+  hasta.setUTCDate(hasta.getUTCDate() + ndias - 1);
+  return { ndias, fdesde, fhasta: hasta.toISOString().slice(0, 10) };
+}
+
+/** Fusiona metadata JWT con query (mismo criterio que RCV /catalogo/planes). */
+function funeralCanalMeta(req) {
+  const meta = { ...(req.nexusMetadata || {}) };
+  const q = req.query || {};
+  const keys = [
+    'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
+    'cusuario', 'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
+  ];
+  for (const key of keys) {
+    if (q[key] != null && String(q[key]).trim() !== '') {
+      meta[key] = String(q[key]).trim();
+    }
+  }
+  if (q.cramo != null && String(q.cramo).trim() !== '') {
+    const cramo = parseInt(String(q.cramo), 10);
+    if (Number.isFinite(cramo)) meta.cramo = cramo;
+  }
+  return meta;
+}
+
 /**
  * Normaliza un asegurado del front al formato de la API:
  *   { cparen, xrif_asegurado, nedad_asegurado }
@@ -82,14 +132,90 @@ function mapAsegurado(a) {
 
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
-  const cramo = req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO;
+  const meta = funeralCanalMeta(req);
+  const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
+  // Scoring de Vida (1) y Accidentes personales (5): el catálogo del ramo,
+  // sin el producto funerario 57 que siempre consulta el ramo 45.
+  // Viajero (25/26) también es ramo 5, pero sus planes van por producto (ndias).
+  const viajeroProducto = VIAJERO_PRODUCTOS.has(String(meta.cproducto ?? '').trim());
+  if (req.query.catalogo === 'ramo' || (!viajeroProducto && (askedRamo === 1 || askedRamo === 5))) {
+    try {
+      const targetRamo = Number.isFinite(askedRamo) ? askedRamo : 1;
+      const result = await fetchPlanesV2({ ...meta, cramo: targetRamo });
+      const planes = (result.planes || []).filter((p) => Number(p.cramo) === targetRamo);
+      res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+      return res.json({
+        success: true,
+        planes,
+        canal: { cramo: targetRamo, catalogo: 'ramo' },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[personas/planes] catalogo ramo', askedRamo, msg);
+      return res.status(502).json({
+        success: false,
+        code: 'PLANES_RAMO_ERROR',
+        message: `No se pudieron obtener los planes del ramo ${askedRamo}: ${msg}`,
+      });
+    }
+  }
+
+  const rawEntity = resolveEntityContext(meta);
+  const sisOk = rawEntity
+    && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
+  const entity = sisOk ? rawEntity : null;
+  const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
+  const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
+  const metaCproducto = meta.cproducto != null && String(meta.cproducto).trim() !== '' ? String(meta.cproducto).trim() : null;
+  const cproducto = metaCproducto || req.query.cproducto || (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
+  const cramo = cproducto === '57'
+    ? 45
+    : (meta.cramo ? parseInt(meta.cramo, 10) : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO));
   try {
-    const { planes } = await personasClient.getPlanesPer(cramo);
-    res.json({ success: true, planes });
+    const { planes: raw } = await personasClient.getPlanesPer({
+      cramo,
+      citem: entity?.citem || meta.citem,
+      centidad: entity?.centidad || meta.centidad,
+      cproducto,
+      cproductor,
+      cusuario: meta.cusuario,
+      cgestor_in: meta.cgestor_in,
+      cgestor: meta.cgestor,
+    });
+    const planes = Array.isArray(raw) ? raw : [];
+    console.log(
+      `[personas/planes] valrep/planes/producto cproducto=${cproducto} centidad=${entity?.centidad || meta.centidad || '?'} citem=${entity?.citem || meta.citem || '?'} cproductor=${cproductor || 'null'} cusuario=${meta.cusuario || 'none'} n=${planes.length}`,
+    );
+
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    return res.json({
+      success: true,
+      planes,
+      canal: {
+        centidad: entity?.centidad || meta.centidad || null,
+        citem: entity?.citem || meta.citem || null,
+        cproductor: cproductor,
+        cusuario: meta.cusuario || null,
+        cramo,
+        cproducto,
+        ccanalalt: meta.ccanalalt_in || meta.ccanalalt || null,
+        cscanalalt: meta.cscanalalt_in || meta.cscanalalt || null,
+        cgestor_in: meta.cgestor_in || null,
+        cgestor: meta.cgestor || null,
+      },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[personas/planes]', msg);
-    res.status(502).json({
+    return res.status(err.httpStatus || 502).json({
       success: false,
       code: err.code || 'LAMUNDIAL_PERSON_ERROR',
       message: `No se pudieron obtener los planes de personas: ${msg}`,
@@ -99,12 +225,26 @@ router.get('/planes', async (req, res) => {
 
 // ── POST /cotizacion ──────────────────────────────────────────────────────────
 router.post('/cotizacion', async (req, res) => {
-  const { cplan, ifrecuencia } = req.body || {};
-  const cramo = req.body?.cramo ? parseInt(req.body.cramo, 10) : DEFAULT_RAMO;
+  const { cplan, ifrecuencia, ndias, fdesde, fhasta } = req.body || {};
+  const quoteProducto = String(req.nexusMetadata?.cproducto ?? '').trim();
+  const cramo = resolvePersonasCramo({
+    // Otro producto que no es funerario: manda el ramo del plan (body), no el del producto SSO.
+    ...(quoteProducto && quoteProducto !== '57' ? { selectedPlan: { cramo: req.body?.cramo } } : {}),
+    bodyCramo: req.body?.cramo,
+    metadataCanal: req.nexusMetadata,
+    cproducto: req.nexusMetadata?.cproducto,
+  });
   const asegurados = Array.isArray(req.body?.asegurados) ? req.body.asegurados.map(mapAsegurado) : [];
 
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'cplan es obligatorio' });
+  }
+  if (!isPersonasCplan(cplan, req.nexusMetadata?.cproducto)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_PERSONAS',
+      message: `El plan ${cplan} no es válido para el producto personas.`,
+    });
   }
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe enviar al menos un asegurado' });
@@ -119,7 +259,15 @@ router.post('/cotizacion', async (req, res) => {
   }
 
   try {
-    const quote = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    const quote = await personasClient.getCotizacionPer({
+      cramo,
+      cplan,
+      asegurados,
+      ifrecuencia,
+      ...(ndias != null && Number(ndias) > 0 ? { ndias: Number(ndias) } : {}),
+      ...(fdesde ? { fdesde: String(fdesde).trim() } : {}),
+      ...(fhasta ? { fhasta: String(fhasta).trim() } : {}),
+    });
     res.json({
       success: true,
       mprima: quote.mprima,
@@ -210,7 +358,11 @@ router.post('/emision', async (req, res) => {
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
   const cplan = state?.selectedPlan?.cplan;
-  const cramo = DEFAULT_RAMO;
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state?.selectedPlan,
+    metadataCanal: state?.metadataCanal,
+    cproducto: state?.metadataCanal?.cproducto,
+  });
 
   if (!state || !state.tomador) {
     return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.tomador requerido.' });
@@ -218,9 +370,21 @@ router.post('/emision', async (req, res) => {
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
   }
+  if (!isPersonasCplan(cplan, state?.metadataCanal?.cproducto)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_PERSONAS',
+      message: `El plan ${cplan} no es válido para el producto personas.`,
+    });
+  }
 
-  const ifrecuencia = frecuencia || funeral.frecuencia || 'M';
-  const asegurados = personasMapper.buildAseguradosForQuote(funeral);
+  const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
+  const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo);
+  const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
+    tomador: state.tomador,
+    asegurado: state.asegurado,
+    sameInsured: state.sameInsured,
+  });
 
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe registrar al menos un asegurado.' });
@@ -236,7 +400,34 @@ router.post('/emision', async (req, res) => {
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
-    const cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia, ...(vigencia ?? {}) });
+
+    // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud).
+    //     La prima ajustada es la que se cobra (ingreso de caja / registro). A Sis2000 va la
+    //     prima base y el % de cada asegurado: el SP v3 aplica el % por tarifa en pepoltar_ind.
+    const cotizacionBase = cotizacion;
+    const meta0 = state.metadataCanal || {};
+    const { questions } = await resolveQuestionsForPlan(cplan, {
+      empresaId: Number(req.empresa?.id ?? process.env.EMPRESA_ID ?? 1) || 1,
+      metadata: meta0,
+      cramo,
+      cproducto: meta0.cproducto,
+      selectedPlan: state.selectedPlan,
+    });
+    const premiumAdjust = await adjustPremiumByAnswers({
+      questions,
+      persons: funeral.asegurados,
+      asegurados,
+      byInsured: funeral.healthAnswersByInsured,
+      quoteOne: (aseg) =>
+        personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia, ...(vigencia ?? {}) }),
+    });
+    if (premiumAdjust) {
+      console.log(
+        `[personas/emision] prima ajustada por cuestionario base=${premiumAdjust.base.mprimaext} final=${premiumAdjust.quote.mprimaext}`,
+      );
+      cotizacion = { ...cotizacion, ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || cotizacion.ptasa };
+    }
 
     // 2. Valida titular/plan (paso 5 — speeValidatePersonGeneral).
     const validatePayload = personasMapper.buildValidateEmissionPersonRequest(state, {
@@ -256,9 +447,25 @@ router.post('/emision', async (req, res) => {
     // 3. Construye el payload de emisión y emite.
     const { payload, metadata } = personasMapper.buildEmissionPersonRequest(
       state,
-      cotizacion,
+      cotizacionBase,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    if (vigencia) {
+      payload.fdesde = vigencia.fdesde;
+      payload.fhasta = vigencia.fhasta;
+    }
+    // % de recargo/descuento por asegurado (mismo orden que funeral.asegurados; el 0 es el titular).
+    if (premiumAdjust && Array.isArray(payload.asegurados)) {
+      premiumAdjust.porAsegurado.forEach((row, idx) => {
+        const aseg = payload.asegurados[idx];
+        if (!aseg) return;
+        if (row.recargoPct > 0) aseg.precargo = row.recargoPct;
+        if (row.descuentoPct > 0) aseg.pdescuento = row.descuentoPct;
+      });
+      const titular = premiumAdjust.porAsegurado[0];
+      if (titular?.recargoPct > 0) payload.precargo_titular = titular.recargoPct;
+      if (titular?.descuentoPct > 0) payload.pdescuento_titular = titular.descuentoPct;
+    }
 
     const meta = state.metadataCanal || {};
     console.log(
@@ -328,6 +535,18 @@ router.post('/emision', async (req, res) => {
       ...(premiumAdjust ? { premiumAdjust } : {}),
     };
     const funeralRefs = resolveFuneralRefs(state);
+    try {
+      await registerIssuedPolicy({
+        empresaId: req.empresa?.id,
+        producto: 'funerario',
+        emission: emissionRecord,
+        state,
+        planNombre: cplan,
+        frecuencia: ifrecuencia,
+      });
+    } catch (feedErr) {
+      console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);
+    }
     try {
       const saved = await recordFuneralEmissionFlexible(funeralRefs, emissionRecord);
       if (!saved) {

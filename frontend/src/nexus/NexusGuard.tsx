@@ -3,6 +3,7 @@ import { verifyNexusAccess, resolveNexusApiUrl, type NexusVerifyResult } from '.
 import { persistProductFromHints } from '../lib/product';
 import { persistCotizadorFromHints } from '../lib/cotizador-flow';
 import { getNexusToken } from '../lib/nexus-token-client';
+import { shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
 
 const MODULE_TOKEN_KEY = 'nexus_access_token_emision';
 
@@ -121,29 +122,20 @@ function isChainedFlow(): boolean {
   } catch { return false; }
 }
 
-const DEFAULT_DEV_EMPRESA = {
-  id: 1,
-  nombre: 'Empresa Demo',
-  rif: 'J-00000000-0',
-  logo_url: '',
-};
-
-const DEFAULT_DEV_SUBMODULO = {
-  id: 1,
-  nombre: 'Emisión',
-  moduloNombre: 'Emisión',
-  url: '/emision',
-  accessUrl: '/emision',
-};
-
 export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) {
-  // Modo standalone dev opcional (solo en DEV)
-  if (import.meta.env.DEV && import.meta.env.VITE_DISABLE_NEXUS_GUARD === 'true' && !hasNexusAccessToken() && !isChainedFlow()) {
+  const tarjetaStandalone = shouldUseTarjetaPublicApi() && !hasNexusAccessToken();
+  if (tarjetaStandalone) {
     return (
       <NexusContext.Provider
         value={{
-          empresa: DEFAULT_DEV_EMPRESA,
-          submodulo: DEFAULT_DEV_SUBMODULO,
+          empresa: { id: 0, nombre: 'La Mundial de Seguros', rif: '' },
+          submodulo: {
+            id: 0,
+            nombre: 'Activación tarjeta RCV',
+            url: window.location.href,
+            accessUrl: null,
+            moduloNombre: 'Emisión',
+          },
         }}
       >
         {children}

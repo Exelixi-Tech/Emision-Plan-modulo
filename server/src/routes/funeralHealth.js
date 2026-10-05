@@ -8,7 +8,7 @@
 const express = require('express');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { upsertHealthAnswers, getHealthAnswers } = require('../services/healthDb');
-const { isFunerarioCplan } = require('../lib/funerarioPlan');
+const { isPersonasCplan } = require('../lib/funerarioPlan');
 
 const router = express.Router();
 
@@ -22,6 +22,8 @@ function toClientQuestion(q) {
     required: q.required,
     showIf: q.showIf,
     options: q.options,
+    blockIfFalse: q.blockIfFalse === true,
+    blockReason: q.blockReason,
   };
 }
 
@@ -48,8 +50,8 @@ function empresaIdFromRequest(req) {
 function rejectNonFunerarioPlan(res, cplan) {
   return res.status(400).json({
     success: false,
-    code: 'NOT_FUNERARIO_PLAN',
-    message: `El cplan "${cplan}" no corresponde a un plan funerario. Este endpoint es solo para ramo 9.`,
+    code: 'NOT_PERSONAS_PLAN',
+    message: `El cplan "${cplan}" no corresponde a un plan de personas.`,
   });
 }
 
@@ -62,11 +64,13 @@ router.get('/health-questions', async (req, res) => {
       message: 'El parámetro cplan es obligatorio.',
     });
   }
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, req.query.cproducto)) {
     return rejectNonFunerarioPlan(res, cplan);
   }
   try {
     const empresaId = empresaIdFromRequest(req) || 1;
+    const cramoRaw = Number(req.query.cramo);
+    const cramo = Number.isFinite(cramoRaw) && cramoRaw > 0 ? cramoRaw : undefined;
     const metadata = {
       ...(req.nexusMetadata && typeof req.nexusMetadata === 'object' ? req.nexusMetadata : {}),
       ...(req.query.canal ? { canal: String(req.query.canal) } : {}),
@@ -82,7 +86,12 @@ router.get('/health-questions', async (req, res) => {
       triedEmpresas,
       canal,
       resolvedCanal,
-    } = await resolveQuestionsForPlan(cplan, { empresaId, metadata });
+    } = await resolveQuestionsForPlan(cplan, {
+      empresaId,
+      metadata,
+      cramo,
+      cproducto: req.query.cproducto,
+    });
     res.json({
       success: true,
       cplan,
@@ -125,7 +134,7 @@ router.post('/health-answers', (req, res) => {
       message: 'sessionId y cplan son obligatorios.',
     });
   }
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, req.body?.cproducto)) {
     return rejectNonFunerarioPlan(res, cplan);
   }
   if (!answers || typeof answers !== 'object') {
@@ -171,7 +180,7 @@ router.get('/health-answers', (req, res) => {
       message: 'sessionId y cplan son obligatorios.',
     });
   }
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, req.query.cproducto)) {
     return rejectNonFunerarioPlan(res, cplan);
   }
   const record = getHealthAnswers(sessionId, cplan);

@@ -24,6 +24,24 @@
       href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,600;1,700&family=JetBrains+Mono:wght@500;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (function () {
+        try {
+          var path = location.pathname.replace(/\/+$/, '');
+          var qs = new URLSearchParams(location.search);
+          var inPreguntas = /\/config\/preguntas$/i.test(path);
+          var inConfig = /\/config$/i.test(path);
+          var inRevision = /\/revision$/i.test(path);
+          if (!inPreguntas && !inConfig && !inRevision) return;
+          var view = inPreguntas ? 'preguntas' : inRevision ? 'revision' : (qs.get('view') || 'config');
+          var prefix = path.replace(/\/(config(\/preguntas)?|revision)$/i, '');
+          var next = new URL(location.href);
+          next.pathname = (prefix || '') + '/';
+          next.searchParams.set('view', view);
+          location.replace(next.pathname + next.search + next.hash);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

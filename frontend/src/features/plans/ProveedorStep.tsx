@@ -8,6 +8,7 @@ import {
 import type { Plan, ProveedorItem } from '../../types';
 import {
   personasApi,
+  resolveQuoteCramo,
   type PlanPer,
   getFrecuenciasByPlan,
   type CatalogItem,
@@ -17,6 +18,7 @@ import { decodeNexusTokenMetadata, getNexusToken } from '../../lib/nexus-token-c
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { frecuenciasPersonas } from '../../lib/frecuencia';
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -114,7 +116,7 @@ export function ProveedorStep() {
 
     let cancelled = false;
     setFrecLoading(true);
-    getFrecuenciasByPlan(planCode, product.cramo)
+    getFrecuenciasByPlan(planCode, resolveQuoteCramo(selectedPlan?.cramo, product.cramo))
       .then((items) => {
         if (!cancelled) {
           setApiFrecuencias(items);
@@ -165,7 +167,7 @@ export function ProveedorStep() {
 
     getProveedores({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
       centidad: centidad || undefined,
       citem: citem || undefined,
     })
@@ -223,7 +225,7 @@ export function ProveedorStep() {
 
     personasApi.cotizar({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
       ifrecuencia: funeral.frecuencia,
       asegurados: aseguradosListos.map((a) => ({
         parentesco: a.parentesco,
@@ -303,12 +305,14 @@ export function ProveedorStep() {
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
                 if (found) {
+                  // Plan Proveedor no tiene cuestionario de salud (Sis2000 sin preguntas para el producto):
+                  // no dejar Pagos bloqueado por cuestionario/términos que nunca se muestran.
                   setFuneral({
-                    healthQuestionnaireDone: false,
+                    healthQuestionnaireDone: true,
                     healthAnswers: {},
                     diagnosticoEnfermedad: false,
                     descripcionEnfermedad: '',
-                    aceptaTerminos: false,
+                    aceptaTerminos: true,
                   });
                 }
               }}

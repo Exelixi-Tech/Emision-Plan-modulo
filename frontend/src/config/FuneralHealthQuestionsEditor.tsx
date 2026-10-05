@@ -5,7 +5,7 @@ import {
   RotateCcw, ChevronUp, Percent, Power,
 } from 'lucide-react';
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestionDraft {
   id: string;
@@ -22,9 +22,24 @@ export interface HealthQuestionDraft {
   scoreIfFalse?: number;
   scoreIfFilled?: number;
   optionScores?: Record<string, number>;
+  /** Knockout / referir por valor en select o multi_select */
+  optionActions?: Record<string, 'score' | 'refer' | 'reject'>;
   blockIfTrue?: boolean;
   blockIfFalse?: boolean;
   blockReason?: string;
+  /** score = solo % · refer = mesa técnica · reject = rechazo inmediato */
+  actionIfTrue?: 'score' | 'refer' | 'reject';
+  actionIfFalse?: 'score' | 'refer' | 'reject';
+  /** % que se suma a la prima del asegurado si responde Sí (recargo). */
+  recargoIfTrue?: number;
+  /** % que se resta a la prima del asegurado si responde Sí (descuento). */
+  descuentoIfTrue?: number;
+}
+
+/** % de recargo/descuento: vacío o negativo = sin ajuste. */
+function parsePremiumPct(raw: string): number | undefined {
+  const n = Number(raw);
+  return raw.trim() === '' || !Number.isFinite(n) || n <= 0 ? undefined : n;
 }
 
 export type PlanOption = { code: string; label: string };
@@ -41,107 +56,48 @@ export const FALLBACK_FUNERAL_PLAN_OPTIONS: PlanOption[] = [
   { code: '9', label: '7.500$ Individual' },
 ];
 
-const FALLBACK_CODES = FALLBACK_FUNERAL_PLAN_OPTIONS.map((p) => p.code);
-
 const TYPE_LABEL: Record<HealthQuestionType, string> = {
   boolean: 'Sí/No',
   text: 'Texto',
   select: 'Lista',
+  multi_select: 'Varias opciones',
 };
 
-/** Seed si la config aún no trae preguntas (mismo default que Nexus). */
+/** Declaración corta de funerario. AP y vida se resuelven por cramo en el servidor. */
 export const DEFAULT_HEALTH_QUESTIONS_SEED: HealthQuestionDraft[] = [
   {
-    id: 'fuma',
+    id: 'buenEstadoSalud',
     type: 'boolean',
-    label: '¿Fuma o ha fumado en los últimos 12 meses?',
-    description: 'Incluye cigarrillos, tabaco, puros o vapeo.',
+    label: '¿Se encuentra actualmente en buen estado de salud?',
     required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfTrue: 15,
+    plans: ['*'],
+    scoreIfTrue: 0,
+    scoreIfFalse: 0,
   },
   {
-    id: 'diagnosticoEnfermedad',
-    type: 'boolean',
-    label: '¿Ha sido diagnosticado con alguna enfermedad grave?',
-    description: 'Cáncer, diabetes, hipertensión, cardiopatías, VIH, etc.',
-    required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfTrue: 40,
-  },
-  {
-    id: 'descripcionEnfermedad',
+    id: 'buenEstadoSaludDetalle',
     type: 'text',
-    label: 'Describa la enfermedad diagnosticada',
-    description: 'Indique enfermedad, tratamiento y fecha aproximada del diagnóstico.',
-    required: true,
-    plans: [...FALLBACK_CODES],
-    showIf: { field: 'diagnosticoEnfermedad', equals: true },
-    scoreIfFilled: 5,
+    label: 'Especifique',
+    required: false,
+    plans: ['*'],
+    showIf: { field: 'buenEstadoSalud', equals: false },
   },
   {
-    id: 'aceptaTerminos',
+    id: 'patologiaGrave',
     type: 'boolean',
-    label: 'Acepto los términos y condiciones',
-    description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
+    label: '¿Ha padecido, padece o ha sido diagnosticado con patologías coronarias o cardíacas, cáncer, enfermedad renal o hepática crónica, o alguna condición médica grave o terminal?',
     required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfFalse: 100,
-    blockIfFalse: true,
-    blockReason: 'Debe aceptar los términos y condiciones.',
+    plans: ['*'],
+    scoreIfTrue: 0,
+    scoreIfFalse: 0,
   },
   {
-    id: 'consumeAlcohol',
-    type: 'boolean',
-    label: '¿Consume alcohol de forma habitual?',
-    description: 'Más de 2 copas por semana de forma regular.',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    scoreIfTrue: 10,
-  },
-  {
-    id: 'hospitalizacionReciente',
-    type: 'boolean',
-    label: '¿Ha sido hospitalizado en los últimos 24 meses?',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    scoreIfTrue: 25,
-  },
-  {
-    id: 'motivoHospitalizacion',
+    id: 'patologiaGraveDetalle',
     type: 'text',
-    label: 'Motivo de la hospitalización',
+    label: 'Especifique',
     required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    showIf: { field: 'hospitalizacionReciente', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'medicacionCronica',
-    type: 'boolean',
-    label: '¿Toma medicación de forma crónica?',
-    description: 'Medicamentos prescritos de forma continua.',
-    required: true,
-    plans: ['7', '8', '9'],
-    scoreIfTrue: 20,
-  },
-  {
-    id: 'detalleMedicacion',
-    type: 'text',
-    label: 'Indique los medicamentos',
-    required: true,
-    plans: ['7', '8', '9'],
-    showIf: { field: 'medicacionCronica', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'deporteRiesgo',
-    type: 'boolean',
-    label: '¿Practica deportes de alto riesgo?',
-    description: 'Paracaidismo, montañismo, buceo, carreras, etc.',
-    required: true,
-    plans: ['9'],
-    scoreIfTrue: 30,
+    plans: ['*'],
+    showIf: { field: 'patologiaGrave', equals: true },
   },
 ];
 
@@ -157,6 +113,7 @@ export function enrichHealthQuestionScores(list: HealthQuestionDraft[]): HealthQ
       scoreIfFalse: q.scoreIfFalse ?? d.scoreIfFalse,
       scoreIfFilled: q.scoreIfFilled ?? d.scoreIfFilled,
       optionScores: q.optionScores ?? d.optionScores,
+      optionActions: q.optionActions ?? d.optionActions,
       blockIfTrue: q.blockIfTrue ?? d.blockIfTrue,
       blockIfFalse: q.blockIfFalse ?? d.blockIfFalse,
       blockReason: q.blockReason ?? d.blockReason,
@@ -168,6 +125,13 @@ function appliesToPlan(q: HealthQuestionDraft, cplan: string): boolean {
   const plans = (q.plans || []).map((p) => String(p).trim()).filter(Boolean);
   if (plans.length === 0) return true;
   return plans.includes('*') || plans.includes(cplan);
+}
+
+/** `*` significa todos los planes del ramo que se está editando. */
+function selectedPlanCodes(plans: string[] | undefined, allCodes: string[]): string[] {
+  const list = (plans || []).map((p) => String(p).trim()).filter(Boolean);
+  if (list.includes('*')) return [...allCodes];
+  return list;
 }
 
 function clientViewForPlan(questions: HealthQuestionDraft[], cplan: string) {
@@ -204,6 +168,7 @@ function plansSummary(
 ): string {
   const allCodes = planOptions.map((p) => p.code);
   if (!plans?.length) return 'ningún plan';
+  if (plans.includes('*')) return 'todos los planes de este ramo';
   if (allCodes.length > 0 && plans.length >= allCodes.length && allCodes.every((c) => plans.includes(c))) {
     return 'todos';
   }
@@ -222,6 +187,9 @@ type Props = {
   planOptions?: PlanOption[];
   plansLoading?: boolean;
   plansError?: boolean;
+  /** Preguntas de Defaults de este ramo. Si no viene, usa la semilla de funerario. */
+  seedQuestions?: HealthQuestionDraft[];
+  ramoName?: string;
 };
 
 const inp = 'w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-white';
@@ -233,29 +201,42 @@ export function FuneralHealthQuestionsEditor({
   planOptions: planOptionsProp,
   plansLoading = false,
   plansError = false,
+  seedQuestions,
+  ramoName = '',
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [previewPlan, setPreviewPlan] = useState('');
+  const [showFullCatalog, setShowFullCatalog] = useState(false);
 
-  const planOptions = useMemo(
-    () => (planOptionsProp?.length ? planOptionsProp : FALLBACK_FUNERAL_PLAN_OPTIONS),
-    [planOptionsProp],
-  );
+  const planOptions = useMemo(() => {
+    if (planOptionsProp?.length) return planOptionsProp;
+    if (plansLoading || plansError) return [];
+    return ramoName === 'Funerario' ? FALLBACK_FUNERAL_PLAN_OPTIONS : [];
+  }, [planOptionsProp, plansError, plansLoading, ramoName]);
   const allPlanCodes = useMemo(() => planOptions.map((p) => p.code), [planOptions]);
-  const previewCode = previewPlan || (allPlanCodes.includes('8') ? '8' : allPlanCodes[0] || '');
+  const previewCode = previewPlan && allPlanCodes.includes(previewPlan)
+    ? previewPlan
+    : (allPlanCodes.includes('8') ? '8' : allPlanCodes[0] || '');
   const clientPreview = useMemo(
     () => (previewCode ? clientViewForPlan(questions, previewCode) : null),
     [questions, previewCode],
   );
+  const listed = useMemo(
+    () => questions
+      .map((q, idx) => ({ q, idx }))
+      .filter(({ q }) => showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
+    [questions, showFullCatalog, previewCode],
+  );
+  const padresEnLista = listed.filter(({ q }) => !q.showIf?.field).length;
 
   const update = (idx: number, patch: Partial<HealthQuestionDraft>) => {
     onChange(questions.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
   };
 
   const togglePlan = (idx: number, code: string) => {
-    const q = questions[idx];
-    const has = q.plans.includes(code);
-    const plans = has ? q.plans.filter((p) => p !== code) : [...q.plans, code];
+    const current = selectedPlanCodes(questions[idx].plans, allPlanCodes);
+    const has = current.includes(code);
+    const plans = has ? current.filter((p) => p !== code) : [...current, code];
     update(idx, { plans });
   };
 
@@ -280,19 +261,23 @@ export function FuneralHealthQuestionsEditor({
     setOpenId(id);
   };
 
-  const move = (idx: number, dir: -1 | 1) => {
-    const to = idx + dir;
-    if (to < 0 || to >= questions.length) return;
+  const moveListed = (listedPos: number, dir: -1 | 1) => {
+    const other = listed[listedPos + dir];
+    if (!other) return;
+    const fromIdx = listed[listedPos].idx;
+    const toIdx = other.idx;
     const next = [...questions];
-    const [row] = next.splice(idx, 1);
-    next.splice(to, 0, row);
+    const tmp = next[fromIdx];
+    next[fromIdx] = next[toIdx];
+    next[toIdx] = tmp;
     onChange(next);
   };
 
   const restoreDefaults = () => {
-    onChange(DEFAULT_HEALTH_QUESTIONS_SEED.map((q) => ({
+    const source = seedQuestions?.length ? seedQuestions : DEFAULT_HEALTH_QUESTIONS_SEED;
+    onChange(source.map((q) => ({
       ...q,
-      plans: [...q.plans],
+      plans: [...(q.plans?.length ? q.plans : allPlanCodes)],
       options: q.options ? q.options.map((o) => ({ ...o })) : undefined,
       optionScores: q.optionScores ? { ...q.optionScores } : undefined,
     })));
@@ -339,6 +324,23 @@ export function FuneralHealthQuestionsEditor({
     setOpenId(questions[parentIdx]?.id ?? null);
   };
 
+  const textDrawerOf = (parentIdx: number) => {
+    const parent = questions[parentIdx];
+    if (!parent) return undefined;
+    return questions.find(
+      (q, i) => i !== parentIdx && q.showIf?.field === parent.id && q.type === 'text',
+    );
+  };
+
+  const setDrawerEquals = (parentIdx: number, equals: boolean | string) => {
+    const parent = questions[parentIdx];
+    if (!parent) return;
+    onChange(questions.map((q, i) => {
+      if (i === parentIdx || q.showIf?.field !== parent.id || q.type !== 'text') return q;
+      return { ...q, showIf: { field: parent.id, equals } };
+    }));
+  };
+
   const remove = (idx: number) => {
     const id = questions[idx]?.id;
     onChange(questions.filter((_, i) => i !== idx));
@@ -363,12 +365,10 @@ export function FuneralHealthQuestionsEditor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
-            Preguntas · {questions.length}
+            Preguntas{ramoName ? ` de ${ramoName}` : ''} · {padresEnLista}
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-            Pulsa una fila para editarla. El <strong className="font-semibold text-slate-600">%</strong> lo
-            ve solo el técnico. Tras <strong className="font-semibold text-slate-600">Guardar</strong>, el
-            cliente ve las preguntas <em>visibles</em> de este canal.
+            Abre una pregunta y marca los planes en los que debe salir. El detalle “Especifique” no es una pregunta: se abre según la respuesta. Tras Guardar, el cliente ve solo las de su plan.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -390,7 +390,14 @@ export function FuneralHealthQuestionsEditor({
           </button>
         </div>
       </div>
-      {clientPreview && previewCode && (
+      {plansLoading && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-4 flex flex-col items-center justify-center space-y-2">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-indigo-500 border-t-transparent"></div>
+          <p className="text-xs font-semibold text-indigo-800">Cargando planes desde el servidor...</p>
+          <p className="text-[10px] text-indigo-600">Esto puede tomar unos segundos.</p>
+        </div>
+      )}
+      {!plansLoading && clientPreview && previewCode && (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2.5 text-[12px] text-indigo-950 leading-snug space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <label className="font-black uppercase tracking-wider text-[10px] text-indigo-600">
@@ -410,12 +417,12 @@ export function FuneralHealthQuestionsEditor({
             Ahora: <strong>{clientPreview.now.length}</strong> pregunta
             {clientPreview.now.length === 1 ? '' : 's'}
             {clientPreview.drawers.length > 0
-              ? ` · ${clientPreview.drawers.length} cajón${clientPreview.drawers.length === 1 ? '' : 'es'} al responder Sí`
+              ? ` · ${clientPreview.drawers.length} detalle${clientPreview.drawers.length === 1 ? '' : 's'} que se abren según la respuesta`
               : ''}
             {clientPreview.otherPlans.length > 0
               ? ` · ${clientPreview.otherPlans.length} no aplica${clientPreview.otherPlans.length === 1 ? '' : 'n'} a este plan`
               : ''}
-            . El panel lista {questions.length}; el cliente nunca las ve todas de golpe.
+            .
           </p>
           {clientPreview.otherPlans.length > 0 && (
             <p className="text-[11px] text-indigo-800">
@@ -423,6 +430,15 @@ export function FuneralHealthQuestionsEditor({
               {clientPreview.otherPlans.map((q) => q.label || q.id).join(' · ')}
             </p>
           )}
+          <label className="flex items-center gap-2 text-[11px] font-semibold text-indigo-800">
+            <input
+              type="checkbox"
+              className="rounded text-indigo-600"
+              checked={showFullCatalog}
+              onChange={(e) => setShowFullCatalog(e.target.checked)}
+            />
+            Ver catálogo completo ({questions.length})
+          </label>
         </div>
       )}
       <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 leading-relaxed space-y-0.5">
@@ -446,12 +462,19 @@ export function FuneralHealthQuestionsEditor({
           No hay preguntas. Pulsa Nueva o Defaults. Luego Guardar.
         </div>
       )}
+      {questions.length > 0 && listed.length === 0 && (
+        <div className="text-center py-8 text-slate-500 text-sm rounded-xl border border-dashed border-slate-200 bg-slate-50">
+          Ninguna pregunta aplica a este plan. Activa “Ver catálogo completo” para editarlas.
+        </div>
+      )}
 
       <ul className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
-        {questions.map((q, idx) => {
+        {listed.map(({ q, idx }, listedPos) => {
           const open = openId === q.id;
           const isChild = Boolean(q.showIf?.field);
           const isActive = q.enabled !== false;
+          const padreN = listed.slice(0, listedPos + 1).filter(({ q: row }) => !row.showIf?.field).length;
+          const abreCon = q.showIf?.equals === false ? 'No' : 'Sí';
           return (
             <li
               key={`${q.id}-${idx}`}
@@ -468,7 +491,7 @@ export function FuneralHealthQuestionsEditor({
                     {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </span>
                   <span className="w-5 text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
-                    {idx + 1}
+                    {isChild ? '' : padreN}
                   </span>
                   <span
                     className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
@@ -492,7 +515,7 @@ export function FuneralHealthQuestionsEditor({
                       {allPlanCodes.length > 0 && q.plans.length < allPlanCodes.length
                         ? `Solo ${plansSummary(q.plans, planOptions)}`
                         : `Planes ${plansSummary(q.plans, planOptions)}`}
-                      {q.showIf?.field ? ' · cajón (solo si responde otra)' : ''}
+                      {q.showIf?.field ? ` · se abre si responde ${abreCon}` : ''}
                       {q.required ? ' · obligatoria' : ' · opcional'}
                       {!isActive ? ' · oculta al cliente' : ''}
                     </span>
@@ -516,8 +539,8 @@ export function FuneralHealthQuestionsEditor({
                 <div className="flex flex-col justify-center border-l border-slate-100">
                   <button
                     type="button"
-                    onClick={() => move(idx, -1)}
-                    disabled={idx === 0}
+                    onClick={() => moveListed(listedPos, -1)}
+                    disabled={listedPos === 0}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
                     title="Subir en el orden que ve el cliente"
                   >
@@ -525,8 +548,8 @@ export function FuneralHealthQuestionsEditor({
                   </button>
                   <button
                     type="button"
-                    onClick={() => move(idx, 1)}
-                    disabled={idx === questions.length - 1}
+                    onClick={() => moveListed(listedPos, 1)}
+                    disabled={listedPos === listed.length - 1}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
                     title="Bajar en el orden que ve el cliente"
                   >
@@ -660,12 +683,25 @@ export function FuneralHealthQuestionsEditor({
                         Cajón de detalle
                       </p>
                       <p className="text-[11px] text-slate-600 mt-0.5 mb-2 leading-relaxed">
-                        {questions.some((x, i) => i !== idx && x.showIf?.field === q.id && x.type === 'text')
-                          ? 'Ya hay un cajón. Puedes ir a editarlo, ocultarlo (interruptor) o quitarlo. No está fijo en esta pregunta.'
+                        {textDrawerOf(idx)
+                          ? 'El recuadro de texto no está fijo. Elige si el cliente lo ve al responder Sí o al responder No.'
                           : `No es un tipo más. Crea un recuadro de texto que el cliente solo ve si${
-                              q.type === 'boolean' ? ' responde Sí' : ' elige una opción'
+                              q.type === 'boolean' ? ' responde Sí o No' : ' elige una opción'
                             }.`}
                       </p>
+                      {q.type === 'boolean' && textDrawerOf(idx) && (
+                        <div className="mb-2">
+                          <label className={lbl}>Mostrar la descripción si responde</label>
+                          <select
+                            className={inp}
+                            value={textDrawerOf(idx)?.showIf?.equals === false ? 'false' : 'true'}
+                            onChange={(e) => setDrawerEquals(idx, e.target.value === 'true')}
+                          >
+                            <option value="true">Sí</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -920,42 +956,111 @@ export function FuneralHealthQuestionsEditor({
                     {q.type === 'boolean' && (
                       <div className="pt-1 border-t border-indigo-100 space-y-2">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                          Bloquear el envío
+                          Qué hace esta respuesta
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          Si se cumple, el cliente no puede continuar. El caso no llega a mesa técnica.
+                          Además del %, puedes mandar el caso a revisión o rechazarlo al instante.
                         </p>
-                        <div className="flex flex-wrap gap-3">
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfTrue}
-                              onChange={(e) => update(idx, { blockIfTrue: e.target.checked || undefined })}
-                            />
-                            Bloquear si Sí
-                          </label>
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfFalse}
-                              onChange={(e) => update(idx, { blockIfFalse: e.target.checked || undefined })}
-                            />
-                            Bloquear si No
-                          </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className={lbl}>Si responde Sí</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfTrue = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfTrue,
+                                  blockIfTrue: actionIfTrue === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className={lbl}>Si responde No</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfFalse = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfFalse,
+                                  blockIfFalse: actionIfFalse === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
                         </div>
-                        {(q.blockIfTrue || q.blockIfFalse) && (
+                        {((q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')) === 'reject' ||
+                          (q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')) === 'reject' ||
+                          q.actionIfTrue === 'refer' ||
+                          q.actionIfFalse === 'refer') && (
                           <input
                             className={inp}
                             value={q.blockReason ?? ''}
                             onChange={(e) => update(idx, { blockReason: e.target.value || undefined })}
-                            placeholder="Mensaje que verá el cliente si se bloquea"
+                            placeholder="Mensaje que verá el cliente (rechazo o revisión)"
                           />
                         )}
                       </div>
                     )}
                   </div>
+
+                  {q.type === 'boolean' && (
+                    <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-2.5 space-y-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 inline-flex items-center gap-1">
+                        <Percent size={11} />
+                        Recargo / descuento a la prima
+                      </p>
+                      <p className="text-[11px] text-slate-500 -mt-1">
+                        Si responde Sí, se suma (recargo) o resta (descuento) este % a la prima del asegurado.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className={lbl}>% recargo si responde Sí</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              className={`${inp} pr-8`}
+                              value={q.recargoIfTrue ?? ''}
+                              onChange={(e) =>
+                                update(idx, { recargoIfTrue: parsePremiumPct(e.target.value) })
+                              }
+                              placeholder="0"
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">%</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className={lbl}>% descuento si responde Sí</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              className={`${inp} pr-8`}
+                              value={q.descuentoIfTrue ?? ''}
+                              onChange={(e) =>
+                                update(idx, { descuentoIfTrue: parsePremiumPct(e.target.value) })
+                              }
+                              placeholder="0"
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
@@ -982,15 +1087,19 @@ export function FuneralHealthQuestionsEditor({
                     )}
                     {plansError && !plansLoading && (
                       <p className="text-[11px] text-amber-700 mb-1.5 font-semibold">
-                        No se pudieron cargar los planes del API; se muestran los nombres de respaldo.
+                        {planOptions.length
+                          ? 'No se pudieron cargar los planes del API; se muestran los nombres de respaldo.'
+                          : 'No se pudieron cargar los planes de este ramo.'}
                       </p>
                     )}
                     <div className="flex flex-col gap-1">
-                      {planOptions.map((p) => (
+                      {planOptions.map((p) => {
+                        const marked = selectedPlanCodes(q.plans, allPlanCodes).includes(p.code);
+                        return (
                         <label
                           key={p.code}
                           className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer ${
-                            q.plans.includes(p.code)
+                            marked
                               ? 'border-indigo-400 bg-indigo-50 text-indigo-800'
                               : 'border-slate-200 text-slate-500'
                           }`}
@@ -998,7 +1107,7 @@ export function FuneralHealthQuestionsEditor({
                           <input
                             type="checkbox"
                             className="rounded text-indigo-600"
-                            checked={q.plans.includes(p.code)}
+                            checked={marked}
                             onChange={() => togglePlan(idx, p.code)}
                           />
                           <span className="min-w-0 flex-1 leading-snug">{p.label}</span>
@@ -1006,20 +1115,21 @@ export function FuneralHealthQuestionsEditor({
                             cplan {p.code}
                           </span>
                         </label>
-                      ))}
+                        );
+                      })}
                     </div>
-                    {allPlanCodes.length > 0 && q.plans.length < allPlanCodes.length && (
+                    {allPlanCodes.length > 0 && selectedPlanCodes(q.plans, allPlanCodes).length < allPlanCodes.length && selectedPlanCodes(q.plans, allPlanCodes).length > 0 && (
                       <p className="text-[11px] text-amber-800 font-semibold mt-2 leading-relaxed">
                         El cliente no la verá si elige un plan que no esté marcado.
                         Faltan:{' '}
                         {planOptions
-                          .filter((p) => !q.plans.includes(p.code))
+                          .filter((p) => !selectedPlanCodes(q.plans, allPlanCodes).includes(p.code))
                           .map((p) => p.label)
                           .join(' · ') || 'ninguno'}
                         . Pulsa «Todos» si debe salir en todos.
                       </p>
                     )}
-                    {q.plans.length === 0 && (
+                    {selectedPlanCodes(q.plans, allPlanCodes).length === 0 && (
                       <p className="text-[11px] text-rose-600 font-semibold mt-2">
                         Sin planes: no saldrá en ningún flujo. Marca al menos uno o pulsa Todos.
                       </p>

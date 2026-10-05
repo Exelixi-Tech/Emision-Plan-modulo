@@ -7,6 +7,7 @@ import type {
   PersonData,
   VehicleData,
   FuneralData,
+  PatrimonialesData,
   RcvPlanData,
   Plan,
   PaymentMethod,
@@ -70,16 +71,25 @@ const defaultRcv = (): RcvPlanData => ({
   ndias: null,
   coberAdicional: 'RC',
   coberAdicionales: [],
+  cproductor: null,
+  xproductor: null,
+});
+
+const defaultPatrimoniales = (): PatrimonialesData => ({
+  datosBien: '',
+  tipo: '',
+  descripcion: '',
 });
 
 const defaultFuneral = (): FuneralData => ({
   asegurados: [{ tipoDoc: 'V', identificacion: '', nombre: '', apellido: '', fechaNac: '', sexo: '', parentesco: '1' }],
   beneficiarios: [],
-  frecuencia: 'M',
+  frecuencia: 'A',
   diagnosticoEnfermedad: false,
   descripcionEnfermedad: '',
   aceptaTerminos: false,
   healthAnswers: {},
+  healthAnswersByInsured: {},
   healthQuestionnaireDone: false,
 });
 
@@ -100,6 +110,7 @@ interface WizardActions {
   setConductor: (data: Partial<PersonData>) => void;
   setVehicle: (data: Partial<VehicleData>) => void;
   setFuneral: (data: Partial<FuneralData>) => void;
+  setPatrimoniales: (data: Partial<PatrimonialesData>) => void;
   setRcv: (data: Partial<RcvPlanData>, options?: { keepQuote?: boolean }) => void;
   setCategory: (c: string) => void;
   setSelectedPlan: (plan: Plan | null) => void;
@@ -131,6 +142,7 @@ const initialState: WizardState = {
   ocrDone: false,
   tomador: defaultTomador(),
   funeral: defaultFuneral(),
+  patrimoniales: defaultPatrimoniales(),
   rcv: defaultRcv(),
   fraccionado: false,
   sameInsured: true,
@@ -235,6 +247,9 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       }
       return patch;
     }),
+
+  setPatrimoniales: (data) =>
+    set((s) => ({ patrimoniales: { ...(s.patrimoniales || defaultPatrimoniales()), ...data } })),
 
   setRcv: (data, options?: { keepQuote?: boolean }) =>
     set((s) => {

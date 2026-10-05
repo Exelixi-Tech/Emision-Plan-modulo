@@ -91,6 +91,12 @@ export function PaymentStep() {
   const [verifyResult, setVerifyResult] = useState<VerifyMobilePaymentResponse | null>(null);
   const [verifyError, setVerifyError] = useState<string>('');
 
+  // ── Registro de Proveedor en Póliza (Combinado Familiar / adproveedor) ────
+  // Panel de registro oculto: se conservan los setters (registro automático al pagar).
+  const [, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [, setProviderRegResult] = useState<any>(null);
+  const [, setProviderRegError] = useState<string>('');
+
   // ── SyPago Débito OTP ─────────────────────────────────────────────────
   const [otpDocType, setOtpDocType] = useState('V');
   const [otpDocNum, setOtpDocNum] = useState('');
@@ -135,8 +141,8 @@ export function PaymentStep() {
     const faltantes = ([
       ['póliza', Boolean(poliza)],
       ['RIF del proveedor', cciRifClean > 0],
-      ['clave del proveedor', claveNum > 0],
-      ['tipo de servicio', Boolean(tipoServ)],
+      // ['clave del proveedor', claveNum > 0],
+      // ['tipo de servicio', Boolean(tipoServ)],
       ['plan', Boolean(plan)],
       ['ramo', ramo > 0],
       ['usuario (cusuario)', usuario > 0],
@@ -145,6 +151,8 @@ export function PaymentStep() {
     ] as const).filter(([, ok]) => !ok).map(([label]) => label);
     if (!poliza || faltantes.length > 0) {
       const msg = `Faltan datos para registrar el proveedor: ${faltantes.join(', ')}.`;
+      setProviderRegError(msg);
+      setProviderRegStatus('error');
       toast.error('Error en registro de proveedor', msg);
       throw new Error(msg);
     }
