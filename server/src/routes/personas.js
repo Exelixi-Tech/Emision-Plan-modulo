@@ -25,6 +25,7 @@ const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan'
 const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
+const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -473,6 +474,34 @@ router.post('/emision', async (req, res) => {
 
     const emitted = await personasClient.createEmissionPerson(payload);
 
+    // Registro de proveedor en póliza si vino en el estado
+    let proveedorResult = null;
+    if (state?.selectedProveedor || state?.cproveedor) {
+      const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
+        state,
+        emitted,
+        cotizacionBase,
+        {
+          plan: cplan,
+          ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
+        },
+      );
+      if (proveedorPayload && proveedorPayload.cci_rif) {
+        try {
+          proveedorResult = await registerPolicyProveedorViaNestApi(proveedorPayload);
+          console.log(
+            `[personas/emision] Proveedor registrado en póliza ${emitted.cnpoliza}:`,
+            proveedorResult,
+          );
+        } catch (provErr) {
+          console.warn(
+            '[personas/emision] Error al registrar proveedor en póliza:',
+            provErr?.message || provErr,
+          );
+        }
+      }
+    }
+
     await archiveExpedienteAfterEmit({
       state,
       emission: emitted,
@@ -501,6 +530,7 @@ router.post('/emision', async (req, res) => {
         mprimaext: cotizacion.mprimaext,
         ptasa: cotizacion.ptasa,
       },
+      ...(proveedorResult ? { proveedor: proveedorResult } : {}),
       /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
       ...(premiumAdjust ? { premiumAdjust } : {}),
     };
@@ -552,6 +582,7 @@ router.post('/emision', async (req, res) => {
           mprimaext: cotizacion.mprimaext,
           ptasa: cotizacion.ptasa,
         },
+        ...(proveedorResult ? { proveedor: proveedorResult } : {}),
         metadata: emitMetadata,
       },
     });
