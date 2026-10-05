@@ -35,6 +35,18 @@ export function isFrecuenciaFraccionada(code?: string | null): boolean {
   return FREQ_FRACCIONADA.has(normalizeFrecuenciaCode(code));
 }
 
+/**
+ * Personas: Pagos aún cobra la prima anual (sin cuotas ni domiciliación), así que no se
+ * ofrecen M/T/S/C. Si no queda ninguna, se usa `fallback` (Anual).
+ */
+export function frecuenciasPersonas<T extends { code: number | string }>(items: T[], fallback: T[]): T[] {
+  const list = items.filter((i) => {
+    const c = normalizeFrecuenciaCode(String(i.code));
+    return !FREQ_FRACCIONADA.has(c) && c !== 'C';
+  });
+  return list.length ? list : fallback;
+}
+
 export function getCuotasByFrecuencia(code?: string | null): number {
   const n = CUOTAS_BY_FREC[normalizeFrecuenciaCode(code)];
   return n != null && n > 0 ? n : 1;
