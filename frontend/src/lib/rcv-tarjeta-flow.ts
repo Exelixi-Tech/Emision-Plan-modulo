@@ -27,14 +27,29 @@ export function hydrateTarjetaMetadataCanal(): void {
   store.setMetadataCanal({ ...(store.metadataCanal || {}), ...stored });
 }
 
-export type TarjetaPlanCurrencyKind = 'usd' | 'ves';
+export type TarjetaPlanCurrencyKind = 'usd' | 'ves' | 'eur';
 
 export function resolveTarjetaPlanCurrency(cmoneda?: unknown): TarjetaPlanCurrencyKind {
   const code = String(cmoneda ?? '$').trim().toUpperCase();
   if (code === 'BS' || code === 'B' || code === 'BOLIVAR' || code === 'BOLÍVAR' || code === 'VES') {
     return 'ves';
   }
+  if (code === 'EUR' || code === 'EU' || code === '€' || code === 'EURO') return 'eur';
   return 'usd';
+}
+
+/** Símbolo de la moneda del plan (sin tarjeta = $). */
+export function tarjetaCurrencySymbol(kind?: TarjetaPlanCurrencyKind | null): string {
+  if (kind === 'eur') return '€';
+  if (kind === 'ves') return 'Bs';
+  return '$';
+}
+
+/** Código junto al monto: USD / EUR (Bs no lleva sufijo). */
+export function tarjetaCurrencyCode(kind?: TarjetaPlanCurrencyKind | null): string {
+  if (kind === 'eur') return 'EUR';
+  if (kind === 'ves') return '';
+  return 'USD';
 }
 
 export function getTarjetaPlanCmoneda(metadataCanal?: Record<string, unknown> | null): string {
