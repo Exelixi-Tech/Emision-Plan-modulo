@@ -94,7 +94,6 @@ export function PaymentStep() {
   // ── Registro de Proveedor en Póliza (Combinado Familiar / adproveedor) ────
   // Panel de registro oculto: se conservan los setters (registro automático al pagar).
   const [, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [, setProviderRegResult] = useState<any>(null);
   const [, setProviderRegError] = useState<string>('');
 
   // ── SyPago Débito OTP ─────────────────────────────────────────────────
