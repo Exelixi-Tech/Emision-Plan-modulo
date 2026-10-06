@@ -63,14 +63,21 @@ export function getEffectiveSsoMetadata(): Record<string, unknown> {
   };
 }
 
-/** Rol "Corredores" en Sis2000 (serol.crol = 6). */
-const CROL_CORREDOR = 6;
+/**
+ * Ids de rol (serol.crol) de Sis2000 que corresponden a productor/corredor,
+ * configurables por entorno con VITE_CROL_PRODUCTOR (lista separada por comas).
+ */
+const CROLES_PRODUCTOR: number[] = String(import.meta.env.VITE_CROL_PRODUCTOR ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter((v) => v !== '')
+  .map(Number)
+  .filter((n) => Number.isInteger(n));
 
 /**
  * Determina si el usuario logueado en la sesión de Sis2000 tiene rol de Productor.
- * El único rol de productor es crol 6 ("Corredores"). Cualquier otro rol
- * (1 Master, 2 Emision, 5 Emisión, 7 Suscriptores, 8 Comerciales, etc.) es personal
- * interno de Sis2000 y NO es rol de productor.
+ * Solo el rol configurado en VITE_CROL_PRODUCTOR (corredores) es productor; cualquier
+ * otro rol es personal interno de Sis2000 y NO es rol de productor.
  */
 export function isProductorRole(meta: Record<string, unknown>): boolean {
   const rawRol = meta.crol;
@@ -79,7 +86,7 @@ export function isProductorRole(meta: Record<string, unknown>): boolean {
     : NaN;
 
   if (!Number.isNaN(crolNum)) {
-    return crolNum === CROL_CORREDOR;
+    return CROLES_PRODUCTOR.includes(crolNum);
   }
 
   // Fallback si no viene crol: verificar si tiene código de corredor asignado
@@ -99,7 +106,7 @@ export function isBackofficeSession(meta: Record<string, unknown>): boolean {
 
 /**
  * En Sis2000:
- * - Rol Corredores (crol 6): NO ve el selector (toma su propio código de productor logueado).
+ * - Rol productor (VITE_CROL_PRODUCTOR): NO ve el selector (toma su propio código de productor logueado).
  * - Cualquier otro rol: SÍ ven el selector para asociar la emisión.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
