@@ -63,15 +63,14 @@ export function getEffectiveSsoMetadata(): Record<string, unknown> {
   };
 }
 
+/** Rol "Corredores" en Sis2000 (serol.crol = 6). */
+const CROL_CORREDOR = 6;
+
 /**
  * Determina si el usuario logueado en la sesión de Sis2000 tiene rol de Productor.
- * En Sis2000 los roles son numéricos:
- * - Rol 5: Corredor / Productor
- * - Rol 8: Intermediario / Agente
- *
- * Cualquier otro rol (crol 1 = Admin/Root, crol 2 = Técnica, crol 3 = Suscripción,
- * crol 4 = Cobranzas, etc.) corresponde a personal administrativo/interno de Sis2000
- * y NO es rol de productor.
+ * El único rol de productor es crol 6 ("Corredores"). Cualquier otro rol
+ * (1 Master, 2 Emision, 5 Emisión, 7 Suscriptores, 8 Comerciales, etc.) es personal
+ * interno de Sis2000 y NO es rol de productor.
  */
 export function isProductorRole(meta: Record<string, unknown>): boolean {
   const rawRol = meta.crol;
@@ -79,14 +78,8 @@ export function isProductorRole(meta: Record<string, unknown>): boolean {
     ? Number(rawRol)
     : NaN;
 
-  // Si tiene crol definido en Sis2000:
   if (!Number.isNaN(crolNum)) {
-    // Solo roles 5 y 8 son Productores en Sis2000
-    if (crolNum === 5 || crolNum === 8) {
-      return true;
-    }
-    // Todos los demás roles (1, 2, 3, 4, 6, 7, etc.) son roles internos/administrativos
-    return false;
+    return crolNum === CROL_CORREDOR;
   }
 
   // Fallback si no viene crol: verificar si tiene código de corredor asignado
@@ -106,8 +99,8 @@ export function isBackofficeSession(meta: Record<string, unknown>): boolean {
 
 /**
  * En Sis2000:
- * - Rol Productor (crol 5 u 8): NO ve el selector (toma su propio código de productor logueado).
- * - Otros roles (crol 1, 2, 3, etc.): SÍ ven el selector para asociar la emisión.
+ * - Rol Corredores (crol 6): NO ve el selector (toma su propio código de productor logueado).
+ * - Cualquier otro rol: SÍ ven el selector para asociar la emisión.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
   // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
