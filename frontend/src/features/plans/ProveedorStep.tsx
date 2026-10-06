@@ -119,10 +119,11 @@ export function ProveedorStep() {
     getFrecuenciasByPlan(planCode, resolveQuoteCramo(selectedPlan?.cramo, product.cramo))
       .then((items) => {
         if (!cancelled) {
-          setApiFrecuencias(items);
-          const currentValid = items.find((i) => String(i.code) === funeral.frecuencia);
-          if (!currentValid && items.length > 0) {
-            setFuneral({ frecuencia: String(items[0].code) });
+          const result = frecuenciasPersonas(items, []);
+          setApiFrecuencias(result);
+          const currentValid = result.find((i) => String(i.code) === funeral.frecuencia);
+          if (!currentValid && result.length > 0) {
+            setFuneral({ frecuencia: String(result[0].code) });
           }
         }
       })
