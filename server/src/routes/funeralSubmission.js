@@ -11,7 +11,10 @@ const { upsertHealthAnswers } = require('../services/healthDb');
 const { createFuneralSubmission } = require('../services/nexusFuneralSubmission');
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
-const { isPersonasCplan } = require('../lib/funerarioPlan');
+const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
+const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
+const personasClient = require('../services/personasClient');
+const personasMapper = require('../services/personasMapper');
 const { resolveCanalKey } = require('../lib/canalKey');
 
 const router = express.Router();
@@ -167,6 +170,29 @@ router.post('/submissions', async (req, res) => {
       });
     }
 
+    // Recargos/descuentos por respuesta: prima ajustada por asegurado (cotiza anual como la
+    // pantalla de planes). La emisión recalcula igual con su cotización autoritativa.
+    const quoteCramo = resolvePersonasCramo({
+      selectedPlan,
+      metadataCanal: metadata,
+      cproducto: metadata.cproducto,
+    });
+    const premiumAdjust = await adjustPremiumByAnswers({
+      questions,
+      persons: rawAsegurados,
+      asegurados: personasMapper.buildAseguradosForQuote(funeral, {
+        tomador: body.tomador,
+        asegurado: body.asegurado,
+        sameInsured: body.sameInsured,
+      }),
+      byInsured: Object.fromEntries(insureds.map((i) => [i.key, i.answers])),
+      quoteOne: (aseg) =>
+        personasClient.getCotizacionPer({ cramo: quoteCramo, cplan, asegurados: [aseg], ifrecuencia: 'A' }),
+    });
+    const quoteFinal = premiumAdjust
+      ? { ...(body.quote || {}), ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || body.quote?.ptasa }
+      : body.quote ?? null;
+
     upsertHealthAnswers({
       sessionId,
       cplan,
@@ -184,8 +210,10 @@ router.post('/submissions', async (req, res) => {
       beneficiario: body.beneficiario ?? null,
       funeral: body.funeral ?? null,
       selectedPlan: body.selectedPlan ?? null,
-      quote: body.quote ?? null,
+      quote: quoteFinal,
       quoteState: body.quoteState ?? null,
+      /** Detalle interno: prima base, recargo/descuento por asegurado y preguntas. */
+      premiumAdjust: premiumAdjust ?? null,
       documents: body.documents ?? null,
       metadataCanal: body.metadataCanal ?? metadata,
       product: 'funerario',
@@ -253,6 +281,8 @@ router.post('/submissions', async (req, res) => {
           verdict: p.scoring.verdict,
         })),
       },
+      quote: quoteFinal,
+      premiumAdjust: premiumAdjust ?? null,
       message: clientMessage,
     });
   } catch (err) {

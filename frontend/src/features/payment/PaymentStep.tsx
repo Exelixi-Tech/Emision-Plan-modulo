@@ -6,11 +6,11 @@ import type { PaymentMethod } from '../../types';
 import {
   Smartphone, Lock, ShieldCheck, KeyRound,
   Check, Receipt, Sparkles, Loader2, BadgeCheck, AlertTriangle,
-  CheckCircle2, XCircle, RefreshCw, Send, ClipboardCheck, Building2,
+  CheckCircle2, XCircle, RefreshCw, Send, ClipboardCheck,
 } from 'lucide-react';
 import { formatQuoteUsdMoney, formatQuoteVesLabel, formatQuoteVesPaymentInput, formatQuoteTasa } from '../../lib/money';
 import { resolveFrecuenciaAmounts, resolveWizardFrecuenciaCode, resolveRcvQuoteBasis } from '../../lib/frecuencia';
-import { getProductConfig, isCombinadoFamiliar } from '../../lib/product';
+import { getProductConfig } from '../../lib/product';
 import { toast } from '../../store/toastStore';
 import {
   verifyMobilePayment,
@@ -27,32 +27,32 @@ import {
 // ── Lista completa de 26 bancos venezolanos (fuente: sudeban / notilogia 2026)
 // Ordenados alfabéticamente. Etiquetas cortas para que no desborden el <select>.
 const BANCOS_MOVIL: { code: string; label: string }[] = [
-  { code: '0156', label: '100% Banco'                    },
-  { code: '0171', label: 'Banco Activo'                  },
-  { code: '0166', label: 'Banco Agrícola de Venezuela'   },
+  { code: '0156', label: '100% Banco' },
+  { code: '0171', label: 'Banco Activo' },
+  { code: '0166', label: 'Banco Agrícola de Venezuela' },
   { code: '0175', label: 'Banco Bicentenario del Pueblo' },
-  { code: '0128', label: 'Banco Caroní'                  },
-  { code: '0114', label: 'Bancaribe'                     },
-  { code: '0163', label: 'Banco del Tesoro'              },
-  { code: '0102', label: 'Banco de Venezuela (BDV)'      },
-  { code: '0115', label: 'Banco Exterior'                },
-  { code: '0177', label: 'BANFANB'                       },
-  { code: '0146', label: 'BANGENTE'                      },
-  { code: '0173', label: 'Banco Internacional de Des.'   },
-  { code: '0105', label: 'Banco Mercantil'               },
-  { code: '0138', label: 'Banco Plaza'                   },
-  { code: '0108', label: 'Banco Provincial (BBVA)'       },
-  { code: '0104', label: 'Venezolano de Crédito (BVC)'   },
-  { code: '0172', label: 'Bancamiga'                     },
-  { code: '0168', label: 'Bancrecer'                     },
-  { code: '0134', label: 'Banesco'                       },
-  { code: '0174', label: 'Banplus'                       },
-  { code: '0191', label: 'BNC'                           },
-  { code: '0157', label: 'DelSur'                        },
-  { code: '0151', label: 'Fondo Común'                   },
-  { code: '0601', label: 'IMCP'                          },
-  { code: '0169', label: 'Mi Banco'                      },
-  { code: '0137', label: 'Sofitasa'                      },
+  { code: '0128', label: 'Banco Caroní' },
+  { code: '0114', label: 'Bancaribe' },
+  { code: '0163', label: 'Banco del Tesoro' },
+  { code: '0102', label: 'Banco de Venezuela (BDV)' },
+  { code: '0115', label: 'Banco Exterior' },
+  { code: '0177', label: 'BANFANB' },
+  { code: '0146', label: 'BANGENTE' },
+  { code: '0173', label: 'Banco Internacional de Des.' },
+  { code: '0105', label: 'Banco Mercantil' },
+  { code: '0138', label: 'Banco Plaza' },
+  { code: '0108', label: 'Banco Provincial (BBVA)' },
+  { code: '0104', label: 'Venezolano de Crédito (BVC)' },
+  { code: '0172', label: 'Bancamiga' },
+  { code: '0168', label: 'Bancrecer' },
+  { code: '0134', label: 'Banesco' },
+  { code: '0174', label: 'Banplus' },
+  { code: '0191', label: 'BNC' },
+  { code: '0157', label: 'DelSur' },
+  { code: '0151', label: 'Fondo Común' },
+  { code: '0601', label: 'IMCP' },
+  { code: '0169', label: 'Mi Banco' },
+  { code: '0137', label: 'Sofitasa' },
 ];
 
 const PAYMENT_OPTIONS: {
@@ -61,10 +61,10 @@ const PAYMENT_OPTIONS: {
   sub: string;
   Icon: React.ElementType;
 }[] = [
-  // { method: 'transfer', label: 'Transferencia',  sub: 'Referencia bancaria',     Icon: Building2  },
-  { method: 'mobile',   label: 'Pago móvil',     sub: 'Banco Activo · Verificación automática', Icon: Smartphone },
-  { method: 'otp',      label: 'Débito OTP',     sub: 'SyPago · Débito directo', Icon: KeyRound   },
-];
+    // { method: 'transfer', label: 'Transferencia',  sub: 'Referencia bancaria',     Icon: Building2  },
+    { method: 'mobile', label: 'Pago móvil', sub: 'Banco Activo · Verificación automática', Icon: Smartphone },
+    { method: 'otp', label: 'Débito OTP', sub: 'SyPago · Débito directo', Icon: KeyRound },
+  ];
 
 type VerifyStatus = 'idle' | 'loading' | 'success' | 'failed' | 'error';
 type OtpStep = 'form' | 'requesting' | 'awaiting_otp' | 'confirming' | 'done' | 'error';
@@ -78,52 +78,53 @@ export function PaymentStep() {
   const quoteBasis = resolveRcvQuoteBasis(vehicle?.tipoPlaca, rcv.frecuencia, vehicle?.tipoCarnet);
 
   // ── Campos compartidos ────────────────────────────────────────────────
-  const [bankCode,    setBankCode]    = useState('');
-  const [bankLabel,   setBankLabel]   = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [bankLabel, setBankLabel] = useState('');
 
   // ── Pago móvil (Meritop) ──────────────────────────────────────────────
-  const [telefonoPago, setTelPago]   = useState('');
-  const [montoPagoM,   setMontoM]    = useState('');
-  const [fechaPagoM,   setFechaM]    = useState('');
-  const [horaPagoM,    setHoraM]     = useState('');
+  const [telefonoPago, setTelPago] = useState('');
+  const [montoPagoM, setMontoM] = useState('');
+  const [fechaPagoM, setFechaM] = useState('');
+  const [horaPagoM, setHoraM] = useState('');
 
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>('idle');
   const [verifyResult, setVerifyResult] = useState<VerifyMobilePaymentResponse | null>(null);
-  const [verifyError,  setVerifyError]  = useState<string>('');
+  const [verifyError, setVerifyError] = useState<string>('');
 
   // ── Registro de Proveedor en Póliza (Combinado Familiar / adproveedor) ────
-  const [providerRegStatus, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [providerRegResult, setProviderRegResult] = useState<any>(null);
-  const [providerRegError,  setProviderRegError]  = useState<string>('');
+  // Panel de registro oculto: se conservan los setters (registro automático al pagar).
+  const [, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [, setProviderRegError] = useState<string>('');
 
   // ── SyPago Débito OTP ─────────────────────────────────────────────────
-  const [otpDocType,   setOtpDocType]   = useState('V');
-  const [otpDocNum,    setOtpDocNum]    = useState('');
-  const [otpName,      setOtpName]      = useState('');
-  const [otpBankCode,  setOtpBankCode]  = useState('');
-  const [otpPhone,     setOtpPhone]     = useState('');
-  const [otpAmount,    setOtpAmount]    = useState('');
-  const [otpCode,      setOtpCode]      = useState('');
-  const [otpStep,      setOtpStep]      = useState<OtpStep>('form');
-  const [otpError,     setOtpError]     = useState('');
-  const [otpResult,    setOtpResult]    = useState<SypagoOtpConfirmResponse | null>(null);
+  const [otpDocType, setOtpDocType] = useState('V');
+  const [otpDocNum, setOtpDocNum] = useState('');
+  const [otpName, setOtpName] = useState('');
+  const [otpBankCode, setOtpBankCode] = useState('');
+  const [otpPhone, setOtpPhone] = useState('');
+  const [otpAmount, setOtpAmount] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpStep, setOtpStep] = useState<OtpStep>('form');
+  const [otpError, setOtpError] = useState('');
+  const [otpResult, setOtpResult] = useState<SypagoOtpConfirmResponse | null>(null);
   // otpSubmitted: true después del primer intento de "Solicitar OTP"
   const [otpSubmitted, setOtpSubmitted] = useState(false);
-  const [otpCooldown,  setOtpCooldown]  = useState(0); // segundos restantes para reenvío
+  const [otpCooldown, setOtpCooldown] = useState(0); // segundos restantes para reenvío
 
   // Latch síncrono para evitar doble-click en "Confirmar pago".
   // useRef garantiza que el bloqueo ocurre ANTES del siguiente render,
   // a diferencia de setState que necesita un ciclo para propagarse.
   const confirmInFlight = useRef(false);
 
+  function hasProveedorSelection(snap: ReturnType<typeof useWizardStore.getState>): boolean {
+    return Boolean(snap.selectedProveedor?.cci_rif || snap.cproveedor);
+  }
+
   async function handleRegisterProveedorPolicy(overridePoliza?: number | string) {
     const snap = useWizardStore.getState();
     const poliza = overridePoliza || snap.policy?.cnpoliza;
     const now = new Date();
     const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-
-    setProviderRegStatus('loading');
-    setProviderRegError('');
 
     // Sin valores de relleno: si falta un dato no se escribe en Sis2000 (adproveedor).
     const cciRifClean = Number(String(snap.selectedProveedor?.cci_rif ?? snap.cproveedor ?? '').replace(/\D/g, ''));
@@ -139,8 +140,8 @@ export function PaymentStep() {
     const faltantes = ([
       ['póliza', Boolean(poliza)],
       ['RIF del proveedor', cciRifClean > 0],
-      ['clave del proveedor', claveNum > 0],
-      ['tipo de servicio', Boolean(tipoServ)],
+      // ['clave del proveedor', claveNum > 0],
+      // ['tipo de servicio', Boolean(tipoServ)],
       ['plan', Boolean(plan)],
       ['ramo', ramo > 0],
       ['usuario (cusuario)', usuario > 0],
@@ -160,9 +161,9 @@ export function PaymentStep() {
       fanopol: now.getFullYear(),
       fmespol: now.getMonth() + 1,
       cramo: ramo,
-      ccerti: 1,
+      ccerti: 1, // Certificado inicial
       cplan: plan,
-      u_version: 'A',
+      u_version: 'A', // Versión activa inicial en Sis2000
       fdesde: now.toISOString().split('T')[0],
       fhasta: nextYear.toISOString().split('T')[0],
       cci_rif: cciRifClean,
@@ -170,7 +171,7 @@ export function PaymentStep() {
       itiposerv: tipoServ,
       mcosto,
       mcostoext,
-      cmoneda: 'D',
+      cmoneda: 'D', // Moneda USD
       ptasamon,
       fingreso: now.toISOString(),
       cusuario: usuario,
@@ -178,8 +179,6 @@ export function PaymentStep() {
 
     try {
       const res = await registerPolicyProveedor(payload);
-      setProviderRegResult(res);
-      setProviderRegStatus('success');
       toast.success(
         'Proveedor registrado en póliza',
         `Póliza: ${poliza} · Proveedor: ${snap.selectedProveedor?.xcliente || snap.xproveedor || cciRifClean} · Ramo: ${ramo}`,
@@ -187,8 +186,6 @@ export function PaymentStep() {
       return res;
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Error al registrar proveedor en póliza';
-      setProviderRegError(msg);
-      setProviderRegStatus('error');
       toast.error('Error en registro de proveedor', msg);
       throw err;
     }
@@ -235,8 +232,8 @@ export function PaymentStep() {
   }, [paymentMethod, setPaymentMethod]);
 
   const isLoadingQuote = quoteState === 'loading';
-  const hasRealQuote   = quoteState === 'ready' && Boolean(quote);
-  const isQuoteError   = quoteState === 'error';
+  const hasRealQuote = quoteState === 'ready' && Boolean(quote);
+  const isQuoteError = quoteState === 'error';
 
   const freqAmounts = resolveFrecuenciaAmounts(hasRealQuote ? quote : null, frecuenciaCode, {
     quoteBasis,
@@ -251,11 +248,11 @@ export function PaymentStep() {
   // ── Validaciones transferencia ──────────────────────────────────────
   // ── Validaciones pago móvil (Meritop) ─────────────────────────────
   const movErrors = {
-    banco    : !bankCode                                          ? 'Selecciona el banco'                : '',
-    telefono : telefonoPago.length > 0 && !/^04\d{9}$/.test(telefonoPago) ? 'Formato inválido: 04XXXXXXXXX' : !telefonoPago ? 'El teléfono es obligatorio' : '',
-    monto    : !montoPagoM                                        ? 'El monto es obligatorio'            : isNaN(parseFloat(montoPagoM)) || parseFloat(montoPagoM) <= 0 ? 'Monto inválido' : '',
-    fecha    : !fechaPagoM                                        ? 'La fecha es obligatoria'            : '',
-    hora     : !horaPagoM                                        ? 'La hora es obligatoria'             : '',
+    banco: !bankCode ? 'Selecciona el banco' : '',
+    telefono: telefonoPago.length > 0 && !/^04\d{9}$/.test(telefonoPago) ? 'Formato inválido: 04XXXXXXXXX' : !telefonoPago ? 'El teléfono es obligatorio' : '',
+    monto: !montoPagoM ? 'El monto es obligatorio' : isNaN(parseFloat(montoPagoM)) || parseFloat(montoPagoM) <= 0 ? 'Monto inválido' : '',
+    fecha: !fechaPagoM ? 'La fecha es obligatoria' : '',
+    hora: !horaPagoM ? 'La hora es obligatoria' : '',
   };
   const pagoMovilListo = Object.values(movErrors).every(e => !e) && telefonoPago.length === 11;
 
@@ -270,16 +267,16 @@ export function PaymentStep() {
 
     try {
       const result = await verifyMobilePayment({
-        sourcePhoneNumber : telefonoPago,
+        sourcePhoneNumber: telefonoPago,
         bankCode,
-        amount            : parseFloat(montoPagoM),
+        amount: parseFloat(montoPagoM),
         paidOn,
       });
 
       setVerifyResult(result);
       setVerifyStatus(result.isVerified ? 'success' : 'failed');
 
-      if (result.isVerified && (isCombinadoFamiliar() || Boolean(useWizardStore.getState().cproveedor))) {
+      if (result.isVerified && hasProveedorSelection(useWizardStore.getState())) {
         void handleRegisterProveedorPolicy();
       }
     } catch (err) {
@@ -295,23 +292,23 @@ export function PaymentStep() {
   // Mismo patrón que pago móvil: errores de formato mientras escribe,
   // errores de campo vacío visibles siempre (sin gate de "touched").
   const otpErrors = {
-    docNum : otpDocNum.length > 0 && !/^\d{5,10}$/.test(otpDocNum)
-               ? 'Solo dígitos, entre 5 y 10 caracteres'
-               : !otpDocNum ? 'Número de documento obligatorio' : '',
+    docNum: otpDocNum.length > 0 && !/^\d{5,10}$/.test(otpDocNum)
+      ? 'Solo dígitos, entre 5 y 10 caracteres'
+      : !otpDocNum ? 'Número de documento obligatorio' : '',
 
-    name   : otpName.length > 0 && otpName.trim().split(/\s+/).filter(Boolean).length < 2
-               ? 'Ingresa nombre y apellido'
-               : !otpName.trim() ? 'Nombre obligatorio' : '',
+    name: otpName.length > 0 && otpName.trim().split(/\s+/).filter(Boolean).length < 2
+      ? 'Ingresa nombre y apellido'
+      : !otpName.trim() ? 'Nombre obligatorio' : '',
 
-    bank   : !otpBankCode ? 'Selecciona el banco' : '',
+    bank: !otpBankCode ? 'Selecciona el banco' : '',
 
-    phone  : otpPhone.length > 0 && !/^04\d{9}$/.test(otpPhone)
-               ? 'Formato inválido: 04XXXXXXXXX'
-               : !otpPhone ? 'Teléfono obligatorio' : '',
+    phone: otpPhone.length > 0 && !/^04\d{9}$/.test(otpPhone)
+      ? 'Formato inválido: 04XXXXXXXXX'
+      : !otpPhone ? 'Teléfono obligatorio' : '',
 
-    amount : otpAmount.length > 0 && (isNaN(parseFloat(otpAmount)) || parseFloat(otpAmount) <= 0)
-               ? 'Ingresa un monto válido'
-               : !otpAmount ? 'Monto obligatorio' : '',
+    amount: otpAmount.length > 0 && (isNaN(parseFloat(otpAmount)) || parseFloat(otpAmount) <= 0)
+      ? 'Ingresa un monto válido'
+      : !otpAmount ? 'Monto obligatorio' : '',
   };
   const otpFormListo = !Object.values(otpErrors).some(e => e);
 
@@ -325,11 +322,11 @@ export function PaymentStep() {
     let succeeded = false;
     try {
       const resp = await sypagoRequestOtp({
-        documentType  : otpDocType,
+        documentType: otpDocType,
         documentNumber: otpDocNum,
         debtorBankCode: otpBankCode,
-        debtorPhone   : otpPhone,
-        amount        : parseFloat(otpAmount),
+        debtorPhone: otpPhone,
+        amount: parseFloat(otpAmount),
       });
       if (resp && resp.success === false) {
         throw new SypagoError({ message: resp.message || 'Error al solicitar OTP.', code: 'SYPAGO_ERROR' });
@@ -357,19 +354,19 @@ export function PaymentStep() {
     setOtpError('');
     try {
       const result = await sypagoConfirmOtp({
-        documentType  : otpDocType,
+        documentType: otpDocType,
         documentNumber: otpDocNum,
         debtorBankCode: otpBankCode,
-        debtorPhone   : otpPhone,
-        debtorName    : otpName,
-        amount        : parseFloat(otpAmount),
-        otp           : otpCode.trim(),
-        concept       : 'Prima de seguro Combinado Familiar - La Mundial',
+        debtorPhone: otpPhone,
+        debtorName: otpName,
+        amount: parseFloat(otpAmount),
+        otp: otpCode.trim(),
+        concept: 'Prima de seguro Combinado Familiar - La Mundial',
       });
       setOtpResult(result);
       setOtpStep('done');
 
-      if (isCombinadoFamiliar() || Boolean(useWizardStore.getState().cproveedor)) {
+      if (hasProveedorSelection(useWizardStore.getState())) {
         void handleRegisterProveedorPolicy();
       }
       // Latch queda activo en 'done' — no se puede volver a confirmar
@@ -561,8 +558,8 @@ export function PaymentStep() {
                   hasRealQuote
                     ? 'Monto exacto según cotización oficial · no editable'
                     : isLoadingQuote
-                    ? 'Calculando monto en bolívares desde la cotización...'
-                    : 'Esperando cotización para calcular el monto'
+                      ? 'Calculando monto en bolívares desde la cotización...'
+                      : 'Esperando cotización para calcular el monto'
                 }
                 error={movErrors.monto}
                 full
@@ -593,21 +590,21 @@ export function PaymentStep() {
                 ${verifyStatus === 'success'
                   ? 'bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)]'
                   : verifyStatus === 'failed' || verifyStatus === 'error'
-                  ? 'bg-rose-500 text-white'
-                  : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_8px_20px_rgba(79,70,229,0.35)] hover:shadow-[0_12px_28px_rgba(79,70,229,0.45)] hover:-translate-y-0.5 active:translate-y-0'
+                    ? 'bg-rose-500 text-white'
+                    : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_8px_20px_rgba(79,70,229,0.35)] hover:shadow-[0_12px_28px_rgba(79,70,229,0.45)] hover:-translate-y-0.5 active:translate-y-0'
                 }
               `}
             >
               {verifyStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
               {verifyStatus === 'success' && <CheckCircle2 size={16} />}
               {(verifyStatus === 'failed' || verifyStatus === 'error') && <XCircle size={16} />}
-              {verifyStatus === 'idle'    && <Smartphone size={16} />}
+              {verifyStatus === 'idle' && <Smartphone size={16} />}
 
               {verifyStatus === 'loading' ? 'Verificando con Banco Activo...' :
-               verifyStatus === 'success' ? 'Pago verificado correctamente' :
-               verifyStatus === 'failed'  ? 'Pago no encontrado · Reintentar' :
-               verifyStatus === 'error'   ? 'Error · Reintentar' :
-               'Verificar pago móvil'}
+                verifyStatus === 'success' ? 'Pago verificado correctamente' :
+                  verifyStatus === 'failed' ? 'Pago no encontrado · Reintentar' :
+                    verifyStatus === 'error' ? 'Error · Reintentar' :
+                      'Verificar pago móvil'}
 
               {(verifyStatus === 'failed' || verifyStatus === 'error') && (
                 <RefreshCw size={13} className="ml-1 opacity-80" />
@@ -702,7 +699,7 @@ export function PaymentStep() {
                         onChange={(e) => setOtpDocType(e.target.value)}
                         className="w-[4.5rem] shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
                       >
-                        {['V','E','J','G','P'].map(t => <option key={t} value={t}>{t}</option>)}
+                        {['V', 'E', 'J', 'G', 'P'].map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                       <Input
                         value={otpDocNum}
@@ -752,8 +749,8 @@ export function PaymentStep() {
                       hasRealQuote
                         ? 'Monto exacto según cotización oficial · no editable'
                         : isLoadingQuote
-                        ? 'Calculando monto en bolívares desde la cotización...'
-                        : 'Esperando cotización para calcular el monto'
+                          ? 'Calculando monto en bolívares desde la cotización...'
+                          : 'Esperando cotización para calcular el monto'
                     }
                     error={otpErrors.amount}
                     full
@@ -911,86 +908,6 @@ export function PaymentStep() {
           </div>
         )}
       </div>
-
-      {/* Sección Registro de Proveedor en Póliza (Combinado Familiar / Proveedor) */}
-      {(isCombinadoFamiliar() || Boolean(useWizardStore.getState().cproveedor)) && (
-        <div className="rounded-2xl border-2 border-indigo-200/80 bg-gradient-to-br from-indigo-50/50 via-white to-violet-50/40 p-5 shadow-sm space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white grid place-items-center shadow-md shadow-indigo-100">
-                <Building2 size={18} />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                  Registro de Proveedor en Póliza
-                  <span className="text-[0.62rem] font-extrabold uppercase px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
-                    dbo.adproveedor
-                  </span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Inserta dinámicamente el proveedor asociado al emitir Combinado Familiar.
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={providerRegStatus === 'loading'}
-              onClick={() => handleRegisterProveedorPolicy()}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
-            >
-              {providerRegStatus === 'loading' ? (
-                <><Loader2 size={13} className="animate-spin" /> Registrando...</>
-              ) : (
-                <><Send size={13} /> Registrar Proveedor</>
-              )}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 rounded-xl bg-white border border-indigo-100 font-mono text-xs text-slate-700">
-            <div>
-              <span className="text-[0.65rem] uppercase text-slate-400 font-sans font-bold block">Proveedor / RIF</span>
-              <strong className="text-indigo-900">{useWizardStore.getState().selectedProveedor?.xcliente || useWizardStore.getState().xproveedor || 'Proveedor'}</strong>
-              <span className="block text-[0.65rem] text-slate-500">{String(useWizardStore.getState().cproveedor || 'N/A')}</span>
-            </div>
-            <div>
-              <span className="text-[0.65rem] uppercase text-slate-400 font-sans font-bold block">cplan / cramo</span>
-              <strong className="text-indigo-900">{useWizardStore.getState().cplan_proveedor || selectedPlan?.cplan || '—'}</strong>
-              <span className="block text-[0.65rem] text-slate-500">Ramo: {useWizardStore.getState().cramo_proveedor ?? product.cramo ?? '—'}</span>
-            </div>
-            <div>
-              <span className="text-[0.65rem] uppercase text-slate-400 font-sans font-bold block">cclave_num</span>
-              <strong className="text-indigo-900">{useWizardStore.getState().cclave_num ?? 1234}</strong>
-            </div>
-            <div>
-              <span className="text-[0.65rem] uppercase text-slate-400 font-sans font-bold block">itiposerv</span>
-              <strong className="text-indigo-900">{useWizardStore.getState().itiposerv || 'S'}</strong>
-            </div>
-          </div>
-
-          {providerRegStatus === 'success' && (
-            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 animate-spring-in">
-              <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-emerald-900">
-                <p className="font-bold">Proveedor vinculado a la póliza en adproveedor exitosamente</p>
-                <p className="text-[0.7rem] text-emerald-700 mt-0.5 font-mono">
-                  Endpoint: /v1/partner/starter/proveedores/register-policy · Status: 200 OK {providerRegResult?.message && `· ${providerRegResult.message}`}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {providerRegStatus === 'error' && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 animate-fade-in">
-              <XCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-rose-900">
-                <p className="font-bold">Error en registro de proveedor</p>
-                <p className="text-[0.7rem] text-rose-700 mt-0.5">{providerRegError}</p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Trust badges */}
       <div className="flex items-center justify-center gap-6 flex-wrap pt-2 text-[0.7rem] text-slate-500">

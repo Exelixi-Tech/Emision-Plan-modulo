@@ -8,6 +8,7 @@ import {
 import type { Plan, ProveedorItem } from '../../types';
 import {
   personasApi,
+  resolveQuoteCramo,
   type PlanPer,
   getFrecuenciasByPlan,
   type CatalogItem,
@@ -17,6 +18,7 @@ import { decodeNexusTokenMetadata, getNexusToken } from '../../lib/nexus-token-c
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { frecuenciasPersonas } from '../../lib/frecuencia';
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -36,46 +38,6 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
     sumaAsegurada: 0,
   };
 }
-
-const FALLBACK_DEV_PLANS: Plan[] = [
-  {
-    cplan: 'PLAN-PROV-01',
-    name: 'Plan Salud y Asistencia Familiar',
-    price: 'Tarifa La Mundial',
-    priceNum: 45,
-    tag: 'Plan con Proveedor',
-    desc: 'Cobertura médica y asistencial completa con red de proveedores calificados.',
-    benefits: [
-      'Atención médica y emergencias 24/7',
-      'Red de clínicas y proveedores autorizados',
-      'Cobertura para el grupo familiar asegurado',
-      'Asistencia médica domiciliaria y traslados',
-    ],
-    sumaAsegurada: 5000,
-  },
-  {
-    cplan: 'PLAN-PROV-02',
-    name: 'Plan Cobertura Integral Plus',
-    price: 'Tarifa La Mundial',
-    priceNum: 80,
-    tag: 'Plan Especial',
-    desc: 'Servicio ampliado con cobertura especializada y atención preferencial.',
-    benefits: [
-      'Acceso a red preferencial de proveedores',
-      'Atención de urgencias ambulatorias y hospitalarias',
-      'Consultas con especialistas y laboratorio',
-      'Asistencia y orientación telefónica 24/7',
-    ],
-    sumaAsegurada: 10000,
-  },
-];
-
-const FALLBACK_FRECUENCIAS: CatalogItem[] = [
-  { code: 'A', label: 'Pago anual' },
-  { code: 'S', label: 'Pago semestral' },
-  { code: 'T', label: 'Pago trimestral' },
-  { code: 'M', label: 'Pago mensual' },
-];
 
 export function ProveedorStep() {
   const {
@@ -111,6 +73,7 @@ export function ProveedorStep() {
   // ── Proveedores de Servicio ───────────────────────────────────────────────
   const [proveedores, setProveedores] = useState<ProveedorItem[]>([]);
   const [loadingProveedores, setLoadingProveedores] = useState(false);
+  const [proveedoresError, setProveedoresError] = useState(false);
 
   // ── Carga de planes de personas / salud ───────────────────────────────────
   useEffect(() => {
@@ -126,14 +89,14 @@ export function ProveedorStep() {
           const mapped = list.map(apiPlanToWizardPlan);
           setApiPlans(mapped);
         } else {
-          // Fallback para testing sin backend/token
-          setApiPlans(FALLBACK_DEV_PLANS);
+          setApiPlans([]);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('Error al cargar planes:', err);
         if (cancelled) return;
-        // En caso de error o sin token, cargar planes de desarrollo
-        setApiPlans(FALLBACK_DEV_PLANS);
+        setPlansError(true);
+        setApiPlans([]);
       })
       .finally(() => {
         if (!cancelled) setPlansLoading(false);
@@ -153,10 +116,10 @@ export function ProveedorStep() {
 
     let cancelled = false;
     setFrecLoading(true);
-    getFrecuenciasByPlan(planCode, product.cramo)
+    getFrecuenciasByPlan(planCode, resolveQuoteCramo(selectedPlan?.cramo, product.cramo))
       .then((items) => {
         if (!cancelled) {
-          const result = items.length > 0 ? items : FALLBACK_FRECUENCIAS;
+          const result = frecuenciasPersonas(items, []);
           setApiFrecuencias(result);
           const currentValid = result.find((i) => String(i.code) === funeral.frecuencia);
           if (!currentValid && result.length > 0) {
@@ -164,10 +127,10 @@ export function ProveedorStep() {
           }
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('Error al cargar frecuencias:', err);
         if (!cancelled) {
-          setApiFrecuencias(FALLBACK_FRECUENCIAS);
-          setFuneral({ frecuencia: 'A' });
+          setApiFrecuencias([]);
         }
       })
       .finally(() => {
@@ -182,12 +145,14 @@ export function ProveedorStep() {
     const planCode = selectedPlan?.cplan;
     if (!planCode) {
       setProveedores([]);
+      setProveedoresError(false);
       setCproveedor(undefined, undefined);
       return;
     }
 
     let cancelled = false;
     setLoadingProveedores(true);
+    setProveedoresError(false);
 
     // Obtener centidad y citem desde metadataCanal o token SSO
     const token = getNexusToken('nexus_access_token_emision') || getNexusToken('nexus_access_token');
@@ -203,7 +168,7 @@ export function ProveedorStep() {
 
     getProveedores({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
       centidad: centidad || undefined,
       citem: citem || undefined,
     })
@@ -225,12 +190,9 @@ export function ProveedorStep() {
       .catch((err) => {
         console.error('Error al consultar proveedores:', err);
         if (!cancelled) {
-          const fallback: ProveedorItem[] = [
-            { xproveedor: 'Venemergencia', xcliente: 'Venemergencia', cci_rif: 1152516, cclave_num: 1234, itiposerv: 'S', cramo: product.cramo, cplan: planCode },
-            { xproveedor: 'Clinicas del Este', xcliente: 'Clinicas del Este', cci_rif: 5521516, cclave_num: 5678, itiposerv: 'S', cramo: product.cramo, cplan: planCode },
-          ];
-          setProveedores(fallback);
-          setSelectedProveedor(fallback[0]);
+          setProveedores([]);
+          setProveedoresError(true);
+          setSelectedProveedor(null);
         }
       })
       .finally(() => {
@@ -264,7 +226,7 @@ export function ProveedorStep() {
 
     personasApi.cotizar({
       cplan: planCode,
-      cramo: product.cramo,
+      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
       ifrecuencia: funeral.frecuencia,
       asegurados: aseguradosListos.map((a) => ({
         parentesco: a.parentesco,
@@ -344,12 +306,14 @@ export function ProveedorStep() {
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
                 if (found) {
+                  // Plan Proveedor no tiene cuestionario de salud (Sis2000 sin preguntas para el producto):
+                  // no dejar Pagos bloqueado por cuestionario/términos que nunca se muestran.
                   setFuneral({
-                    healthQuestionnaireDone: false,
+                    healthQuestionnaireDone: true,
                     healthAnswers: {},
                     diagnosticoEnfermedad: false,
                     descripcionEnfermedad: '',
-                    aceptaTerminos: false,
+                    aceptaTerminos: true,
                   });
                 }
               }}
@@ -461,6 +425,8 @@ export function ProveedorStep() {
             >
               {loadingProveedores ? (
                 <option value="">Consultando valrep/proveedores...</option>
+              ) : proveedoresError ? (
+                <option value="">Error al cargar proveedores de servicio</option>
               ) : proveedores.length === 0 ? (
                 <option value="">Sin proveedores disponibles</option>
               ) : (

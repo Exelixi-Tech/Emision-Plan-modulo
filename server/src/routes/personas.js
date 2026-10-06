@@ -23,6 +23,9 @@ const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
+const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
+const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
+const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -67,6 +70,35 @@ const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 
+/** Ramos con prima por días (viajero ramo 5 y viaje local ramo 25). */
+const VIAJERO_RAMOS = new Set([5, 25]);
+
+/** Productos Viajero (25) y Viajero Local (26): planes por producto con ndias (maplanes_frec). */
+const VIAJERO_PRODUCTOS = new Set(['25', '26']);
+
+/** Fraccionadas: Pagos aún cobra la prima anual en personas, así que se emite Anual. */
+const FRECUENCIAS_FRACCIONADAS = new Set(['M', 'T', 'S', 'C']);
+
+function personasIfrecuencia(code) {
+  const c = String(code || 'A').trim().toUpperCase().charAt(0) || 'A';
+  return FRECUENCIAS_FRACCIONADAS.has(c) ? 'A' : c;
+}
+
+/** Viajero: vigencia desde hoy por los días del plan (igual que la cotización del wizard). */
+function resolveViajeroVigencia(selectedPlan, cramo) {
+  if (!VIAJERO_RAMOS.has(Number(cramo))) return null;
+  let ndias = Number(selectedPlan?.ndias);
+  if (!Number.isFinite(ndias) || ndias <= 0) {
+    const m = String(selectedPlan?.name ?? selectedPlan?.tag ?? '').match(/(\d+)\s*d[ií]as?/i);
+    ndias = m ? Number(m[1]) : NaN;
+  }
+  if (!Number.isFinite(ndias) || ndias <= 0) return null;
+  const fdesde = personasMapper._internal.todayYmd();
+  const hasta = new Date(`${fdesde}T00:00:00Z`);
+  hasta.setUTCDate(hasta.getUTCDate() + ndias - 1);
+  return { ndias, fdesde, fhasta: hasta.toISOString().slice(0, 10) };
+}
+
 /** Fusiona metadata JWT con query (mismo criterio que RCV /catalogo/planes). */
 function funeralCanalMeta(req) {
   const meta = { ...(req.nexusMetadata || {}) };
@@ -104,7 +136,9 @@ router.get('/planes', async (req, res) => {
   const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
   // Scoring de Vida (1) y Accidentes personales (5): el catálogo del ramo,
   // sin el producto funerario 57 que siempre consulta el ramo 45.
-  if (req.query.catalogo === 'ramo' || askedRamo === 1 || askedRamo === 5) {
+  // Viajero (25/26) también es ramo 5, pero sus planes van por producto (ndias).
+  const viajeroProducto = VIAJERO_PRODUCTOS.has(String(meta.cproducto ?? '').trim());
+  if (req.query.catalogo === 'ramo' || (!viajeroProducto && (askedRamo === 1 || askedRamo === 5))) {
     try {
       const targetRamo = Number.isFinite(askedRamo) ? askedRamo : 1;
       const result = await fetchPlanesV2({ ...meta, cramo: targetRamo });
@@ -344,7 +378,8 @@ router.post('/emision', async (req, res) => {
     });
   }
 
-  const ifrecuencia = frecuencia || funeral.frecuencia || 'A';
+  const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
+  const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo);
   const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
     tomador: state.tomador,
     asegurado: state.asegurado,
@@ -365,7 +400,34 @@ router.post('/emision', async (req, res) => {
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
-    const cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia, ...(vigencia ?? {}) });
+
+    // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud).
+    //     La prima ajustada es la que se cobra (ingreso de caja / registro). A Sis2000 va la
+    //     prima base y el % de cada asegurado: el SP v3 aplica el % por tarifa en pepoltar_ind.
+    const cotizacionBase = cotizacion;
+    const meta0 = state.metadataCanal || {};
+    const { questions } = await resolveQuestionsForPlan(cplan, {
+      empresaId: Number(req.empresa?.id ?? process.env.EMPRESA_ID ?? 1) || 1,
+      metadata: meta0,
+      cramo,
+      cproducto: meta0.cproducto,
+      selectedPlan: state.selectedPlan,
+    });
+    const premiumAdjust = await adjustPremiumByAnswers({
+      questions,
+      persons: funeral.asegurados,
+      asegurados,
+      byInsured: funeral.healthAnswersByInsured,
+      quoteOne: (aseg) =>
+        personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia, ...(vigencia ?? {}) }),
+    });
+    if (premiumAdjust) {
+      console.log(
+        `[personas/emision] prima ajustada por cuestionario base=${premiumAdjust.base.mprimaext} final=${premiumAdjust.quote.mprimaext}`,
+      );
+      cotizacion = { ...cotizacion, ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || cotizacion.ptasa };
+    }
 
     // 2. Valida titular/plan (paso 5 — speeValidatePersonGeneral).
     const validatePayload = personasMapper.buildValidateEmissionPersonRequest(state, {
@@ -385,9 +447,25 @@ router.post('/emision', async (req, res) => {
     // 3. Construye el payload de emisión y emite.
     const { payload, metadata } = personasMapper.buildEmissionPersonRequest(
       state,
-      cotizacion,
+      cotizacionBase,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    if (vigencia) {
+      payload.fdesde = vigencia.fdesde;
+      payload.fhasta = vigencia.fhasta;
+    }
+    // % de recargo/descuento por asegurado (mismo orden que funeral.asegurados; el 0 es el titular).
+    if (premiumAdjust && Array.isArray(payload.asegurados)) {
+      premiumAdjust.porAsegurado.forEach((row, idx) => {
+        const aseg = payload.asegurados[idx];
+        if (!aseg) return;
+        if (row.recargoPct > 0) aseg.precargo = row.recargoPct;
+        if (row.descuentoPct > 0) aseg.pdescuento = row.descuentoPct;
+      });
+      const titular = premiumAdjust.porAsegurado[0];
+      if (titular?.recargoPct > 0) payload.precargo_titular = titular.recargoPct;
+      if (titular?.descuentoPct > 0) payload.pdescuento_titular = titular.descuentoPct;
+    }
 
     const meta = state.metadataCanal || {};
     console.log(
@@ -395,6 +473,33 @@ router.post('/emision', async (req, res) => {
     );
 
     const emitted = await personasClient.createEmissionPerson(payload);
+
+    // Registro de proveedor en póliza si vino en el estado
+    let proveedorResult = null;
+    if (state?.proveedor) {
+      const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
+        state,
+        emitted,
+        {
+          plan: cplan,
+          ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
+        },
+      );
+      if (proveedorPayload && proveedorPayload.cci_rif) {
+        try {
+          proveedorResult = await registerPolicyProveedorViaNestApi(proveedorPayload);
+          console.log(
+            `[personas/emision] Proveedor registrado en póliza ${emitted.cnpoliza}:`,
+            proveedorResult,
+          );
+        } catch (provErr) {
+          console.warn(
+            '[personas/emision] Error al registrar proveedor en póliza:',
+            provErr?.message || provErr,
+          );
+        }
+      }
+    }
 
     await archiveExpedienteAfterEmit({
       state,
@@ -424,6 +529,9 @@ router.post('/emision', async (req, res) => {
         mprimaext: cotizacion.mprimaext,
         ptasa: cotizacion.ptasa,
       },
+      ...(proveedorResult ? { proveedor: proveedorResult } : {}),
+      /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
+      ...(premiumAdjust ? { premiumAdjust } : {}),
     };
     const funeralRefs = resolveFuneralRefs(state);
     try {
@@ -473,6 +581,7 @@ router.post('/emision', async (req, res) => {
           mprimaext: cotizacion.mprimaext,
           ptasa: cotizacion.ptasa,
         },
+        ...(proveedorResult ? { proveedor: proveedorResult } : {}),
         metadata: emitMetadata,
       },
     });

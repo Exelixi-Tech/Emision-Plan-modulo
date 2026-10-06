@@ -79,6 +79,19 @@ type Submission = {
     };
     selectedPlan?: { name?: string; cplan?: string };
     quote?: { mprima?: number; mprimaext?: number; ptasa?: number };
+    /** Recargo/descuento del cuestionario aplicado a la prima. */
+    premiumAdjust?: {
+      base?: { mprimaext?: number };
+      quote?: { mprimaext?: number };
+      porAsegurado?: {
+        key: string;
+        label: string;
+        recargoPct: number;
+        descuentoPct: number;
+        netoPct: number;
+        lines?: { questionId: string; label?: string; recargoPct: number; descuentoPct: number }[];
+      }[];
+    } | null;
     metadataCanal?: Record<string, unknown>;
   };
   paymentUrl?: string | null;
@@ -776,6 +789,30 @@ function CompactSummaryCard({
             </dd>
           </div>
         </dl>
+
+        {selected.snapshot?.premiumAdjust && (
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Recargo / descuento del cuestionario</p>
+            <p className="text-[11px] text-slate-700">
+              Prima base ${Number(selected.snapshot.premiumAdjust.base?.mprimaext ?? 0).toFixed(2)} → prima cobrada $
+              {Number(selected.snapshot.premiumAdjust.quote?.mprimaext ?? 0).toFixed(2)}
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {(selected.snapshot.premiumAdjust.porAsegurado ?? []).map((p) => (
+                <li key={p.key} className="text-[11px] text-slate-700">
+                  <span className="font-semibold">{p.label}</span>:{' '}
+                  {p.recargoPct > 0 ? `+${p.recargoPct}% recargo` : ''}
+                  {p.recargoPct > 0 && p.descuentoPct > 0 ? ' · ' : ''}
+                  {p.descuentoPct > 0 ? `−${p.descuentoPct}% descuento` : ''}
+                  {p.recargoPct === 0 && p.descuentoPct === 0 ? 'sin ajuste' : ''}
+                  {p.lines && p.lines.length > 0 && (
+                    <span className="text-slate-500"> ({p.lines.map((l) => l.label || l.questionId).join(', ')})</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {beneficiaries.length > 0 && (
           <div className="mt-2 pt-2 border-t border-slate-100">

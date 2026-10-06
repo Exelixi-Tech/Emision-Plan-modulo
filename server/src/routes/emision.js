@@ -40,6 +40,14 @@ function preferGestorCode(...vals) {
   return codes.find((c) => c.includes('-')) || codes[0];
 }
 
+/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
+const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter((v) => v !== '')
+  .map(Number)
+  .filter((n) => Number.isInteger(n));
+
 /** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
@@ -53,7 +61,17 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
+  const rawCrol = nexusMetadata?.crol ?? state.metadataCanal?.crol;
+  const crolNum = rawCrol != null && String(rawCrol).trim() !== '' ? Number(rawCrol) : NaN;
+  const esTecnico = Number.isFinite(crolNum) && !CROLES_PRODUCTOR.includes(crolNum);
+  const usaSeleccion = esTecnico && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
     const vals = sources.map((src) => src?.[key]);
     const val = (key === 'cgestor' || key === 'cgestor_in')
       ? preferGestorCode(...vals)

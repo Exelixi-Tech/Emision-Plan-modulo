@@ -30,6 +30,16 @@ export interface HealthQuestionDraft {
   /** score = solo % · refer = mesa técnica · reject = rechazo inmediato */
   actionIfTrue?: 'score' | 'refer' | 'reject';
   actionIfFalse?: 'score' | 'refer' | 'reject';
+  /** % que se suma a la prima del asegurado si responde Sí (recargo). */
+  recargoIfTrue?: number;
+  /** % que se resta a la prima del asegurado si responde Sí (descuento). */
+  descuentoIfTrue?: number;
+}
+
+/** % de recargo/descuento: vacío o negativo = sin ajuste. */
+function parsePremiumPct(raw: string): number | undefined {
+  const n = Number(raw);
+  return raw.trim() === '' || !Number.isFinite(n) || n <= 0 ? undefined : n;
 }
 
 export type PlanOption = { code: string; label: string };
@@ -1003,6 +1013,54 @@ export function FuneralHealthQuestionsEditor({
                       </div>
                     )}
                   </div>
+
+                  {q.type === 'boolean' && (
+                    <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-2.5 space-y-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 inline-flex items-center gap-1">
+                        <Percent size={11} />
+                        Recargo / descuento a la prima
+                      </p>
+                      <p className="text-[11px] text-slate-500 -mt-1">
+                        Si responde Sí, se suma (recargo) o resta (descuento) este % a la prima del asegurado.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className={lbl}>% recargo si responde Sí</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              className={`${inp} pr-8`}
+                              value={q.recargoIfTrue ?? ''}
+                              onChange={(e) =>
+                                update(idx, { recargoIfTrue: parsePremiumPct(e.target.value) })
+                              }
+                              placeholder="0"
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">%</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className={lbl}>% descuento si responde Sí</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              className={`${inp} pr-8`}
+                              value={q.descuentoIfTrue ?? ''}
+                              onChange={(e) =>
+                                update(idx, { descuentoIfTrue: parsePremiumPct(e.target.value) })
+                              }
+                              placeholder="0"
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <div className="flex items-center justify-between mb-1">

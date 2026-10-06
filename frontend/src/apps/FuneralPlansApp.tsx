@@ -65,12 +65,20 @@ function insuredLabel(person: { nombre?: string; apellido?: string; identificaci
   return name || String(person.identificacion || '').trim() || `Asegurado ${idx + 1}`;
 }
 
-function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) {
+/**
+ * Como SysIP: los términos solo se exigen si el cuestionario del producto los pregunta.
+ * Producto sin pregunta `aceptaTerminos` (ej. Salud Individual) no bloquea en Pagos.
+ */
+function mapHealthToFuneral(
+  byInsured: Record<string, Record<string, unknown>>,
+  questions: HealthQuestion[],
+) {
   const first = Object.values(byInsured)[0] ?? {};
+  const pideTerminos = questions.some((q) => q.id === 'aceptaTerminos');
   return {
     diagnosticoEnfermedad: first.diagnosticoEnfermedad === true,
     descripcionEnfermedad: String(first.descripcionEnfermedad ?? ''),
-    aceptaTerminos: first.aceptaTerminos === true,
+    aceptaTerminos: pideTerminos ? first.aceptaTerminos === true : true,
     healthAnswers: first,
     healthAnswersByInsured: byInsured,
     healthQuestionnaireDone: true,
@@ -223,7 +231,7 @@ export default function FuneralPlansApp() {
       setHealthQuestions(qs);
       if (qs.length === 0) {
         setHealthModalOpen(false);
-        await handleHealthConfirm(emptyAnswersByInsured());
+        await handleHealthConfirm(emptyAnswersByInsured(), qs);
         return;
       }
       setHealthModalOpen(true);
@@ -238,7 +246,10 @@ export default function FuneralPlansApp() {
     }
   }
 
-  async function handleHealthConfirm(byInsured: Record<string, Record<string, unknown>>) {
+  async function handleHealthConfirm(
+    byInsured: Record<string, Record<string, unknown>>,
+    questions: HealthQuestion[] = healthQuestions,
+  ) {
     if (!selectedPlan?.cplan) return;
     setSavingHealth(true);
     try {
@@ -262,7 +273,7 @@ export default function FuneralPlansApp() {
         answers: packed,
       });
 
-      const { submission, scoring } = await submitFuneralPolicyReview({
+      const { submission, scoring, quote: quoteAjustada, premiumAdjust } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
         cramo: effectiveCramo,
@@ -276,7 +287,7 @@ export default function FuneralPlansApp() {
           : funeral.beneficiarios?.[0]
             ? { ...funeral.beneficiarios[0] }
             : undefined,
-        funeral: { ...funeral, ...mapHealthToFuneral(byInsured) },
+        funeral: { ...funeral, ...mapHealthToFuneral(byInsured, questions) },
         selectedPlan: { ...selectedPlan },
         quote: quote ? { ...quote } : null,
         quoteState,
@@ -285,7 +296,20 @@ export default function FuneralPlansApp() {
         metadataCanal: metadataCanal ?? undefined,
       });
 
-      setFuneral(mapHealthToFuneral(byInsured));
+      setFuneral(mapHealthToFuneral(byInsured, questions));
+      // Recargo/descuento por respuestas: Pagos cobra la prima ajustada (misma que emite el servidor).
+      if (premiumAdjust && quoteAjustada) {
+        const snap = useWizardStore.getState();
+        snap.setQuote({ ...(snap.quote ?? quoteAjustada), ...quoteAjustada }, snap.quoteVehicleSignature ?? '');
+        const netos = premiumAdjust.porAsegurado.filter((p) => p.netoPct !== 0);
+        toast.info(
+          'Prima ajustada por el cuestionario',
+          netos
+            .map((p) => `${p.label}: ${p.netoPct > 0 ? '+' : ''}${p.netoPct}%`)
+            .join(' · ') + ` → total ${premiumAdjust.quote.mprimaext.toFixed(2)}`,
+          8000,
+        );
+      }
       setHealthModalOpen(false);
       const verdict = (scoring as { verdict?: string }).verdict;
       const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
@@ -331,7 +355,7 @@ export default function FuneralPlansApp() {
           initialByInsured={funeral.healthAnswersByInsured}
           saving={savingHealth}
           onClose={() => !savingHealth && setHealthModalOpen(false)}
-          onConfirm={handleHealthConfirm}
+          onConfirm={(byInsured) => handleHealthConfirm(byInsured)}
         />
       )}
 
