@@ -64,14 +64,20 @@ export function getEffectiveSsoMetadata(): Record<string, unknown> {
 }
 
 /**
+ * Ids de rol (serol.crol) de Sis2000 que corresponden a productor/corredor,
+ * configurables por entorno con VITE_CROL_PRODUCTOR (lista separada por comas).
+ */
+const CROLES_PRODUCTOR: number[] = String(import.meta.env.VITE_CROL_PRODUCTOR ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter((v) => v !== '')
+  .map(Number)
+  .filter((n) => Number.isInteger(n));
+
+/**
  * Determina si el usuario logueado en la sesión de Sis2000 tiene rol de Productor.
- * En Sis2000 los roles son numéricos:
- * - Rol 5: Corredor / Productor
- * - Rol 8: Intermediario / Agente
- *
- * Cualquier otro rol (crol 1 = Admin/Root, crol 2 = Técnica, crol 3 = Suscripción,
- * crol 4 = Cobranzas, etc.) corresponde a personal administrativo/interno de Sis2000
- * y NO es rol de productor.
+ * Solo el rol configurado en VITE_CROL_PRODUCTOR (corredores) es productor; cualquier
+ * otro rol es personal interno de Sis2000 y NO es rol de productor.
  */
 export function isProductorRole(meta: Record<string, unknown>): boolean {
   const rawRol = meta.crol;
@@ -79,14 +85,8 @@ export function isProductorRole(meta: Record<string, unknown>): boolean {
     ? Number(rawRol)
     : NaN;
 
-  // Si tiene crol definido en Sis2000:
   if (!Number.isNaN(crolNum)) {
-    // Solo roles 5 y 8 son Productores en Sis2000
-    if (crolNum === 5 || crolNum === 8) {
-      return true;
-    }
-    // Todos los demás roles (1, 2, 3, 4, 6, 7, etc.) son roles internos/administrativos
-    return false;
+    return CROLES_PRODUCTOR.includes(crolNum);
   }
 
   // Fallback si no viene crol: verificar si tiene código de corredor asignado
@@ -104,19 +104,19 @@ export function isBackofficeSession(meta: Record<string, unknown>): boolean {
   return origen === 'backoffice' || allowPending;
 }
 
-/** crol interno de Sis2000 (técnico/administrativo): viene informado y no es productor (5/8). */
+/** crol interno de Sis2000 (técnico/administrativo): viene informado y no es productor. */
 export function isTecnicoRole(meta: Record<string, unknown>): boolean {
   const raw = meta.crol;
   if (raw === undefined || raw === null || String(raw).trim() === '') return false;
   const crol = Number(raw);
-  return Number.isFinite(crol) && crol !== 5 && crol !== 8;
+  return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
 }
 
 /**
  * Selector de productor: solo el técnico (rol interno de Sis2000).
- * - Rol Productor (crol 5 u 8): NO lo ve (toma su propio código).
+ * - Rol productor (VITE_CROL_PRODUCTOR): NO lo ve (toma su propio código).
  * - Sin crol (portal, canales, intermediarios): NO lo ve; usa el productor de la sesión.
- * - Rol interno (crol 1, 2, 3, …): SÍ lo ve para asociar la emisión.
+ * - Cualquier otro rol interno informado: SÍ lo ve para asociar la emisión.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
   // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
