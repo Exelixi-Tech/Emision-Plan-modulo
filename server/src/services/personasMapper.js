@@ -381,7 +381,7 @@ function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
 
   if (!proveedor) return null;
 
-  const poliza = overrides.poliza || emitted?.cnpoliza || emitted?.cpoliza || emitted?.number;
+  const poliza = overrides.poliza || emitted?.cpoliza || emitted?.number;
   if (!poliza) return null;
 
   const now = new Date();
