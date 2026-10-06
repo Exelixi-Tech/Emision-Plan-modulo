@@ -323,14 +323,13 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
  * @param {object} [overrides]
  * @returns {object|null}
  */
-function buildRegisterPolicyProveedorRequest(state, emitted, cotizacion = {}, overrides = {}) {
-  const proveedor = state?.selectedProveedor || (state?.cproveedor ? {
-    cci_rif: state.cproveedor,
-    cclave_num: state.cclave_num,
-    itiposerv: state.itiposerv,
-    cplan: state.cplan_proveedor,
-    cramo: state.cramo_proveedor,
-    xcliente: state.xproveedor,
+function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
+  const proveedor = state?.selectedProveedor || (state?.proveedor ? {
+    cci_rif: state.proveedor.cci_rif,
+    cclave_num: state.proveedor.cclave_num,
+    itiposerv: state.proveedor.itiposerv,
+    cplan: state.proveedor.cplan_proveedor,
+    cramo: state.proveedor.cramo_proveedor,
   } : null);
 
   if (!proveedor) return null;
@@ -353,15 +352,16 @@ function buildRegisterPolicyProveedorRequest(state, emitted, cotizacion = {}, ov
     cproducto: metadata.cproducto,
   }));
   const usuario = metadata.cusuario ? parseInt(metadata.cusuario, 10) : 0;
-  const mcosto = Number(cotizacion.mprima ?? 0);
-  const mcostoext = Number(cotizacion.mprimaext ?? state?.selectedPlan?.priceNum ?? 0);
-  const ptasamon = Number(cotizacion.ptasa ?? 0);
+  const mcosto = Number(state?.mprima ?? 0);
+  const mcostoext = Number(state?.mprimaext ?? state?.selectedPlan?.priceNum ?? 0);
+  const ptasamon = Number(state?.ptasa ?? 0);
 
   const fdesde = overrides.fdesde || todayYmd();
   const fhasta = overrides.fhasta || nextYear.toISOString().slice(0, 10);
 
   return {
     cpoliza: poliza,
+    cnpoliza: emitted?.cnpoliza,
     fanopol: now.getFullYear(),
     fmespol: now.getMonth() + 1,
     cramo: ramo,

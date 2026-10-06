@@ -269,11 +269,10 @@ router.post('/emision', async (req, res) => {
 
     // Registro de proveedor en póliza si vino en el estado
     let proveedorResult = null;
-    if (state?.selectedProveedor || state?.cproveedor) {
+    if (state?.proveedor) {
       const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
         state,
         emitted,
-        cotizacionBase,
         {
           plan: cplan,
           ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
