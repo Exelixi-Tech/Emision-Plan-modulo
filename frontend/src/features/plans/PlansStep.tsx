@@ -23,6 +23,8 @@ import {
   readTarjetaMetadataCanal,
   resolveTarjetaPlanCurrency,
   shouldUseTarjetaPublicApi,
+  tarjetaCurrencyCode,
+  tarjetaCurrencySymbol,
   tarjetaQuoteShowsVes,
   type TarjetaPlanCurrencyKind,
 } from '../../lib/rcv-tarjeta-flow';
@@ -434,8 +436,10 @@ export function PlansStep() {
     : null;
   const tarjetaVesPrimary = tarjetaFlow && tarjetaQuoteShowsVes(tarjetaCmoneda);
   const cardDisplayPrice = tarjetaVesPrimary ? displayVes : displayPrice;
-  const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary;
-  const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary;
+  // Plan en otra moneda (EUR/TCR): mostrar equivalente en Bs y la tasa de esa moneda.
+  const tarjetaForeign = tarjetaCurrencyKind === 'eur';
+  const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
+  const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -694,6 +698,8 @@ function PlanDetailCard({
   onSelectCobertura?: (code: string | null) => void;
 }) {
   const vesPrimary = currencyKind === 'ves';
+  const currencySymbol = tarjetaCurrencySymbol(currencyKind);
+  const tasaLabel = currencyKind === 'eur' ? 'Tasa EUR' : 'Tasa de cambio';
   return (
     <article className="relative rounded-2xl border-2 border-indigo-500/40 bg-gradient-to-br from-indigo-50/90 via-violet-50/40 to-white p-4 sm:p-6 shadow-[0_24px_48px_-12px_rgba(15,26,90,0.22)] animate-spring-in overflow-hidden">
       <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-fuchsia-500/12 blur-3xl pointer-events-none" />
@@ -742,7 +748,7 @@ function PlanDetailCard({
             <div className="text-left sm:text-right">
               <div className="flex items-end gap-1 sm:justify-end">
                 {!vesPrimary && (
-                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
+                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">{currencySymbol}</span>
                 )}
                 {vesPrimary && (
                   <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">Bs</span>
@@ -772,7 +778,7 @@ function PlanDetailCard({
               )}
               {showTasa && hasRealQuote && ptasa && ptasa > 0 && (
                 <p className="text-[0.6rem] text-slate-500 mt-0.5 tabular-nums">
-                  Tasa de cambio: {formatQuoteTasa(ptasa)}
+                  {tasaLabel}: {formatQuoteTasa(ptasa)}
                 </p>
               )}
             </div>
@@ -940,6 +946,9 @@ function PrimaCard({
 
   const fmt = formatQuoteVes;
   const isShortPeriodQuote = quoteBasis === 'per-installment';
+  const currencySymbol = tarjetaCurrencySymbol(currencyKind);
+  const currencyCode = tarjetaCurrencyCode(currencyKind);
+  const money = (n: number) => (currencyKind === 'eur' ? `€${formatQuoteUsd(n)}` : formatQuoteUsdMoney(n));
 
   return (
     <div className="w-full relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-violet-950 p-5 sm:p-6 shadow-[0_22px_42px_-14px_rgba(9,17,51,0.65)] ring-1 ring-white/15">
@@ -962,7 +971,7 @@ function PrimaCard({
 
           <div className="flex items-baseline gap-1 mb-1">
             {!vesPrimary && (
-              <span className="text-lg font-display font-black text-white/60 leading-none pb-1">$</span>
+              <span className="text-lg font-display font-black text-white/60 leading-none pb-1">{currencySymbol}</span>
             )}
             {vesPrimary && (
               <span className="text-lg font-display font-black text-white/60 leading-none pb-1">Bs</span>
@@ -973,7 +982,7 @@ function PrimaCard({
                 : formatQuoteUsd(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
             </span>
             <span className="text-sm text-white/70 font-semibold pb-1 ml-1">
-              {vesPrimary ? '' : 'USD '}{isShortPeriodQuote ? freqAmounts.periodSuffix : '/ año'}
+              {currencyCode ? `${currencyCode} ` : ''}{isShortPeriodQuote ? freqAmounts.periodSuffix : '/ año'}
             </span>
           </div>
 
@@ -991,7 +1000,7 @@ function PrimaCard({
                 <div className="flex items-center justify-between">
                   <span className="text-white/75">1er recibo ({frecuenciaLabel})</span>
                   <span className="font-bold text-white tabular-nums">
-                    {formatQuoteUsdMoney(freqAmounts.installmentUsd)}
+                    {money(freqAmounts.installmentUsd)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1009,13 +1018,13 @@ function PrimaCard({
               <div className="flex items-center justify-between">
                 <span className="text-white/75">{isShortPeriodQuote ? `Pago ${frecuenciaLabel.toLowerCase()}` : 'Pago único anual'}</span>
                 <span className="font-bold text-white tabular-nums">
-                  {formatQuoteUsdMoney(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
+                  {money(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
                 </span>
               </div>
             )}
             {showTasa && quote.ptasa > 0 && (
               <div className="flex items-center justify-between pt-2 border-t border-white/15">
-                <span className="text-white/65">Tasa de cambio</span>
+                <span className="text-white/65">{currencyKind === 'eur' ? 'Tasa EUR' : 'Tasa de cambio'}</span>
                 <span className="text-white/90 tabular-nums font-semibold">{formatQuoteTasa(quote.ptasa)}</span>
               </div>
             )}
@@ -1036,9 +1045,9 @@ function PrimaCard({
               {quote.coberturas.map((c) => {
                 const sumaLabel =
                   c.sumaAsegurada != null && c.sumaAsegurada > 0
-                    ? `$${c.sumaAsegurada.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    ? `${currencySymbol}${c.sumaAsegurada.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
                     : '—';
-                const primaLabel = formatQuoteUsdMoney(c.prima);
+                const primaLabel = money(c.prima);
 
                 return (
                   <div
