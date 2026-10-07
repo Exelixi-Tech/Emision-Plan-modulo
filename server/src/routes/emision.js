@@ -243,7 +243,7 @@ router.post('/policies/emit', async (req, res) => {
       frecuencia: frecuencia || state?.rcv?.frecuencia,
       ndias: ndias ?? state?.rcv?.ndias,
     });
-    await archiveExpedienteAfterEmit({
+    const expediente = await archiveExpedienteAfterEmit({
       state: mergedState,
       emission: result,
       empresaNombre: req.empresa?.nombre,
@@ -276,6 +276,7 @@ router.post('/policies/emit', async (req, res) => {
         emittedAt: result.emittedAt,
         quote: result.quote,
         metadata: result.metadata,
+        expediente,
       },
     });
   } catch (err) {
