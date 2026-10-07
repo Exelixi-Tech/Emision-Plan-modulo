@@ -16,8 +16,12 @@ const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
+const { isRcvTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 
 const router = express.Router();
+
+/** Actor de la emisión en flujo tarjeta: siempre el de la tarjeta (lote/canal). */
+const TARJETA_ACTOR_KEYS = ['centidad', 'citem', 'cproductor', 'ccanalalt', 'cscanalalt'];
 
 function decodeJwtMetadata(token) {
   if (!token || typeof token !== 'string') return {};
@@ -59,6 +63,22 @@ function withNexusMetadata(state, nexusMetadata) {
       ? preferGestorCode(...vals)
       : (vals.find((v) => v != null && String(v).trim() !== '') ?? '');
     if (val) mergedMeta[key] = val;
+  }
+
+  // Flujo tarjeta: la emisión es por el canal de la tarjeta (centidad/citem/cproductor
+  // del lote). Un token de usuario o el selector de productor no deben reemplazarlo.
+  if (isRcvTarjetaFlow(state)) {
+    const card = state.metadataCanal || {};
+    for (const key of TARJETA_ACTOR_KEYS) {
+      const v = card[key];
+      if (v != null && String(v).trim() !== '') mergedMeta[key] = v;
+      else delete mergedMeta[key];
+    }
+    for (const key of ['cgestor', 'cgestor_in', 'ccanalalt_in', 'cscanalalt_in', 'productorSeleccionado']) {
+      delete mergedMeta[key];
+    }
+    const { cgestor: _ignored, ...rest } = state;
+    return { ...rest, metadataCanal: mergedMeta };
   }
 
   const gestor = mergedMeta.cgestor != null ? String(mergedMeta.cgestor).trim() : '';
