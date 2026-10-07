@@ -234,7 +234,12 @@ export function ProveedorStep() {
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;
         useWizardStore.getState().setQuote(
-          { mprima: r.data.mprima, mprimaext: r.data.mprimaext, ptasa: r.data.ptasa },
+          {
+            mprima: r.data.mprima,
+            mprimaext: r.data.mprimaext,
+            ptasa: r.data.ptasa,
+            coberturas: r.data.coberturas,
+          },
           quoteSig,
         );
       })
@@ -504,16 +509,68 @@ export function ProveedorStep() {
               <Shield size={11} className="text-indigo-500" />
               Cobertura y Servicios Incluidos
             </p>
-            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
-              {selectedPlan.benefits.map((b) => (
-                <li key={b} className="flex items-start gap-2 text-xs text-slate-700">
-                  <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 mt-0.5 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
-                    <Check size={9} strokeWidth={3.5} />
-                  </span>
-                  <span className="leading-relaxed font-medium">{b}</span>
-                </li>
-              ))}
-            </ul>
+            {quote?.coberturas && quote.coberturas.length > 0 ? (
+              <div className="rounded-xl border border-indigo-100 bg-white/90 overflow-hidden shadow-xs">
+                <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem] gap-x-3 px-4 py-2 bg-indigo-50/70 border-b border-indigo-100 text-[0.62rem] font-black uppercase tracking-wider text-slate-500">
+                  <span>Cobertura</span>
+                  <span className="text-right">Suma Asegurada</span>
+                  <span className="text-right">Prima</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {quote.coberturas.map((c) => {
+                    const sumaLabel =
+                      c.sumaAsegurada != null && c.sumaAsegurada > 0
+                        ? `$${c.sumaAsegurada.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                        : '—';
+                    const primaLabel =
+                      c.prima != null && c.prima > 0
+                        ? `$${c.prima.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : '—';
+
+                    return (
+                      <div
+                        key={String(c.ccobertura ?? c.name)}
+                        className="p-3 sm:px-4 sm:py-2.5 flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem] sm:gap-x-3 sm:items-center hover:bg-indigo-50/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-5 h-5 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 shadow-[0_2px_6px_rgba(16,185,129,0.3)]">
+                            <Check size={11} strokeWidth={3.5} />
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 uppercase leading-snug break-words">
+                            {c.name}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 sm:mt-0 flex items-center justify-between sm:justify-end gap-2 text-xs">
+                          <span className="sm:hidden text-[0.65rem] font-bold text-slate-400 uppercase">Suma Asegurada:</span>
+                          <span className="font-bold text-slate-700 tabular-nums">
+                            {sumaLabel}
+                          </span>
+                        </div>
+
+                        <div className="mt-1 sm:mt-0 flex items-center justify-between sm:justify-end gap-2 text-xs">
+                          <span className="sm:hidden text-[0.65rem] font-bold text-slate-400 uppercase">Prima:</span>
+                          <span className="font-black text-indigo-700 tabular-nums">
+                            {primaLabel}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
+                {selectedPlan.benefits.map((b) => (
+                  <li key={b} className="flex items-start gap-2 text-xs text-slate-700">
+                    <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 mt-0.5 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
+                      <Check size={9} strokeWidth={3.5} />
+                    </span>
+                    <span className="leading-relaxed font-medium">{b}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             <div className="mt-5 pt-4 border-t border-indigo-100/80 flex items-center justify-between gap-2 flex-wrap">
               <div className="inline-flex items-center gap-1.5 text-[0.7rem] font-bold text-indigo-600">

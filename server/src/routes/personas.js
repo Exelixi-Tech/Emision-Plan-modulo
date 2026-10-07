@@ -22,8 +22,6 @@ const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
-const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
-const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 
 function asRecord(value) {
@@ -273,10 +271,7 @@ router.post('/emision', async (req, res) => {
       const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
         state,
         emitted,
-        {
-          plan: cplan,
-          ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
-        },
+        { plan: cplan },
       );
       if (proveedorPayload && proveedorPayload.cci_rif) {
         try {
@@ -323,8 +318,6 @@ router.post('/emision', async (req, res) => {
         ptasa: cotizacion.ptasa,
       },
       ...(proveedorResult ? { proveedor: proveedorResult } : {}),
-      /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
-      ...(premiumAdjust ? { premiumAdjust } : {}),
     };
     const funeralRefs = resolveFuneralRefs(state);
     try {
