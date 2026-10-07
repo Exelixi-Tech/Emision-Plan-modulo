@@ -155,7 +155,22 @@ async function archiveExpedienteAfterEmit(args) {
   return null;
 }
 
+/**
+ * URL absoluta de la factura archivada (factura.pdf / factura.webp…), o undefined.
+ * Solo http(s): una ruta relativa no le sirve a La Mundial (xfoto_factura).
+ * @param {{ archivos?: Record<string, string> } | null | undefined} expediente
+ * @returns {string|undefined}
+ */
+function pickFacturaLink(expediente) {
+  const archivos = expediente?.archivos || {};
+  for (const [name, url] of Object.entries(archivos)) {
+    if (/^factura(\.|-)/i.test(name) && /^https?:\/\//i.test(String(url))) return String(url);
+  }
+  return undefined;
+}
+
 module.exports = {
+  pickFacturaLink,
   resolveTitularCedula,
   buildNomenclatura,
   filesFromDocuments,

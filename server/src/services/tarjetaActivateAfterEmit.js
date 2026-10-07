@@ -48,9 +48,10 @@ function resolvePolicyKeys(emission, meta) {
 /**
  * @param {object} state
  * @param {object} emission
+ * @param {{ xfotoFactura?: string }} [opts] link final de la factura (expediente archivado)
  * @returns {Record<string, unknown>|null}
  */
-function buildTarjetaActivatePayload(state, emission) {
+function buildTarjetaActivatePayload(state, emission, opts = {}) {
   if (!isRcvTarjetaFlow(state)) return null;
 
   const meta = state?.metadataCanal || {};
@@ -91,7 +92,7 @@ function buildTarjetaActivatePayload(state, emission) {
   const nfactura = normalizeNfactura(meta.nfactura || state?.tarjeta?.nfactura);
   if (nfactura) payload.nfactura = nfactura;
 
-  const xfoto_factura = resolveXfotoFactura(state);
+  const xfoto_factura = String(opts.xfotoFactura || '').trim() || resolveXfotoFactura(state);
   if (xfoto_factura) payload.xfoto_factura = xfoto_factura;
 
   return payload;
@@ -101,9 +102,10 @@ function buildTarjetaActivatePayload(state, emission) {
  * @param {object} state
  * @param {object} emission
  * @param {object} [metadata]
+ * @param {{ xfotoFactura?: string }} [opts]
  */
-async function activateTarjetaAfterEmit(state, emission, metadata = {}) {
-  const payload = buildTarjetaActivatePayload(state, emission);
+async function activateTarjetaAfterEmit(state, emission, metadata = {}, opts = {}) {
+  const payload = buildTarjetaActivatePayload(state, emission, opts);
   if (!payload) {
     metadata.tarjetaActivateSkipped = 'not_rcv_tarjeta_flow';
     return undefined;
