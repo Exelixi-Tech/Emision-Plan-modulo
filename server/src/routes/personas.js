@@ -272,6 +272,7 @@ router.post('/cotizacion', async (req, res) => {
       mprima: quote.mprima,
       mprimaext: quote.mprimaext,
       ptasa: quote.ptasa,
+      coberturas: quote.coberturas,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

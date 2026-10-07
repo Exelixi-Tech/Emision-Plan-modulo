@@ -189,6 +189,16 @@ export function resolveQuoteCramo(planCramo: number | undefined, fallback: numbe
   return resolveSsoCramo() ?? (planOk ? plan : fallback);
 }
 
+/** cproducto enviado por el SSO (vacío si el canal no lo declara). */
+export function resolveSsoCproducto(): string {
+  return String(readSsoCanalMeta().cproducto ?? '').trim();
+}
+
+/** Nombre del producto que envía el portal en el SSO (`xproducto`). Vacío si no viene. */
+export function resolveSsoXproducto(): string {
+  return String(readSsoCanalMeta().xproducto ?? '').trim();
+}
+
 /** Ramo enviado por el SSO. `null` si el canal no lo declara. */
 export function resolveSsoCramo(): number | null {
   const raw = readSsoCanalMeta().cramo;
