@@ -5,7 +5,15 @@ import {
   Loader2, AlertTriangle, Users, CalendarClock
 } from 'lucide-react';
 import type { FuneralPerson, Plan } from '../../types';
-import { personasApi, resolveQuoteCramo, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import {
+  personasApi,
+  resolveQuoteCramo,
+  resolveSsoCproducto,
+  resolveSsoXproducto,
+  type PlanPer,
+  getFrecuenciasByPlan,
+  type CatalogItem,
+} from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
@@ -57,6 +65,30 @@ function parseNdiasFromLabel(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** Nombre de producto por cproducto (maproductos) cuando el SSO no trae `xproducto`. */
+const PERSONAS_PRODUCT_LABELS: Record<string, string> = {
+  '14': 'Salud Individual',
+  '15': 'Salud Familiar',
+  '25': 'Viajero',
+  '26': 'Viajero Local',
+  '51': 'Combinado Familiar',
+  '52': 'Funerario Familiar',
+  '57': 'Funerario',
+  '58': 'Combinado de Personas',
+  '76': 'Póliza de Vida',
+  '77': '4 en 1',
+  '78': 'Accidentes Personales',
+  '79': 'Accidentes Personales Individual',
+};
+
+/** xproducto del wizard o del SSO; si no, el nombre por cproducto; si no, el del módulo. */
+function resolvePersonasProductLabel(meta: Record<string, unknown> | null, fallback: string): string {
+  const fromMeta = String(meta?.xproducto ?? '').trim() || resolveSsoXproducto();
+  if (fromMeta) return fromMeta;
+  const cproducto = String(meta?.cproducto ?? '').trim() || resolveSsoCproducto();
+  return PERSONAS_PRODUCT_LABELS[cproducto] ?? fallback;
+}
+
 function apiPlanToWizardPlan(p: PlanPer, productName: string = 'Funerario'): Plan {
   const fromApi =
     p.ndias != null && Number.isFinite(Number(p.ndias)) && Number(p.ndias) > 0
@@ -78,11 +110,16 @@ function apiPlanToWizardPlan(p: PlanPer, productName: string = 'Funerario'): Pla
           'Cobertura para el grupo asegurado',
           'Asistencia en viaje',
         ]
-      : [
-          `Servicio de ${productName.toLowerCase()} completo`,
-          'Cobertura para el grupo asegurado',
-          'Atención especializada',
-        ],
+      : /funer/i.test(productName)
+        ? [
+            `Servicio de ${productName.toLowerCase()} completo`,
+            'Cobertura para el grupo asegurado',
+            'Atención especializada',
+          ]
+        : [
+            'Coberturas según el plan elegido',
+            'Cobertura para el grupo asegurado',
+          ],
     sumaAsegurada: 0,
     cramo: p.cramo,
     parentescos: p.parentescos ?? [],
@@ -169,7 +206,7 @@ export function FuneralPlansStep() {
 
     const meta = useWizardStore.getState().metadataCanal as Record<string, unknown> | null;
     const effectiveCramo = meta?.cramo != null ? Number(meta.cramo) : product.cramo;
-    const effectiveLabel = (meta?.xproducto as string) ?? product.label;
+    const effectiveLabel = resolvePersonasProductLabel(meta, product.label);
 
     personasApi.planes(effectiveCramo)
       .then((res) => {
@@ -316,7 +353,12 @@ export function FuneralPlansStep() {
           return;
         }
         useWizardStore.getState().setQuote(
-          { mprima: r.data.mprima, mprimaext: r.data.mprimaext, ptasa: r.data.ptasa },
+          {
+            mprima: r.data.mprima,
+            mprimaext: r.data.mprimaext,
+            ptasa: r.data.ptasa,
+            ...(r.data.coberturas?.length ? { coberturas: r.data.coberturas } : {}),
+          },
           quoteSig,
         );
       })
@@ -596,12 +638,27 @@ export function FuneralPlansStep() {
               Cobertura incluida
             </p>
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
-              {selectedPlan.benefits.map((b) => (
-                <li key={b} className="flex items-start gap-2 text-xs text-slate-700">
+              {/* Coberturas reales de la cotización (Sis2000); textos del plan solo si no llegan. */}
+              {(hasRealQuote && quote?.coberturas?.length
+                ? quote.coberturas.map((c) => ({
+                    key: String(c.ccobertura ?? c.name),
+                    text: c.name,
+                    suma: c.sumaAsegurada,
+                  }))
+                : selectedPlan.benefits.map((b) => ({ key: b, text: b, suma: null as number | null }))
+              ).map((item) => (
+                <li key={item.key} className="flex items-start gap-2 text-xs text-slate-700">
                   <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 mt-0.5 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
                     <Check size={9} strokeWidth={3.5} />
                   </span>
-                  <span className="leading-relaxed font-medium">{b}</span>
+                  <span className="leading-relaxed font-medium">
+                    {item.text}
+                    {item.suma != null && item.suma > 0 && (
+                      <span className="block text-[0.68rem] text-slate-500 font-semibold">
+                        Suma asegurada ${item.suma.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>

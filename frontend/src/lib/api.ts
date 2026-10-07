@@ -194,6 +194,11 @@ export function resolveSsoCproducto(): string {
   return String(readSsoCanalMeta().cproducto ?? '').trim();
 }
 
+/** Nombre del producto que envía el portal en el SSO (`xproducto`). Vacío si no viene. */
+export function resolveSsoXproducto(): string {
+  return String(readSsoCanalMeta().xproducto ?? '').trim();
+}
+
 /** Ramo enviado por el SSO. `null` si el canal no lo declara. */
 export function resolveSsoCramo(): number | null {
   const raw = readSsoCanalMeta().cramo;
