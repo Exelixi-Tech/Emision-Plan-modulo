@@ -522,8 +522,13 @@ async function quoteAndEmit(state, overrides = {}) {
     }
   }
 
-  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión)
-  await activateTarjetaAfterEmit(state, emission, metadata);
+  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión).
+  // deferTarjetaActivate: la ruta activa después de archivar el expediente,
+  // para mandar en xfoto_factura el link final de la factura (no el de pendiente/).
+  const deferTarjetaActivate = overrides.deferTarjetaActivate === true;
+  if (!deferTarjetaActivate) {
+    await activateTarjetaAfterEmit(state, emission, metadata);
+  }
 
   // 5.5) Generar anexo de Conductor Habitual si existe (solo RCV)
   let url_conductor_habitual = undefined;
@@ -641,6 +646,13 @@ async function quoteAndEmit(state, overrides = {}) {
       ...quoteResult.metadata,
       ...metadata,
     },
+    ...(deferTarjetaActivate
+      ? {
+        /** Activa la tarjeta luego; escribe el resultado en `targetMetadata` (result.metadata). */
+        activateTarjeta: (opts = {}, targetMetadata = metadata) =>
+          activateTarjetaAfterEmit(state, emission, targetMetadata, opts),
+      }
+      : {}),
   };
 }
 
