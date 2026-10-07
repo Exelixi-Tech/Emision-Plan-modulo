@@ -14,7 +14,7 @@
 const express = require('express');
 const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
-const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 
 const { handleEmit: handlePatrimonialEmit, handleQuote: handlePatrimonialQuote } = require('./patrimonial');
@@ -286,13 +286,20 @@ router.post('/policies/emit', async (req, res) => {
       plan,
       frecuencia: frecuencia || state?.rcv?.frecuencia,
       ndias: ndias ?? state?.rcv?.ndias,
+      deferTarjetaActivate: true,
     });
-    await archiveExpedienteAfterEmit({
+    const expediente = await archiveExpedienteAfterEmit({
       state: mergedState,
       emission: result,
       empresaNombre: req.empresa?.nombre,
       authToken: req.nexusToken,
     });
+    // Tarjeta: activar en La Mundial con xfoto_factura = URL final de la factura del expediente.
+    if (typeof result.activateTarjeta === 'function') {
+      const facturaLink = pickFacturaLink(expediente);
+      await result.activateTarjeta(facturaLink ? { xfotoFactura: facturaLink } : {}, result.metadata);
+      delete result.activateTarjeta;
+    }
     try {
       await registerIssuedPolicy({
         empresaId: req.empresa?.id,
