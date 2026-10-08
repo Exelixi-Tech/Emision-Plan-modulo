@@ -206,8 +206,8 @@ export function ProveedorStep() {
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
     ? `proveedor|${planCode}|${funeral.frecuencia}|${aseguradosListos
-        .map((a) => `${a.parentesco}:${a.identificacion}:${a.fechaNac}`)
-        .join(',')}`
+      .map((a) => `${a.parentesco}:${a.identificacion}:${a.fechaNac}`)
+      .join(',')}`
     : '';
 
   const activeSigRef = useRef('');
@@ -294,11 +294,10 @@ export function ProveedorStep() {
             Plan de Servicio
           </label>
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              selectedPlan
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${selectedPlan
                 ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_14px_rgba(46,109,191,0.3)]'
                 : 'bg-slate-100 text-slate-500'
-            }`}>
+              }`}>
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
             <select
@@ -346,11 +345,10 @@ export function ProveedorStep() {
             Frecuencia de pago
           </label>
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              funeral.frecuencia
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${funeral.frecuencia
                 ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
                 : 'bg-slate-100 text-slate-500'
-            }`}>
+              }`}>
               {frecLoading ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={15} strokeWidth={2.5} />}
             </div>
             <select
@@ -387,17 +385,16 @@ export function ProveedorStep() {
             {cproveedor && (
               <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
                 <CheckCircle2 size={11} className="text-emerald-500" />
-                RIF: {String(cproveedor)} {cclave_num != null && `· Clave: ${cclave_num}`} {itiposerv && `· Tipo: ${itiposerv}`}
+                RIF: {String(cproveedor)}
               </span>
             )}
           </div>
 
           <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
-              cproveedor
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${cproveedor
                 ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_4px_14px_rgba(79,70,229,0.3)]'
                 : 'bg-slate-100 text-slate-500'
-            }`}>
+              }`}>
               {loadingProveedores ? (
                 <Loader2 size={14} className="animate-spin text-indigo-600" />
               ) : (
@@ -511,10 +508,9 @@ export function ProveedorStep() {
             </p>
             {quote?.coberturas && quote.coberturas.length > 0 ? (
               <div className="rounded-xl border border-indigo-100 bg-white/90 overflow-hidden shadow-xs">
-                <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem] gap-x-3 px-4 py-2 bg-indigo-50/70 border-b border-indigo-100 text-[0.62rem] font-black uppercase tracking-wider text-slate-500">
+                <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_8rem] gap-x-3 px-4 py-2 bg-indigo-50/70 border-b border-indigo-100 text-[0.62rem] font-black uppercase tracking-wider text-slate-500">
                   <span>Cobertura</span>
                   <span className="text-right">Suma Asegurada</span>
-                  <span className="text-right">Prima</span>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {quote.coberturas.map((c) => {
@@ -522,15 +518,11 @@ export function ProveedorStep() {
                       c.sumaAsegurada != null && c.sumaAsegurada > 0
                         ? `$${c.sumaAsegurada.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
                         : '—';
-                    const primaLabel =
-                      c.prima != null && c.prima > 0
-                        ? `$${c.prima.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : '—';
 
                     return (
                       <div
                         key={String(c.ccobertura ?? c.name)}
-                        className="p-3 sm:px-4 sm:py-2.5 flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem] sm:gap-x-3 sm:items-center hover:bg-indigo-50/30 transition-colors"
+                        className="p-3 sm:px-4 sm:py-2.5 flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_8rem] sm:gap-x-3 sm:items-center hover:bg-indigo-50/30 transition-colors"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="w-5 h-5 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 shadow-[0_2px_6px_rgba(16,185,129,0.3)]">
@@ -545,13 +537,6 @@ export function ProveedorStep() {
                           <span className="sm:hidden text-[0.65rem] font-bold text-slate-400 uppercase">Suma Asegurada:</span>
                           <span className="font-bold text-slate-700 tabular-nums">
                             {sumaLabel}
-                          </span>
-                        </div>
-
-                        <div className="mt-1 sm:mt-0 flex items-center justify-between sm:justify-end gap-2 text-xs">
-                          <span className="sm:hidden text-[0.65rem] font-bold text-slate-400 uppercase">Prima:</span>
-                          <span className="font-black text-indigo-700 tabular-nums">
-                            {primaLabel}
                           </span>
                         </div>
                       </div>
@@ -579,7 +564,7 @@ export function ProveedorStep() {
               </div>
               {cproveedor && (
                 <div className="text-[0.7rem] font-semibold text-slate-600">
-                  Proveedor asignado: <strong className="text-indigo-700">{selectedProveedor?.xcliente || xproveedor || currentProveedorObj?.xproveedor}</strong> {selectedProveedor?.cclave_num != null && <span className="font-mono text-slate-400 font-normal">(Clave: {selectedProveedor.cclave_num})</span>}
+                  Proveedor asignado: <strong className="text-indigo-700">{selectedProveedor?.xcliente || xproveedor || currentProveedorObj?.xproveedor}</strong>
                 </div>
               )}
             </div>
