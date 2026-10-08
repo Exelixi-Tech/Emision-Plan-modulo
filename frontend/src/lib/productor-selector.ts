@@ -1,5 +1,6 @@
 import { decodeNexusTokenMetadata } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
+import { isTarjetaRcvFlow } from './rcv-tarjeta-flow';
 
 const CANDIDATE_TOKEN_KEYS = [
   'nexus_access_token_emision',
@@ -119,6 +120,11 @@ export function isTecnicoRole(meta: Record<string, unknown>): boolean {
  * - Cualquier otro rol interno informado: SÍ lo ve para asociar la emisión.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
+  // Flujo tarjeta: el productor/canal viene fijo en la tarjeta (lote), aunque haya token de usuario.
+  if (isTarjetaRcvFlow()) {
+    return false;
+  }
+
   // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
   if (isProductorRole(meta)) {
     return false;

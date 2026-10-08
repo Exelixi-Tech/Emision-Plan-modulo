@@ -298,8 +298,8 @@ export function ProveedorStep() {
           </label>
           <div className="relative group">
             <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${selectedPlan
-                ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_14px_rgba(46,109,191,0.3)]'
-                : 'bg-slate-100 text-slate-500'
+              ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_14px_rgba(46,109,191,0.3)]'
+              : 'bg-slate-100 text-slate-500'
               }`}>
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
@@ -351,8 +351,8 @@ export function ProveedorStep() {
           </label>
           <div className="relative group">
             <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${funeral.frecuencia
-                ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
-                : 'bg-slate-100 text-slate-500'
+              ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
+              : 'bg-slate-100 text-slate-500'
               }`}>
               {frecLoading ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={15} strokeWidth={2.5} />}
             </div>
@@ -397,8 +397,8 @@ export function ProveedorStep() {
 
           <div className="relative group">
             <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${cproveedor
-                ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_4px_14px_rgba(79,70,229,0.3)]'
-                : 'bg-slate-100 text-slate-500'
+              ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_4px_14px_rgba(79,70,229,0.3)]'
+              : 'bg-slate-100 text-slate-500'
               }`}>
               {loadingProveedores ? (
                 <Loader2 size={14} className="animate-spin text-indigo-600" />
@@ -527,7 +527,7 @@ export function ProveedorStep() {
                     return (
                       <div
                         key={String(c.ccobertura ?? c.name)}
-                        className="p-3 sm:px-4 sm:py-2.5 flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_8rem] sm:gap-x-3 sm:items-center hover:bg-indigo-50/30 transition-colors"
+                        className="p-3 sm:px-4 sm:py-2.5 flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem] sm:gap-x-3 sm:items-center hover:bg-indigo-50/30 transition-colors"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="w-5 h-5 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 shadow-[0_2px_6px_rgba(16,185,129,0.3)]">
