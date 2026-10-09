@@ -2,10 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
-  Loader2, AlertTriangle, CalendarClock,
+  Loader2, AlertTriangle, CalendarClock, UserCheck,
 } from 'lucide-react';
 import type { Plan } from '../../types';
-import { type PlanRcv, catalogoApi, quotePolicy, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import { type PlanRcv, catalogoApi, quotePolicy, getFrecuenciasByPlan, getBrokers, type CatalogItem } from '../../lib/api';
+import { SearchSelect } from '../../components/ui/SearchSelect';
+import {
+  getEffectiveSsoMetadata,
+  shouldShowProductorSelector,
+  isProductorRole,
+} from '../../lib/productor-selector';
 import { getProductConfig, RCV_RAMO_BINACIONAL } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { vehicleSignature, formatQuoteUsd, formatQuoteUsdMoney, formatQuoteVes, formatQuoteVesLabel, formatQuoteTasa } from '../../lib/money';
@@ -94,6 +100,63 @@ export function PlansStep() {
 
   const product = getProductConfig();
 
+  // Detección de rol y sesión de Backoffice Sis2000
+  const effectiveMeta = {
+    ...getEffectiveSsoMetadata(),
+    ...(metadataCanal || {}),
+  };
+  const showProductorSelector = shouldShowProductorSelector(effectiveMeta);
+  const isUserProductor = isProductorRole(effectiveMeta);
+
+  const [brokers, setBrokers] = useState<CatalogItem[]>([]);
+  const [brokersLoading, setBrokersLoading] = useState(false);
+
+  const initialProductorId = () => {
+    if (isUserProductor) {
+      return String(effectiveMeta.cproductor ?? effectiveMeta.citem ?? '').trim();
+    }
+    const current = rcv.cproductor ?? effectiveMeta.cproductor;
+    if (current && String(current).trim() !== '80080') {
+      return String(current).trim();
+    }
+    return '';
+  };
+  const [selectedProductorId, setSelectedProductorId] = useState<string>(initialProductorId);
+
+  useEffect(() => {
+    if (!showProductorSelector) return;
+    let cancelled = false;
+    setBrokersLoading(true);
+    getBrokers()
+      .then((items) => {
+        if (!cancelled) setBrokers(items);
+      })
+      .catch((err) => {
+        console.error('Error cargando productores:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setBrokersLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [showProductorSelector]);
+
+  const handleSelectProductor = (val: string, lbl: string) => {
+    setSelectedProductorId(val);
+    const store = useWizardStore.getState();
+    store.setMetadataCanal({
+      ...(store.metadataCanal || {}),
+      cproductor: val,
+      centidad: 'P',
+      citem: val,
+      xproductor: lbl,
+    });
+    setRcv({
+      cproductor: val,
+      xproductor: lbl,
+    });
+    setSelectedPlan(null);
+  };
+
   // ── Planes reales desde backend-api-sys vía modulo-emision server ─────────
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -122,6 +185,12 @@ export function PlansStep() {
   // evita double-fetch en React StrictMode y descarta respuestas obsoletas.
   useEffect(() => {
     if (!vehicle.cmarca || !vehicle.cmodelo || !vehicle.cversion) return;
+    if (showProductorSelector && !selectedProductorId) {
+      setApiPlans([]);
+      setPlansLoading(false);
+      setSelectedPlan(null);
+      return;
+    }
     let cancelled = false;
 
     setPlansLoading(true);
@@ -137,7 +206,11 @@ export function PlansStep() {
           ? 'E'
           : 'N';
 
-    catalogoApi.planesRcv(ctipo, iplaca)
+    const activeProductor = showProductorSelector
+      ? selectedProductorId
+      : (isUserProductor ? String(effectiveMeta.cproductor ?? effectiveMeta.citem ?? '') : undefined);
+
+    catalogoApi.planesRcv(ctipo, iplaca, activeProductor)
       .then((res) => {
         if (cancelled) return;
         const label = vehicle.xcategoria_uso?.trim() || vehicle.uso || 'RCV';
@@ -174,7 +247,7 @@ export function PlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicle.ctipo, vehicle.cversion, vehicle.cmarca, vehicle.tipoPlaca, lockedCplan, tarjetaMeta]);
+  }, [vehicle.ctipo, vehicle.cversion, vehicle.cmarca, vehicle.tipoPlaca, lockedCplan, tarjetaMeta, selectedProductorId, showProductorSelector]);
 
   // ── Frecuencias por plan (spBuscaFrecuenciaPlan) ─────────────────────────
   useEffect(() => {
@@ -375,6 +448,41 @@ export function PlansStep() {
           {frecuenciaLabel}
         </span>
       </div>
+
+      {/* Selector de Productor (Backoffice Sis2000 - solo para roles no-productor) */}
+      {showProductorSelector && (
+        <div className="rounded-2xl border-2 border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-white to-violet-50/40 p-4 sm:p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <label className="text-[0.68rem] font-black text-indigo-950 uppercase tracking-widest inline-flex items-center gap-1.5">
+              <UserCheck size={14} className="text-indigo-600" />
+              Productor asociado a la póliza *
+            </label>
+            {selectedProductorId && (
+              <span className="text-[0.65rem] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                Cód: {selectedProductorId}
+              </span>
+            )}
+          </div>
+          <SearchSelect
+            options={brokers.map((b) => ({ value: String(b.code), label: `${b.code} - ${b.label}` }))}
+            value={selectedProductorId || undefined}
+            onChange={(val, lbl) => handleSelectProductor(val, lbl)}
+            placeholder="Seleccione el productor..."
+            loading={brokersLoading}
+            disabled={brokersLoading}
+            noOptionsText="No se encontraron productores"
+          />
+          {!selectedProductorId ? (
+            <p className="text-[0.72rem] font-semibold text-amber-700 mt-2">
+              Selecciona el productor para consultar y calcular los planes autorizados para la emisión.
+            </p>
+          ) : (
+            <p className="text-[0.72rem] font-medium text-slate-500 mt-1.5">
+              La póliza emitida quedará asociada a este productor en Sis2000.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Selectores */}
       <div className={`grid grid-cols-1 gap-4 ${lockedCplan ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>

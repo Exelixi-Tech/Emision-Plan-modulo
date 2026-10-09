@@ -71,6 +71,8 @@ const defaultRcv = (): RcvPlanData => ({
   ndias: null,
   coberAdicional: 'RC',
   coberAdicionales: [],
+  cproductor: null,
+  xproductor: null,
 });
 
 const defaultPatrimoniales = (): PatrimonialesData => ({

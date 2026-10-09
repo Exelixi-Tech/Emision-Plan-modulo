@@ -591,6 +591,53 @@ const FRECUENCIAS_GENERIC_FALLBACK = [
  * filas en maplanes_frec, devolver ANUAL como SysIP persons-alt (nunca 502).
  * @returns {Promise<Array<{ code: string, label: string, ndias?: number|null }>>}
  */
+/**
+ * Productores / Brokers desde Sis2000 (POST /api/v1/valrep/brokers)
+ * @returns {Promise<Array<{ code: number, label: string }>>}
+ */
+async function getValrepBrokers() {
+  const urls = [
+    `${getBaseUrl()}/api/v1/valrep/brokers`,
+    `${process.env.LAMUNDIAL_CARDS_URL || process.env.LAMUNDIAL_EMISSION_URL || 'https://qaapisys2000.lamundialdeseguros.com'}/api/v1/valrep/brokers`,
+    'https://apisys2000.lamundialdeseguros.com/api/v1/valrep/brokers',
+  ];
+
+  let raw = [];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const response = await axios.post(
+        url,
+        {},
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10_000,
+          validateStatus: () => true,
+        },
+      );
+      if (response.status >= 200 && response.status < 300 && response.data?.status !== false) {
+        raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+        if (raw.length > 0) break;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!raw.length && lastError) {
+    throw lastError;
+  }
+
+  return raw
+    .map((b) => ({
+      code: Number(b.cproductor),
+      label: String(b.xproductor ?? '').trim(),
+    }))
+    .filter((it) => it.code > 0 && it.label !== '')
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function getValrepFrecuencias(cplan, cramo) {
   const body = { cplan };
   if (cramo != null) body.cramo = cramo;
@@ -708,4 +755,5 @@ module.exports = {
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
+  getValrepBrokers,
 };
