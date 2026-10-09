@@ -440,12 +440,6 @@ export function ProveedorStep() {
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
 
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-indigo-100/60 text-[0.72rem] text-slate-600">
-            <div><span className="font-semibold text-slate-400">cplan:</span> <strong className="text-indigo-900 font-mono">{cplan_proveedor || selectedPlan?.cplan || '---'}</strong></div>
-            <div><span className="font-semibold text-slate-400">cramo:</span> <strong className="text-indigo-900 font-mono">{cramo_proveedor ?? product.cramo}</strong></div>
-            <div><span className="font-semibold text-slate-400">cclave_num:</span> <strong className="text-indigo-900 font-mono">{cclave_num ?? '---'}</strong></div>
-            <div><span className="font-semibold text-slate-400">itiposerv:</span> <strong className="text-indigo-900 font-mono">{itiposerv || 'S'}</strong></div>
-          </div>
         </div>
       )}
 
