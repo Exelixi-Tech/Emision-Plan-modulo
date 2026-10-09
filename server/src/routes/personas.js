@@ -76,12 +76,22 @@ const VIAJERO_RAMOS = new Set([5, 25]);
 /** Productos Viajero (25) y Viajero Local (26): planes por producto con ndias (maplanes_frec). */
 const VIAJERO_PRODUCTOS = new Set(['25', '26']);
 
-/** Fraccionadas: Pagos aún cobra la prima anual en personas, así que se emite Anual. */
-const FRECUENCIAS_FRACCIONADAS = new Set(['M', 'T', 'S', 'C']);
+/**
+ * Fraccionadas (igual que RCV): se cotiza la prima anual y se emite con la frecuencia real;
+ * el SP genera los N recibos, Pagos cobra el 1º y domicilia el resto.
+ * C (cuatrimestral) no se ofrece en personas: se emite Anual.
+ */
+const FRECUENCIAS_FRACCIONADAS = new Set(['M', 'T', 'S']);
+const CUOTAS_POR_FRECUENCIA = { M: 12, T: 4, S: 2 };
 
 function personasIfrecuencia(code) {
   const c = String(code || 'A').trim().toUpperCase().charAt(0) || 'A';
-  return FRECUENCIAS_FRACCIONADAS.has(c) ? 'A' : c;
+  return c === 'C' ? 'A' : c;
+}
+
+/** La cotización de personas es anual; solo D/B (viajero corto) cotiza con su frecuencia. */
+function personasIfrecuenciaCotiza(ifrecuencia) {
+  return FRECUENCIAS_FRACCIONADAS.has(ifrecuencia) ? 'A' : ifrecuencia;
 }
 
 /** Viajero: vigencia desde hoy por los días del plan (igual que la cotización del wizard). */
@@ -380,6 +390,7 @@ router.post('/emision', async (req, res) => {
   }
 
   const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
+  const ifrecuenciaCotiza = personasIfrecuenciaCotiza(ifrecuencia);
   const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo);
   const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
     tomador: state.tomador,
@@ -401,7 +412,7 @@ router.post('/emision', async (req, res) => {
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
-    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia, ...(vigencia ?? {}) });
+    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia: ifrecuenciaCotiza, ...(vigencia ?? {}) });
 
     // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud).
     //     La prima ajustada es la que se cobra (ingreso de caja / registro). A Sis2000 va la
@@ -421,7 +432,7 @@ router.post('/emision', async (req, res) => {
       asegurados,
       byInsured: funeral.healthAnswersByInsured,
       quoteOne: (aseg) =>
-        personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia, ...(vigencia ?? {}) }),
+        personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia: ifrecuenciaCotiza, ...(vigencia ?? {}) }),
     });
     if (premiumAdjust) {
       console.log(
@@ -512,7 +523,8 @@ router.post('/emision', async (req, res) => {
     const emitMetadata = { ...metadata };
     const url_ingreso_caja = await resolveIngresoCajaAfterPayment(state, {
       cnrecibo: emitted.cnrecibo,
-      mpagoFallback: cotizacion.mprima,
+      // Sin monto capturado: 1er recibo = prima anual ÷ cuotas (fraccionado).
+      mpagoFallback: Math.round((cotizacion.mprima / (CUOTAS_POR_FRECUENCIA[ifrecuencia] || 1)) * 100) / 100,
       metadata: emitMetadata,
     });
     if (url_ingreso_caja) {

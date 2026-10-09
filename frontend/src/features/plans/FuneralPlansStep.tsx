@@ -19,7 +19,7 @@ import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { syncTitularFromTomador } from '../../lib/funeral-sync';
-import { frecuenciasPersonas } from '../../lib/frecuencia';
+import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
 function emptyTitular(): FuneralPerson {
@@ -383,6 +383,7 @@ export function FuneralPlansStep() {
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote = quoteState === 'ready' && Boolean(quote);
   const annualUsd = hasRealQuote ? quote!.mprimaext : 0;
+  const cuotasFrecuencia = getCuotasByFrecuencia(funeral.frecuencia);
   const planOptions = uniquePlansForSelect(apiPlans);
   const dayOptions = selectedPlan ? daysForPlan(apiPlans, selectedPlan.cplan) : [];
   const showDayPicker = dayOptions.length > 1;
@@ -573,6 +574,14 @@ export function FuneralPlansStep() {
             </select>
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
+          {cuotasFrecuencia > 1 && (
+            <p className="mt-1.5 text-xs text-slate-600">
+              {annualUsd > 0
+                ? `${cuotasFrecuencia} cuotas de $${(annualUsd / cuotasFrecuencia).toFixed(2)}. `
+                : `${cuotasFrecuencia} cuotas. `}
+              Hoy pagas la 1ª cuota y las siguientes se cobran por domiciliación bancaria.
+            </p>
+          )}
         </div>
       </div>
 
