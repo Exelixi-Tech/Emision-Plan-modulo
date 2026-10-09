@@ -122,6 +122,21 @@ function isChainedFlow(): boolean {
   } catch { return false; }
 }
 
+const DEFAULT_DEV_EMPRESA = {
+  id: 1,
+  nombre: 'Empresa Demo',
+  rif: 'J-00000000-0',
+  logo_url: '',
+};
+
+const DEFAULT_DEV_SUBMODULO = {
+  id: 1,
+  nombre: 'Emisión',
+  moduloNombre: 'Emisión',
+  url: '/emision',
+  accessUrl: '/emision',
+};
+
 export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) {
   const tarjetaStandalone = shouldUseTarjetaPublicApi() && !hasNexusAccessToken();
   if (tarjetaStandalone) {

@@ -11,6 +11,7 @@ import {
 import { formatQuoteUsdMoney, formatQuoteVesLabel, formatQuoteVesPaymentInput, formatQuoteTasa } from '../../lib/money';
 import { resolveFrecuenciaAmounts, resolveWizardFrecuenciaCode, resolveRcvQuoteBasis } from '../../lib/frecuencia';
 import { getProductConfig } from '../../lib/product';
+import { toast } from '../../store/toastStore';
 import {
   verifyMobilePayment,
   MobilePaymentVerifyError,
@@ -19,37 +20,39 @@ import {
   sypagoConfirmOtp,
   type SypagoOtpConfirmResponse,
   SypagoError,
+  registerPolicyProveedor,
+  type RegisterPolicyProveedorDto,
 } from '../../lib/api';
 
 // ── Lista completa de 26 bancos venezolanos (fuente: sudeban / notilogia 2026)
 // Ordenados alfabéticamente. Etiquetas cortas para que no desborden el <select>.
 const BANCOS_MOVIL: { code: string; label: string }[] = [
-  { code: '0156', label: '100% Banco'                    },
-  { code: '0171', label: 'Banco Activo'                  },
-  { code: '0166', label: 'Banco Agrícola de Venezuela'   },
+  { code: '0156', label: '100% Banco' },
+  { code: '0171', label: 'Banco Activo' },
+  { code: '0166', label: 'Banco Agrícola de Venezuela' },
   { code: '0175', label: 'Banco Bicentenario del Pueblo' },
-  { code: '0128', label: 'Banco Caroní'                  },
-  { code: '0114', label: 'Bancaribe'                     },
-  { code: '0163', label: 'Banco del Tesoro'              },
-  { code: '0102', label: 'Banco de Venezuela (BDV)'      },
-  { code: '0115', label: 'Banco Exterior'                },
-  { code: '0177', label: 'BANFANB'                       },
-  { code: '0146', label: 'BANGENTE'                      },
-  { code: '0173', label: 'Banco Internacional de Des.'   },
-  { code: '0105', label: 'Banco Mercantil'               },
-  { code: '0138', label: 'Banco Plaza'                   },
-  { code: '0108', label: 'Banco Provincial (BBVA)'       },
-  { code: '0104', label: 'Venezolano de Crédito (BVC)'   },
-  { code: '0172', label: 'Bancamiga'                     },
-  { code: '0168', label: 'Bancrecer'                     },
-  { code: '0134', label: 'Banesco'                       },
-  { code: '0174', label: 'Banplus'                       },
-  { code: '0191', label: 'BNC'                           },
-  { code: '0157', label: 'DelSur'                        },
-  { code: '0151', label: 'Fondo Común'                   },
-  { code: '0601', label: 'IMCP'                          },
-  { code: '0169', label: 'Mi Banco'                      },
-  { code: '0137', label: 'Sofitasa'                      },
+  { code: '0128', label: 'Banco Caroní' },
+  { code: '0114', label: 'Bancaribe' },
+  { code: '0163', label: 'Banco del Tesoro' },
+  { code: '0102', label: 'Banco de Venezuela (BDV)' },
+  { code: '0115', label: 'Banco Exterior' },
+  { code: '0177', label: 'BANFANB' },
+  { code: '0146', label: 'BANGENTE' },
+  { code: '0173', label: 'Banco Internacional de Des.' },
+  { code: '0105', label: 'Banco Mercantil' },
+  { code: '0138', label: 'Banco Plaza' },
+  { code: '0108', label: 'Banco Provincial (BBVA)' },
+  { code: '0104', label: 'Venezolano de Crédito (BVC)' },
+  { code: '0172', label: 'Bancamiga' },
+  { code: '0168', label: 'Bancrecer' },
+  { code: '0134', label: 'Banesco' },
+  { code: '0174', label: 'Banplus' },
+  { code: '0191', label: 'BNC' },
+  { code: '0157', label: 'DelSur' },
+  { code: '0151', label: 'Fondo Común' },
+  { code: '0601', label: 'IMCP' },
+  { code: '0169', label: 'Mi Banco' },
+  { code: '0137', label: 'Sofitasa' },
 ];
 
 const PAYMENT_OPTIONS: {
@@ -58,10 +61,10 @@ const PAYMENT_OPTIONS: {
   sub: string;
   Icon: React.ElementType;
 }[] = [
-  // { method: 'transfer', label: 'Transferencia',  sub: 'Referencia bancaria',     Icon: Building2  },
-  { method: 'mobile',   label: 'Pago móvil',     sub: 'Banco Activo · Verificación automática', Icon: Smartphone },
-  { method: 'otp',      label: 'Débito OTP',     sub: 'SyPago · Débito directo', Icon: KeyRound   },
-];
+    // { method: 'transfer', label: 'Transferencia',  sub: 'Referencia bancaria',     Icon: Building2  },
+    { method: 'mobile', label: 'Pago móvil', sub: 'Banco Activo · Verificación automática', Icon: Smartphone },
+    { method: 'otp', label: 'Débito OTP', sub: 'SyPago · Débito directo', Icon: KeyRound },
+  ];
 
 type VerifyStatus = 'idle' | 'loading' | 'success' | 'failed' | 'error';
 type OtpStep = 'form' | 'requesting' | 'awaiting_otp' | 'confirming' | 'done' | 'error';
@@ -75,38 +78,111 @@ export function PaymentStep() {
   const quoteBasis = resolveRcvQuoteBasis(vehicle?.tipoPlaca, rcv.frecuencia, vehicle?.tipoCarnet);
 
   // ── Campos compartidos ────────────────────────────────────────────────
-  const [bankCode,    setBankCode]    = useState('');
-  const [bankLabel,   setBankLabel]   = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [bankLabel, setBankLabel] = useState('');
 
   // ── Pago móvil (Meritop) ──────────────────────────────────────────────
-  const [telefonoPago, setTelPago]   = useState('');
-  const [montoPagoM,   setMontoM]    = useState('');
-  const [fechaPagoM,   setFechaM]    = useState('');
-  const [horaPagoM,    setHoraM]     = useState('');
+  const [telefonoPago, setTelPago] = useState('');
+  const [montoPagoM, setMontoM] = useState('');
+  const [fechaPagoM, setFechaM] = useState('');
+  const [horaPagoM, setHoraM] = useState('');
 
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>('idle');
   const [verifyResult, setVerifyResult] = useState<VerifyMobilePaymentResponse | null>(null);
-  const [verifyError,  setVerifyError]  = useState<string>('');
+  const [verifyError, setVerifyError] = useState<string>('');
 
   // ── SyPago Débito OTP ─────────────────────────────────────────────────
-  const [otpDocType,   setOtpDocType]   = useState('V');
-  const [otpDocNum,    setOtpDocNum]    = useState('');
-  const [otpName,      setOtpName]      = useState('');
-  const [otpBankCode,  setOtpBankCode]  = useState('');
-  const [otpPhone,     setOtpPhone]     = useState('');
-  const [otpAmount,    setOtpAmount]    = useState('');
-  const [otpCode,      setOtpCode]      = useState('');
-  const [otpStep,      setOtpStep]      = useState<OtpStep>('form');
-  const [otpError,     setOtpError]     = useState('');
-  const [otpResult,    setOtpResult]    = useState<SypagoOtpConfirmResponse | null>(null);
+  const [otpDocType, setOtpDocType] = useState('V');
+  const [otpDocNum, setOtpDocNum] = useState('');
+  const [otpName, setOtpName] = useState('');
+  const [otpBankCode, setOtpBankCode] = useState('');
+  const [otpPhone, setOtpPhone] = useState('');
+  const [otpAmount, setOtpAmount] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpStep, setOtpStep] = useState<OtpStep>('form');
+  const [otpError, setOtpError] = useState('');
+  const [otpResult, setOtpResult] = useState<SypagoOtpConfirmResponse | null>(null);
   // otpSubmitted: true después del primer intento de "Solicitar OTP"
   const [otpSubmitted, setOtpSubmitted] = useState(false);
-  const [otpCooldown,  setOtpCooldown]  = useState(0); // segundos restantes para reenvío
+  const [otpCooldown, setOtpCooldown] = useState(0); // segundos restantes para reenvío
 
   // Latch síncrono para evitar doble-click en "Confirmar pago".
   // useRef garantiza que el bloqueo ocurre ANTES del siguiente render,
   // a diferencia de setState que necesita un ciclo para propagarse.
   const confirmInFlight = useRef(false);
+
+  function hasProveedorSelection(snap: ReturnType<typeof useWizardStore.getState>): boolean {
+    return Boolean(snap.selectedProveedor?.cci_rif || snap.cproveedor);
+  }
+
+  async function handleRegisterProveedorPolicy(overridePoliza?: number | string) {
+    const snap = useWizardStore.getState();
+    const poliza = overridePoliza || snap.policy?.cnpoliza;
+    const now = new Date();
+    const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+    // Sin valores de relleno: si falta un dato no se escribe en Sis2000 (adproveedor).
+    const cciRifClean = Number(String(snap.selectedProveedor?.cci_rif ?? snap.cproveedor ?? '').replace(/\D/g, ''));
+    const claveNum = Number(snap.selectedProveedor?.cclave_num ?? snap.cclave_num);
+    const tipoServ = String(snap.selectedProveedor?.itiposerv ?? snap.itiposerv ?? '').trim();
+    const plan = String(snap.selectedProveedor?.cplan ?? snap.cplan_proveedor ?? snap.selectedPlan?.cplan ?? '').trim();
+    const ramo = Number(snap.selectedProveedor?.cramo ?? snap.cramo_proveedor ?? product.cramo);
+    const usuario = Number(snap.metadataCanal?.cusuario);
+    const mcosto = Number(quote?.mprima);
+    const mcostoext = Number(quote?.mprimaext ?? snap.selectedPlan?.priceNum);
+    const ptasamon = Number(quote?.ptasa);
+
+    const faltantes = ([
+      ['póliza', Boolean(poliza)],
+      ['RIF del proveedor', cciRifClean > 0],
+      ['clave del proveedor', claveNum > 0],
+      ['tipo de servicio', Boolean(tipoServ)],
+      ['plan', Boolean(plan)],
+      ['ramo', ramo > 0],
+      ['usuario (cusuario)', usuario > 0],
+      ['prima', mcosto > 0 && mcostoext > 0],
+      ['tasa', ptasamon > 0],
+    ] as const).filter(([, ok]) => !ok).map(([label]) => label);
+    if (!poliza || faltantes.length > 0) {
+      const msg = `Faltan datos para registrar el proveedor: ${faltantes.join(', ')}.`;
+      toast.error('Error en registro de proveedor', msg);
+      throw new Error(msg);
+    }
+
+    const payload: RegisterPolicyProveedorDto = {
+      cpoliza: poliza,
+      fanopol: now.getFullYear(),
+      fmespol: now.getMonth() + 1,
+      cramo: ramo,
+      ccerti: 1, // Certificado inicial
+      cplan: plan,
+      u_version: 'A', // Versión activa inicial en Sis2000
+      fdesde: now.toISOString().split('T')[0],
+      fhasta: nextYear.toISOString().split('T')[0],
+      cci_rif: cciRifClean,
+      cclave_num: claveNum,
+      itiposerv: tipoServ,
+      mcosto,
+      mcostoext,
+      cmoneda: 'D', // Moneda USD
+      ptasamon,
+      fingreso: now.toISOString(),
+      cusuario: usuario,
+    };
+
+    try {
+      const res = await registerPolicyProveedor(payload);
+      toast.success(
+        'Proveedor registrado en póliza',
+        `Póliza: ${poliza} · Proveedor: ${snap.selectedProveedor?.xcliente || snap.xproveedor || cciRifClean} · Ramo: ${ramo}`,
+      );
+      return res;
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Error al registrar proveedor en póliza';
+      toast.error('Error en registro de proveedor', msg);
+      throw err;
+    }
+  }
 
   // Resetear estados al cambiar método de pago
   useEffect(() => {
@@ -149,8 +225,8 @@ export function PaymentStep() {
   }, [paymentMethod, setPaymentMethod]);
 
   const isLoadingQuote = quoteState === 'loading';
-  const hasRealQuote   = quoteState === 'ready' && Boolean(quote);
-  const isQuoteError   = quoteState === 'error';
+  const hasRealQuote = quoteState === 'ready' && Boolean(quote);
+  const isQuoteError = quoteState === 'error';
 
   const freqAmounts = resolveFrecuenciaAmounts(hasRealQuote ? quote : null, frecuenciaCode, {
     quoteBasis,
@@ -165,11 +241,11 @@ export function PaymentStep() {
   // ── Validaciones transferencia ──────────────────────────────────────
   // ── Validaciones pago móvil (Meritop) ─────────────────────────────
   const movErrors = {
-    banco    : !bankCode                                          ? 'Selecciona el banco'                : '',
-    telefono : telefonoPago.length > 0 && !/^04\d{9}$/.test(telefonoPago) ? 'Formato inválido: 04XXXXXXXXX' : !telefonoPago ? 'El teléfono es obligatorio' : '',
-    monto    : !montoPagoM                                        ? 'El monto es obligatorio'            : isNaN(parseFloat(montoPagoM)) || parseFloat(montoPagoM) <= 0 ? 'Monto inválido' : '',
-    fecha    : !fechaPagoM                                        ? 'La fecha es obligatoria'            : '',
-    hora     : !horaPagoM                                        ? 'La hora es obligatoria'             : '',
+    banco: !bankCode ? 'Selecciona el banco' : '',
+    telefono: telefonoPago.length > 0 && !/^04\d{9}$/.test(telefonoPago) ? 'Formato inválido: 04XXXXXXXXX' : !telefonoPago ? 'El teléfono es obligatorio' : '',
+    monto: !montoPagoM ? 'El monto es obligatorio' : isNaN(parseFloat(montoPagoM)) || parseFloat(montoPagoM) <= 0 ? 'Monto inválido' : '',
+    fecha: !fechaPagoM ? 'La fecha es obligatoria' : '',
+    hora: !horaPagoM ? 'La hora es obligatoria' : '',
   };
   const pagoMovilListo = Object.values(movErrors).every(e => !e) && telefonoPago.length === 11;
 
@@ -184,14 +260,18 @@ export function PaymentStep() {
 
     try {
       const result = await verifyMobilePayment({
-        sourcePhoneNumber : telefonoPago,
+        sourcePhoneNumber: telefonoPago,
         bankCode,
-        amount            : parseFloat(montoPagoM),
+        amount: parseFloat(montoPagoM),
         paidOn,
       });
 
       setVerifyResult(result);
       setVerifyStatus(result.isVerified ? 'success' : 'failed');
+
+      if (result.isVerified && hasProveedorSelection(useWizardStore.getState())) {
+        void handleRegisterProveedorPolicy();
+      }
     } catch (err) {
       const msg = err instanceof MobilePaymentVerifyError
         ? err.message
@@ -205,23 +285,23 @@ export function PaymentStep() {
   // Mismo patrón que pago móvil: errores de formato mientras escribe,
   // errores de campo vacío visibles siempre (sin gate de "touched").
   const otpErrors = {
-    docNum : otpDocNum.length > 0 && !/^\d{5,10}$/.test(otpDocNum)
-               ? 'Solo dígitos, entre 5 y 10 caracteres'
-               : !otpDocNum ? 'Número de documento obligatorio' : '',
+    docNum: otpDocNum.length > 0 && !/^\d{5,10}$/.test(otpDocNum)
+      ? 'Solo dígitos, entre 5 y 10 caracteres'
+      : !otpDocNum ? 'Número de documento obligatorio' : '',
 
-    name   : otpName.length > 0 && otpName.trim().split(/\s+/).filter(Boolean).length < 2
-               ? 'Ingresa nombre y apellido'
-               : !otpName.trim() ? 'Nombre obligatorio' : '',
+    name: otpName.length > 0 && otpName.trim().split(/\s+/).filter(Boolean).length < 2
+      ? 'Ingresa nombre y apellido'
+      : !otpName.trim() ? 'Nombre obligatorio' : '',
 
-    bank   : !otpBankCode ? 'Selecciona el banco' : '',
+    bank: !otpBankCode ? 'Selecciona el banco' : '',
 
-    phone  : otpPhone.length > 0 && !/^04\d{9}$/.test(otpPhone)
-               ? 'Formato inválido: 04XXXXXXXXX'
-               : !otpPhone ? 'Teléfono obligatorio' : '',
+    phone: otpPhone.length > 0 && !/^04\d{9}$/.test(otpPhone)
+      ? 'Formato inválido: 04XXXXXXXXX'
+      : !otpPhone ? 'Teléfono obligatorio' : '',
 
-    amount : otpAmount.length > 0 && (isNaN(parseFloat(otpAmount)) || parseFloat(otpAmount) <= 0)
-               ? 'Ingresa un monto válido'
-               : !otpAmount ? 'Monto obligatorio' : '',
+    amount: otpAmount.length > 0 && (isNaN(parseFloat(otpAmount)) || parseFloat(otpAmount) <= 0)
+      ? 'Ingresa un monto válido'
+      : !otpAmount ? 'Monto obligatorio' : '',
   };
   const otpFormListo = !Object.values(otpErrors).some(e => e);
 
@@ -235,11 +315,11 @@ export function PaymentStep() {
     let succeeded = false;
     try {
       const resp = await sypagoRequestOtp({
-        documentType  : otpDocType,
+        documentType: otpDocType,
         documentNumber: otpDocNum,
         debtorBankCode: otpBankCode,
-        debtorPhone   : otpPhone,
-        amount        : parseFloat(otpAmount),
+        debtorPhone: otpPhone,
+        amount: parseFloat(otpAmount),
       });
       if (resp && resp.success === false) {
         throw new SypagoError({ message: resp.message || 'Error al solicitar OTP.', code: 'SYPAGO_ERROR' });
@@ -267,17 +347,21 @@ export function PaymentStep() {
     setOtpError('');
     try {
       const result = await sypagoConfirmOtp({
-        documentType  : otpDocType,
+        documentType: otpDocType,
         documentNumber: otpDocNum,
         debtorBankCode: otpBankCode,
-        debtorPhone   : otpPhone,
-        debtorName    : otpName,
-        amount        : parseFloat(otpAmount),
-        otp           : otpCode.trim(),
-        concept       : 'Prima de seguro RCV - La Mundial',
+        debtorPhone: otpPhone,
+        debtorName: otpName,
+        amount: parseFloat(otpAmount),
+        otp: otpCode.trim(),
+        concept: 'Prima de seguro Combinado Familiar - La Mundial',
       });
       setOtpResult(result);
       setOtpStep('done');
+
+      if (hasProveedorSelection(useWizardStore.getState())) {
+        void handleRegisterProveedorPolicy();
+      }
       // Latch queda activo en 'done' — no se puede volver a confirmar
     } catch (err) {
       setOtpError(err instanceof SypagoError ? err.message : 'Error al confirmar pago.');
@@ -467,8 +551,8 @@ export function PaymentStep() {
                   hasRealQuote
                     ? 'Monto exacto según cotización oficial · no editable'
                     : isLoadingQuote
-                    ? 'Calculando monto en bolívares desde la cotización...'
-                    : 'Esperando cotización para calcular el monto'
+                      ? 'Calculando monto en bolívares desde la cotización...'
+                      : 'Esperando cotización para calcular el monto'
                 }
                 error={movErrors.monto}
                 full
@@ -499,21 +583,21 @@ export function PaymentStep() {
                 ${verifyStatus === 'success'
                   ? 'bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)]'
                   : verifyStatus === 'failed' || verifyStatus === 'error'
-                  ? 'bg-rose-500 text-white'
-                  : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_8px_20px_rgba(79,70,229,0.35)] hover:shadow-[0_12px_28px_rgba(79,70,229,0.45)] hover:-translate-y-0.5 active:translate-y-0'
+                    ? 'bg-rose-500 text-white'
+                    : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_8px_20px_rgba(79,70,229,0.35)] hover:shadow-[0_12px_28px_rgba(79,70,229,0.45)] hover:-translate-y-0.5 active:translate-y-0'
                 }
               `}
             >
               {verifyStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
               {verifyStatus === 'success' && <CheckCircle2 size={16} />}
               {(verifyStatus === 'failed' || verifyStatus === 'error') && <XCircle size={16} />}
-              {verifyStatus === 'idle'    && <Smartphone size={16} />}
+              {verifyStatus === 'idle' && <Smartphone size={16} />}
 
               {verifyStatus === 'loading' ? 'Verificando con Banco Activo...' :
-               verifyStatus === 'success' ? 'Pago verificado correctamente' :
-               verifyStatus === 'failed'  ? 'Pago no encontrado · Reintentar' :
-               verifyStatus === 'error'   ? 'Error · Reintentar' :
-               'Verificar pago móvil'}
+                verifyStatus === 'success' ? 'Pago verificado correctamente' :
+                  verifyStatus === 'failed' ? 'Pago no encontrado · Reintentar' :
+                    verifyStatus === 'error' ? 'Error · Reintentar' :
+                      'Verificar pago móvil'}
 
               {(verifyStatus === 'failed' || verifyStatus === 'error') && (
                 <RefreshCw size={13} className="ml-1 opacity-80" />
@@ -608,7 +692,7 @@ export function PaymentStep() {
                         onChange={(e) => setOtpDocType(e.target.value)}
                         className="w-[4.5rem] shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
                       >
-                        {['V','E','J','G','P'].map(t => <option key={t} value={t}>{t}</option>)}
+                        {['V', 'E', 'J', 'G', 'P'].map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                       <Input
                         value={otpDocNum}
@@ -658,8 +742,8 @@ export function PaymentStep() {
                       hasRealQuote
                         ? 'Monto exacto según cotización oficial · no editable'
                         : isLoadingQuote
-                        ? 'Calculando monto en bolívares desde la cotización...'
-                        : 'Esperando cotización para calcular el monto'
+                          ? 'Calculando monto en bolívares desde la cotización...'
+                          : 'Esperando cotización para calcular el monto'
                     }
                     error={otpErrors.amount}
                     full
