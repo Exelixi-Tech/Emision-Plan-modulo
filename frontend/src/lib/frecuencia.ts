@@ -36,14 +36,11 @@ export function isFrecuenciaFraccionada(code?: string | null): boolean {
 }
 
 /**
- * Personas: Pagos aún cobra la prima anual (sin cuotas ni domiciliación), así que no se
- * ofrecen M/T/S/C. Si no queda ninguna, se usa `fallback` (Anual).
+ * Personas: A/S/T/M como RCV (Pagos cobra la 1ª cuota y domicilia el resto).
+ * C (cuatrimestral) no se ofrece. Si no queda ninguna, se usa `fallback` (Anual).
  */
 export function frecuenciasPersonas<T extends { code: number | string }>(items: T[], fallback: T[]): T[] {
-  const list = items.filter((i) => {
-    const c = normalizeFrecuenciaCode(String(i.code));
-    return !FREQ_FRACCIONADA.has(c) && c !== 'C';
-  });
+  const list = items.filter((i) => normalizeFrecuenciaCode(String(i.code)) !== 'C');
   return list.length ? list : fallback;
 }
 
