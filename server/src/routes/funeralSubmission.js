@@ -143,6 +143,9 @@ router.post('/submissions', async (req, res) => {
     );
 
     const scoring = computePolicyHealthScore(questions, insureds, rules);
+    // Sin preguntas en el plan no hay semáforo que evaluar: pasa como verde (pago directo).
+    const sinPreguntas = !Array.isArray(questions) || questions.length === 0;
+    const verdict = sinPreguntas ? 'emit' : scoring.verdict;
 
     // Solo el rechazo de una pregunta (términos, blockIfTrue, etc.) corta sin mesa.
     // El rango "Alto" debe crear solicitud para que mesa técnica la vea.
@@ -243,7 +246,7 @@ router.post('/submissions', async (req, res) => {
       },
       snapshot: {
         ...snapshot,
-        healthVerdict: scoring.verdict,
+        healthVerdict: verdict,
         healthByInsured: (scoring.perInsured || []).map((p) => ({
           key: p.key,
           label: p.label,
@@ -251,19 +254,24 @@ router.post('/submissions', async (req, res) => {
           verdict: p.scoring.verdict,
         })),
       },
-      verdict: scoring.verdict,
+      verdict,
       reviewerEmails: rules.reviewerEmails,
-      notifyReviewers: scoring.verdict !== 'emit',
-      autoApprove: scoring.verdict === 'emit',
+      notifyReviewers: verdict !== 'emit',
+      autoApprove: verdict === 'emit',
+      // Verde: aprobada sin link ni correo; el emisor sigue al pago (Nexus sin soporte: link + correo).
+      directPay: verdict === 'emit',
     });
 
-    const autoPayOk = scoring.verdict === 'emit' && submission?.estado === 'approved';
-    const clientVerdict = autoPayOk ? 'emit' : scoring.verdict === 'emit' ? 'referred' : scoring.verdict;
-    const clientMessage = autoPayOk
-      ? scoring.verdictMessage
-      : scoring.verdict === 'emit'
-        ? 'Un técnico revisará tu solicitud antes de continuar al pago.'
-        : scoring.verdictMessage;
+    const autoPayOk = verdict === 'emit' && submission?.estado === 'approved';
+    const directPay = autoPayOk && !submission?.paymentUrl;
+    const clientVerdict = autoPayOk ? 'emit' : verdict === 'emit' ? 'referred' : verdict;
+    const clientMessage = directPay
+      ? 'Solicitud aprobada. Continúa con el pago.'
+      : autoPayOk
+        ? scoring.verdictMessage
+        : verdict === 'emit'
+          ? 'Un técnico revisará tu solicitud antes de continuar al pago.'
+          : scoring.verdictMessage;
 
     return res.status(201).json({
       success: true,
@@ -283,6 +291,7 @@ router.post('/submissions', async (req, res) => {
       },
       quote: quoteFinal,
       premiumAdjust: premiumAdjust ?? null,
+      directPay,
       message: clientMessage,
     });
   } catch (err) {
