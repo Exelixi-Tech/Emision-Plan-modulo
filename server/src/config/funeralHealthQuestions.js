@@ -205,6 +205,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     catalogForConsultedRamo,
     catalogForProducto,
     questionsStoredForRamo,
+    scoringRulesStoredForRamo,
   } = require('./healthQuestionsByRamo');
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
   // Preguntas solo por producto del SSO (76 vida, 78/79 AP, 57 funerario). Otro producto
@@ -213,7 +214,8 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   const byProducto = catalogForProducto(prod);
   const cramo = byProducto ? byProducto.cramo : resolveHealthCramo(opts, meta);
   const consulted = byProducto || (prod ? null : catalogForConsultedRamo(cramo));
-  const ramoDirecto = consulted && (consulted.kind === 'ap' || consulted.kind === 'vida');
+  const ramoDirecto =
+    consulted && (consulted.kind === 'ap' || consulted.kind === 'vida' || consulted.kind === 'salud');
   const funerarioDeEsteProducto =
     consulted?.kind === 'funerario' && (!prod || Boolean(byProducto));
 
@@ -224,6 +226,8 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
+  /** Reglas del semáforo propias del ramo (tienen prioridad sobre las generales). */
+  let ramoRulesRaw = null;
   let foundStoredRamo = false;
   try {
     const {
@@ -241,6 +245,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       if (cfg?.healthScoringRules && !scoringRulesRaw) {
         scoringRulesRaw = cfg.healthScoringRules;
       }
+      if (!ramoRulesRaw) ramoRulesRaw = scoringRulesStoredForRamo(cfg, cramo);
       if (ramoDirecto) {
         const stored = questionsStoredForRamo(cfg, cramo);
         if (stored) {
@@ -326,7 +331,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     triedEmpresas: candidates,
     canal: canalKey,
     resolvedCanal,
-    scoringRules: scoringRulesRaw ?? DEFAULT_SCORING_RULES,
+    scoringRules: ramoRulesRaw ?? scoringRulesRaw ?? DEFAULT_SCORING_RULES,
   };
 }
 

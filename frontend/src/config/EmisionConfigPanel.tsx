@@ -36,6 +36,16 @@ const FUNERARIO_SOLO_PREGUNTAS = true;
 
 type Tab = 'general' | 'preguntas' | 'conexion' | 'mapeador';
 
+/** Ramos con cuestionario y semáforo propios: 9 Funerario, 1 Vida, 5 AP, 7 Salud. */
+type RamoCuestionario = '9' | '1' | '5' | '7';
+
+const RAMO_NOMBRES: Record<RamoCuestionario, string> = {
+  '9': 'Funerario',
+  '1': 'Vida',
+  '5': 'Accidentes personales',
+  '7': 'Salud',
+};
+
 interface ApiMapEntry {
   internalKey: string;
   externalKey: string;
@@ -111,13 +121,19 @@ export function EmisionConfigPanel() {
   });
   const [funeralPlansLoading, setFuneralPlansLoading] = useState(false);
   const [funeralPlansError, setFuneralPlansError] = useState(false);
+  /** Reglas generales del semáforo (las usa Funerario y cualquier ramo sin reglas propias). */
   const [scoringRules, setScoringRules] = useState<FuneralScoringRules>(
     parseFuneralScoringRules(null),
   );
+  /** Reglas del semáforo por ramo (product_config.healthScoringRulesByRamo): 1 Vida, 5 AP, 7 Salud. */
+  const [rulesByRamo, setRulesByRamo] = useState<Record<string, FuneralScoringRules>>({});
   const [preguntasVista, setPreguntasVista] = useState<'cuestionario' | 'puntaje'>('cuestionario');
   /** Scoring no usa el SSO. Cada ramo tiene su lista en product_config.healthQuestionsByRamo. */
-  const [scoringRamo, setScoringRamo] = useState<'9' | '1' | '5'>('9');
+  const [scoringRamo, setScoringRamo] = useState<RamoCuestionario>('9');
   const [byRamo, setByRamo] = useState<Record<string, HealthQuestionDraft[]>>({});
+  /** Reglas que ve el editor: Funerario usa las generales; otro ramo las suyas o, si no tiene, las generales. */
+  const reglasRamoActivo =
+    scoringRamo === '9' ? scoringRules : (rulesByRamo[scoringRamo] ?? scoringRules);
 
   useEffect(() => {
     if (producto !== 'funerario') return;
@@ -133,8 +149,10 @@ export function EmisionConfigPanel() {
           new URL(window.location.href).searchParams.get('token')?.trim() || '';
         const headers: Record<string, string> = {};
         if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
+        // Salud (7) no entra por producto: se pide el catálogo del ramo (como Vida 1 y AP 5).
+        const catalogoRamo = cramo === '7' ? '&catalogo=ramo' : '';
         const res = await fetch(
-          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(cramo)}`,
+          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(cramo)}${catalogoRamo}`,
           { headers },
         );
         const data = await res.json().catch(() => ({}));
@@ -197,6 +215,14 @@ export function EmisionConfigPanel() {
     setEdadMaxima(config.edadMaxima ?? 70);
     if (producto === 'funerario') {
       setScoringRules(parseFuneralScoringRules(config.healthScoringRules));
+      const rawRules = config.healthScoringRulesByRamo as Record<string, unknown> | undefined;
+      const nextRules: Record<string, FuneralScoringRules> = {};
+      if (rawRules && typeof rawRules === 'object' && !Array.isArray(rawRules)) {
+        for (const [k, v] of Object.entries(rawRules)) {
+          if (v && typeof v === 'object') nextRules[k] = parseFuneralScoringRules(v);
+        }
+      }
+      setRulesByRamo(nextRules);
     }
     if (!healthQuestionsDirty.current && producto === 'funerario') {
       const legacy = config.healthQuestions as HealthQuestionDraft[] | undefined;
@@ -238,9 +264,9 @@ export function EmisionConfigPanel() {
       const storedRamo = config.healthQuestionsByRamo as
         | Record<string, HealthQuestionDraft[]>
         | undefined;
-      const ramoSeed = ramoCatalog as Record<'1' | '5' | '9', HealthQuestionDraft[]>;
+      const ramoSeed = ramoCatalog as Partial<Record<RamoCuestionario, HealthQuestionDraft[]>>;
       const nextRamo: Record<string, HealthQuestionDraft[]> = {};
-      for (const key of ['1', '5', '9'] as const) {
+      for (const key of ['1', '5', '9', '7'] as const) {
         const saved = storedRamo?.[key];
         const fallback = ramoSeed[key] ?? [];
         nextRamo[key] = enrichHealthQuestionScores(
@@ -268,7 +294,15 @@ export function EmisionConfigPanel() {
   };
   const removeMapEntry = (idx: number) => { setApiMap(p => p.filter((_, i) => i !== idx)); setSaved(false); };
 
-  const cleanQuestions = (list: HealthQuestionDraft[], ramo: '1' | '5' | '9' = '9'): HealthQuestionDraft[] =>
+  /** Cuestionario de cada ramo para product_config.healthQuestionsByRamo (incluye Salud 7). */
+  const questionsByRamoPayload = (): Record<RamoCuestionario, HealthQuestionDraft[]> => ({
+    '1': cleanQuestions(byRamo['1'] || [], '1'),
+    '5': cleanQuestions(byRamo['5'] || [], '5'),
+    '7': cleanQuestions(byRamo['7'] || [], '7'),
+    '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || []), '9'),
+  });
+
+  const cleanQuestions = (list: HealthQuestionDraft[], ramo: RamoCuestionario = '9'): HealthQuestionDraft[] =>
     list.map((q) => {
       const plans = (q.plans || []).map(String).filter(Boolean);
       const codes = planCodesByRamo[ramo] || [];
@@ -382,12 +416,9 @@ export function EmisionConfigPanel() {
       soloPreguntas && cleanedQuestions && byCanalPayload
         ? {
             healthQuestionsByCanal: byCanalPayload,
-            healthQuestionsByRamo: {
-              '1': cleanQuestions(byRamo['1'] || [], '1'),
-              '5': cleanQuestions(byRamo['5'] || [], '5'),
-              '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || []), '9'),
-            },
+            healthQuestionsByRamo: questionsByRamoPayload(),
             healthScoringRules: scoringRules,
+            healthScoringRulesByRamo: rulesByRamo,
             ...(Object.keys(byCanalPayload).includes('default')
               ? { healthQuestions: byCanalPayload.default }
               : {}),
@@ -411,12 +442,9 @@ export function EmisionConfigPanel() {
             ...(cleanedQuestions && byCanalPayload
               ? {
                   healthQuestionsByCanal: byCanalPayload,
-                  healthQuestionsByRamo: {
-                    '1': cleanQuestions(byRamo['1'] || [], '1'),
-                    '5': cleanQuestions(byRamo['5'] || [], '5'),
-                    '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || []), '9'),
-                  },
+                  healthQuestionsByRamo: questionsByRamoPayload(),
                   healthScoringRules: scoringRules,
+                  healthScoringRulesByRamo: rulesByRamo,
                   ...(Object.keys(byCanalPayload).includes('default')
                     ? { healthQuestions: byCanalPayload.default }
                     : {}),
@@ -617,6 +645,7 @@ export function EmisionConfigPanel() {
                           ['9', 'Funerario'],
                           ['1', 'Vida'],
                           ['5', 'Accidentes personales'],
+                          ['7', 'Salud'],
                         ] as const).map(([key, label]) => {
                           const rows = byRamo[key] || [];
                           const padres = rows.filter((q) => !q.showIf?.field).length;
@@ -754,10 +783,12 @@ export function EmisionConfigPanel() {
                     </div>
                     {preguntasVista === 'puntaje' ? (
                     <FuneralScoringRulesEditor
-                      rules={scoringRules}
-                      questions={healthQuestions}
+                      rules={reglasRamoActivo}
+                      questions={scoringRamo === '9' ? healthQuestions : (byRamo[scoringRamo] || [])}
                       onChange={(next) => {
-                        setScoringRules(next);
+                        // Funerario edita las reglas generales; cada otro ramo guarda las suyas.
+                        if (scoringRamo === '9') setScoringRules(next);
+                        else setRulesByRamo((prev) => ({ ...prev, [scoringRamo]: next }));
                         setSaved(false);
                       }}
                     />
@@ -768,11 +799,11 @@ export function EmisionConfigPanel() {
                       planOptions={funeralPlanOptions}
                       plansLoading={funeralPlansLoading}
                       plansError={funeralPlansError}
-                      ramoName={scoringRamo === '1' ? 'Vida' : scoringRamo === '5' ? 'Accidentes personales' : 'Funerario'}
+                      ramoName={RAMO_NOMBRES[scoringRamo]}
                       seedQuestions={
                         scoringRamo === '9'
                           ? undefined
-                          : (ramoCatalog as Record<'1' | '5', HealthQuestionDraft[]>)[scoringRamo]
+                          : (ramoCatalog as Partial<Record<RamoCuestionario, HealthQuestionDraft[]>>)[scoringRamo] ?? []
                       }
                     />
                     )}

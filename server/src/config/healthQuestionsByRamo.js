@@ -210,8 +210,20 @@ applyDefaultScores(AP, DEFAULT_SCORES.ap);
 function storedRamoKey(cramo) {
   const n = Number(cramo);
   if (n === 45 || n === 9) return '9';
-  if (n === 1 || n === 5) return String(n);
+  if (n === 1 || n === 5 || n === 7) return String(n);
   return '';
+}
+
+/**
+ * Reglas del semáforo del ramo (product_config.healthScoringRulesByRamo) o `null`
+ * para usar las generales (healthScoringRules).
+ */
+function scoringRulesStoredForRamo(cfg, cramo) {
+  const key = storedRamoKey(cramo);
+  const by = cfg?.healthScoringRulesByRamo;
+  if (!key || !by || typeof by !== 'object' || Array.isArray(by)) return null;
+  const rules = by[key];
+  return rules && typeof rules === 'object' && !Array.isArray(rules) ? rules : null;
 }
 
 /**
@@ -238,7 +250,7 @@ function catalogForConsultedRamo(cramo) {
 }
 
 /** Ramo con el que se guarda cada cuestionario en product_config.healthQuestionsByRamo. */
-const RAMO_BY_KIND = { vida: 1, ap: 5, funerario: 9 };
+const RAMO_BY_KIND = { vida: 1, ap: 5, funerario: 9, salud: 7 };
 
 /**
  * @param {string | undefined} raw lista separada por comas (.env)
@@ -273,6 +285,10 @@ function catalogForProducto(cproducto) {
   if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_AP, '78,79').has(prod)) {
     return { kind: 'ap', questions: AP, cramo: RAMO_BY_KIND.ap };
   }
+  // Salud (ramo 7): sin cuestionario de fábrica; solo el que se configure en el parametrizador.
+  if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_SALUD, '14,15').has(prod)) {
+    return { kind: 'salud', questions: [], cramo: RAMO_BY_KIND.salud };
+  }
   return null;
 }
 
@@ -286,9 +302,16 @@ const PRODUCT_LABELS = { funerario: 'Funerario', vida: 'Vida', ap: 'Accidentes P
  */
 function productLabelFromMeta(meta) {
   const byProd = catalogForProducto(meta?.cproducto);
-  if (byProd) return PRODUCT_LABELS[byProd.kind];
+  if (byProd && PRODUCT_LABELS[byProd.kind]) return PRODUCT_LABELS[byProd.kind];
   const x = String(meta?.xproducto ?? '').trim();
   return x || undefined;
 }
 
-module.exports = { catalogForConsultedRamo, catalogForProducto, productLabelFromMeta, questionsStoredForRamo, FUNERARIO };
+module.exports = {
+  catalogForConsultedRamo,
+  catalogForProducto,
+  productLabelFromMeta,
+  questionsStoredForRamo,
+  scoringRulesStoredForRamo,
+  FUNERARIO,
+};
