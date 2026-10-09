@@ -69,6 +69,27 @@ export function isFuneralInsuredComplete(person: FuneralPerson, isTitular: boole
   );
 }
 
+function edadDesde(fechaNac?: string): number | null {
+  const m = String(fechaNac || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - Number(m[1]);
+  if (hoy.getMonth() + 1 < Number(m[2]) || (hoy.getMonth() + 1 === Number(m[2]) && hoy.getDate() < Number(m[3]))) edad -= 1;
+  return edad;
+}
+
+/** Cédula provisional del menor sin cédula: cédula del titular + correlativo (1, 2, …). */
+function cedulaProvisional(titularId: string, otros: FuneralPerson[]): string {
+  const base = String(titularId || '').replace(/\D/g, '');
+  if (!base) return '';
+  const usadas = new Set(otros.map((a) => String(a.identificacion || '').replace(/\D/g, '')));
+  for (let n = 1; n < 100; n += 1) {
+    const id = `${base}${n}`;
+    if (!usadas.has(id)) return id;
+  }
+  return '';
+}
+
 function formatFecha(iso?: string): string {
   const m = String(iso || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return iso || '—';
@@ -81,28 +102,54 @@ function FuneralExtraPersonForm({
   parentescoOptions,
   lockParentesco,
   ageErr,
+  provisionalId,
 }: {
   person: FuneralPerson;
   onChange: (patch: Partial<FuneralPerson>) => void;
   parentescoOptions: { value: string; label: string }[];
   lockParentesco: boolean;
   ageErr?: string;
+  /** Cédula provisional disponible (titular + correlativo) para un menor sin cédula. */
+  provisionalId?: string;
 }) {
   const catalogs = useCatalogs();
   const ciuState = useCiudades(person.cestado);
   const errors: Record<string, string | undefined> = {};
   if (ageErr && /edad|años|mínima|máxima/i.test(ageErr)) errors.fechaNac = ageErr;
   if (ageErr && !errors.fechaNac) errors.parentesco = ageErr;
+  const edad = edadDesde(person.fechaNac);
+  const puedeSinCedula = Boolean(provisionalId) && (edad == null || edad < 18);
+  const sinCedulaError = person.sinCedula && edad != null && edad >= 18
+    ? 'Solo los menores de edad pueden registrarse sin cédula.'
+    : undefined;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <Field label="Tipo Doc. Identidad *">
+      <Field label="Tipo Doc. Identidad *" error={sinCedulaError}>
         <IdentityInput
           tipoDoc={person.tipoDoc || 'V'}
           identificacion={person.identificacion}
           onTipoDocChange={(v) => onChange({ tipoDoc: v })}
-          onIdentificacionChange={(v) => onChange({ identificacion: v })}
+          onIdentificacionChange={(v) => {
+            if (!person.sinCedula) onChange({ identificacion: v });
+          }}
         />
+        {(puedeSinCedula || person.sinCedula) && (
+          <label className="mt-1.5 inline-flex items-center gap-2 text-[0.72rem] font-semibold text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(person.sinCedula)}
+              onChange={(e) =>
+                onChange(
+                  e.target.checked
+                    ? { sinCedula: true, tipoDoc: 'V', identificacion: provisionalId || person.identificacion }
+                    : { sinCedula: false, identificacion: '' },
+                )
+              }
+            />
+            Menor de edad sin cédula (usa la cédula del titular + correlativo)
+          </label>
+        )}
       </Field>
       <Field label="Parentesco *" error={errors.parentesco}>
         {lockParentesco ? (
@@ -391,6 +438,14 @@ export function FuneralInsuredsEditor({
                   parentescoOptions={parentescoOptions}
                   lockParentesco={false}
                   ageErr={ageErr}
+                  provisionalId={
+                    aseg.sinCedula
+                      ? aseg.identificacion
+                      : cedulaProvisional(
+                          funeral.asegurados[0]?.identificacion ?? '',
+                          funeral.asegurados.filter((_, i) => i !== idx),
+                        )
+                  }
                 />
               )}
             </li>

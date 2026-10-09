@@ -169,6 +169,8 @@ export interface FuneralPerson {
   /** Código de parentesco La Mundial (1=Titular, 2=Cónyuge, 3=Hijo(a)…). */
   parentesco: string;
   pporcen?: number;
+  /** Menor de edad sin cédula: se usa la cédula del titular + correlativo (provisional). */
+  sinCedula?: boolean;
   telefono?: string;
   email?: string;
   estadoCivil?: string;
