@@ -73,9 +73,6 @@ const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 /** Ramos con prima por días (viajero ramo 5 y viaje local ramo 25). */
 const VIAJERO_RAMOS = new Set([5, 25]);
 
-/** Productos Viajero (25) y Viajero Local (26): planes por producto con ndias (maplanes_frec). */
-const VIAJERO_PRODUCTOS = new Set(['25', '26']);
-
 /**
  * Fraccionadas (igual que RCV): se cotiza la prima anual y se emite con la frecuencia real;
  * el SP genera los N recibos, Pagos cobra el 1º y domicilia el resto.
@@ -144,11 +141,11 @@ function mapAsegurado(a) {
 router.get('/planes', async (req, res) => {
   const meta = funeralCanalMeta(req);
   const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
-  // Scoring de Vida (1) y Accidentes personales (5): el catálogo del ramo,
-  // sin el producto funerario 57 que siempre consulta el ramo 45.
-  // Viajero (25/26) también es ramo 5, pero sus planes van por producto (ndias).
-  const viajeroProducto = VIAJERO_PRODUCTOS.has(String(meta.cproducto ?? '').trim());
-  if (req.query.catalogo === 'ramo' || (!viajeroProducto && (askedRamo === 1 || askedRamo === 5))) {
+  // Catálogo del ramo: panel de scoring (catalogo=ramo) o llamadas sin producto (Vida 1 / AP 5).
+  // Con producto (MarketPlace/SSO, incluido Viajero 25/26) se consulta por producto + canal/productor
+  // (mausuplan), igual que SysIP: cada canal o productor ve solo los planes que tiene habilitados.
+  const conProducto = String(meta.cproducto ?? req.query.cproducto ?? '').trim() !== '';
+  if (req.query.catalogo === 'ramo' || (!conProducto && (askedRamo === 1 || askedRamo === 5))) {
     try {
       const targetRamo = Number.isFinite(askedRamo) ? askedRamo : 1;
       const result = await fetchPlanesV2({ ...meta, cramo: targetRamo });

@@ -149,8 +149,9 @@ export function EmisionConfigPanel() {
           new URL(window.location.href).searchParams.get('token')?.trim() || '';
         const headers: Record<string, string> = {};
         if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
-        // Salud (7) no entra por producto: se pide el catálogo del ramo (como Vida 1 y AP 5).
-        const catalogoRamo = cramo === '7' ? '&catalogo=ramo' : '';
+        // Vida (1), AP (5) y Salud (7) se configuran por ramo: se pide el catálogo del ramo
+        // explícito (el servidor consulta por producto cuando llega cproducto). Funerario sigue igual.
+        const catalogoRamo = cramo === '1' || cramo === '5' || cramo === '7' ? '&catalogo=ramo' : '';
         const res = await fetch(
           `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(cramo)}${catalogoRamo}`,
           { headers },
