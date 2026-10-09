@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSessionTokenDelegation } from './hooks/useSessionTokenDelegation';
-import { isFunerario } from './lib/product';
+import { isFunerario, isPatrimoniales } from './lib/product';
 import { isExelixiCatalogFlow } from './lib/exelixi-catalog';
 import RcvPlansApp from './apps/RcvPlansApp';
 import FuneralPlansApp from './apps/FuneralPlansApp';
+import PatrimonialPlansApp from './apps/PatrimonialPlansApp';
 import ExelixiCatalogPlansApp from './apps/ExelixiCatalogPlansApp';
 import ProveedorPlansApp from './apps/ProveedorPlansApp';
 import { DevFlowSwitcher } from './components/DevFlowSwitcher';

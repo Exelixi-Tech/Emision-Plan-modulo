@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FuneralPlansStep } from '../features/plans/FuneralPlansStep';
 import { FuneralHealthModal } from '../features/plans/FuneralHealthModal';
 import { FuneralSubmissionPending } from '../features/plans/FuneralSubmissionPending';
@@ -15,6 +15,8 @@ import {
   type HealthQuestion,
 } from '../lib/api';
 import { EmissionPlanShell } from './EmissionPlanShell';
+import { isFuneralInsuredComplete } from '../features/plans/FuneralInsuredsEditor';
+import { syncTitularFromTomador } from '../lib/funeral-sync';
 
 const FREC_LABELS: Record<string, string> = {
   M: 'Pago mensual',
@@ -32,12 +34,25 @@ function getSessionId(): string {
   }
 }
 
-function mapHealthToFuneral(answers: Record<string, unknown>) {
+function insuredKey(person: { tipoDoc?: string; identificacion?: string }, idx: number) {
+  const id = String(person.identificacion ?? '').replace(/\D/g, '');
+  if (id) return `${String(person.tipoDoc || 'V').trim()}-${id}`;
+  return `aseg-${idx}`;
+}
+
+function insuredLabel(person: { nombre?: string; apellido?: string; identificacion?: string }, idx: number) {
+  const name = [person.nombre, person.apellido].filter(Boolean).join(' ').trim();
+  return name || String(person.identificacion || '').trim() || `Asegurado ${idx + 1}`;
+}
+
+function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) {
+  const first = Object.values(byInsured)[0] ?? {};
   return {
-    diagnosticoEnfermedad: answers.diagnosticoEnfermedad === true,
-    descripcionEnfermedad: String(answers.descripcionEnfermedad ?? ''),
-    aceptaTerminos: answers.aceptaTerminos === true,
-    healthAnswers: answers,
+    diagnosticoEnfermedad: first.diagnosticoEnfermedad === true,
+    descripcionEnfermedad: String(first.descripcionEnfermedad ?? ''),
+    aceptaTerminos: first.aceptaTerminos === true,
+    healthAnswers: first,
+    healthAnswersByInsured: byInsured,
     healthQuestionnaireDone: true,
   };
 }
@@ -54,6 +69,36 @@ export default function FuneralPlansApp() {
   } = useWizardStore();
   const product = getProductConfig();
 
+  useEffect(() => {
+    syncTitularFromTomador();
+  }, [
+    sameInsured,
+    tomador.identificacion,
+    tomador.nombre,
+    tomador.apellido,
+    tomador.fechaNac,
+    tomador.sexo,
+    tomador.telefono,
+    tomador.email,
+    tomador.estadoCivil,
+    tomador.cestado,
+    tomador.cciudad,
+    tomador.direccion,
+    asegurado.identificacion,
+    asegurado.nombre,
+    asegurado.apellido,
+    asegurado.fechaNac,
+    asegurado.sexo,
+    asegurado.telefono,
+    asegurado.email,
+    asegurado.estadoCivil,
+    asegurado.cestado,
+    asegurado.cciudad,
+    asegurado.direccion,
+    asegurado.peso,
+    asegurado.estatura,
+  ]);
+
   const [healthModalOpen, setHealthModalOpen] = useState(false);
   const [healthQuestions, setHealthQuestions] = useState<HealthQuestion[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
@@ -62,7 +107,16 @@ export default function FuneralPlansApp() {
   const [pendingSubmission, setPendingSubmission] = useState<{
     id: string;
     scoreTotal: number;
+    verdict?: string;
+    message?: string;
   } | null>(null);
+
+  const healthInsureds = (funeral.asegurados || [])
+    .filter((a) => String(a.identificacion || '').trim())
+    .map((a, idx) => ({
+      key: insuredKey(a, idx),
+      label: insuredLabel(a, idx),
+    }));
 
   function toastPersonasBlocked(err: unknown) {
     const code = err instanceof PolicyEmitError ? err.code : '';
@@ -92,6 +146,19 @@ export default function FuneralPlansApp() {
   async function handleContinuar() {
     if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
     if (!selectedPlan?.cplan) return;
+    const incomplete = (funeral.asegurados || []).findIndex(
+      (a, idx) => !isFuneralInsuredComplete(a, idx === 0),
+    );
+    if (incomplete >= 0) {
+      toast.warning(
+        incomplete === 0 ? 'Faltan datos del titular' : 'Faltan datos del asegurado',
+        incomplete === 0
+          ? 'Completa estatura, peso, dirección y contacto del titular en el formulario.'
+          : 'Completa todos los datos del asegurado adicional (como en SysIP) antes de continuar.',
+        7000,
+      );
+      return;
+    }
     setValidatingEmit(true);
     try {
       await validateFuneralEmission({
@@ -131,11 +198,12 @@ export default function FuneralPlansApp() {
     }
   }
 
-  async function handleHealthConfirm(answers: Record<string, unknown>) {
+  async function handleHealthConfirm(byInsured: Record<string, Record<string, unknown>>) {
     if (!selectedPlan?.cplan) return;
     setSavingHealth(true);
     try {
       const sessionId = getSessionId();
+      const packed = { byInsured };
 
       await saveFuneralHealthAnswers({
         sessionId,
@@ -143,7 +211,7 @@ export default function FuneralPlansApp() {
         cramo: product.cramo,
         tomadorRif: `${tomador.tipoDoc}-${tomador.identificacion}`,
         planName: selectedPlan.name,
-        answers,
+        answers: packed,
       });
 
       const { submission, scoring } = await submitFuneralPolicyReview({
@@ -159,25 +227,29 @@ export default function FuneralPlansApp() {
           : funeral.beneficiarios?.[0]
             ? { ...funeral.beneficiarios[0] }
             : undefined,
-        funeral: { ...funeral, ...mapHealthToFuneral(answers) },
+        funeral: { ...funeral, ...mapHealthToFuneral(byInsured) },
         selectedPlan: { ...selectedPlan },
         quote: quote ? { ...quote } : null,
         quoteState,
-        healthAnswers: answers,
+        healthAnswers: packed,
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
       });
 
-      setFuneral(mapHealthToFuneral(answers));
+      setFuneral(mapHealthToFuneral(byInsured));
       setHealthModalOpen(false);
+      const verdict = (scoring as { verdict?: string }).verdict;
+      const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
       setPendingSubmission({
         id: submission.id,
         scoreTotal: scoring.total ?? submission.scoreTotal,
+        verdict,
+        message: verdictMessage,
       });
 
       toast.success(
-        'Solicitud enviada',
-        'Un técnico revisará tu caso. Recibirás un correo cuando puedas pagar.',
+        verdict === 'emit' ? 'Puedes continuar al pago' : 'Solicitud enviada',
+        verdictMessage || 'Un técnico revisará tu caso.',
       );
     } catch (err: unknown) {
       toastPersonasBlocked(err);
@@ -206,7 +278,8 @@ export default function FuneralPlansApp() {
           frecuenciaLabel={FREC_LABELS[funeral.frecuencia ?? 'A'] ?? 'Pago anual'}
           questions={healthQuestions}
           loadingQuestions={loadingQuestions}
-          initialAnswers={funeral.healthAnswers}
+          insureds={healthInsureds}
+          initialByInsured={funeral.healthAnswersByInsured}
           saving={savingHealth}
           onClose={() => !savingHealth && setHealthModalOpen(false)}
           onConfirm={handleHealthConfirm}
@@ -217,6 +290,8 @@ export default function FuneralPlansApp() {
         <FuneralSubmissionPending
           tomadorEmail={tomador.email}
           planName={selectedPlan?.name}
+          verdict={pendingSubmission.verdict}
+          message={pendingSubmission.message}
         />
       )}
     </>

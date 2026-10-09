@@ -9,6 +9,7 @@ const {
   buildAuthHeaders,
   trackResponse,
 } = require('./nestTokenService');
+const { getNestMonitorAppIdHeader } = require('./monitorReporter');
 
 function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 60_000;
@@ -29,7 +30,10 @@ function buildHeaders(extra = {}) {
 
 async function axiosOpts(extra = {}) {
   return {
-    headers: await buildAuthHeaders(),
+    headers: {
+      ...(await buildAuthHeaders()),
+      ...getNestMonitorAppIdHeader(),
+    },
     timeout: getTimeout(),
     ...extra,
   };
@@ -287,6 +291,8 @@ async function createEmissionAutoViaNestApi(payload) {
       message: result.message,
       fanopol: result.fanopol,
       fmespol: result.fmespol,
+      cpoliza: result.cpoliza != null ? Number(result.cpoliza) : undefined,
+      casegurado: result.casegurado != null ? Number(result.casegurado) : undefined,
       _raw: body,
     };
   }
@@ -418,6 +424,43 @@ async function validateEmissionAutoViaNestApi(params) {
   throw err;
 }
 
+// ── Moneda (tasa BCV por fecha) ──────────────────────────────────────────────
+
+/**
+ * @param {string} fechaYmd YYYY-MM-DD
+ * @returns {Promise<{ ptasa: number, fecha: string, source: string }>}
+ */
+async function getTasaBcvForDateViaNestApi(fechaYmd) {
+  const url = `${getBaseUrl()}/api/v1/moneda/tasa-bcv?fecha=${encodeURIComponent(fechaYmd)}`;
+  const response = trackResponse(await axios.get(url, await axiosOpts({
+    validateStatus: () => true,
+  })));
+
+  if (response.status >= 200 && response.status < 300) {
+    const data = response.data?.data ?? response.data;
+    const ptasa = Number(data?.ptasa ?? 0);
+    if (!(ptasa > 0)) {
+      const err = new Error('nest-api no retornó tasa BCV válida');
+      err.code = 'BCV_RATE_ERROR';
+      throw err;
+    }
+    return {
+      ptasa,
+      fecha: String(data?.fecha ?? fechaYmd).slice(0, 10),
+      source: String(data?.source ?? 'mavamonedas'),
+    };
+  }
+
+  const body = response.data ?? {};
+  const code = body.code || (response.status === 404 ? 'BCV_RATE_NOT_FOUND' : 'NEST_API_BCV_ERROR');
+  const err = new Error(
+    formatNestApiErrorMessage(body, `HTTP ${response.status} consultando tasa BCV en nest-api`),
+  );
+  err.code = code;
+  err.httpStatus = response.status;
+  throw err;
+}
+
 // ── INMA (catálogo vehículo) ─────────────────────────────────────────────────
 
 /** @returns {Promise<{ min: number, max: number }>} */
@@ -534,27 +577,85 @@ async function getValrepList(domain) {
     .filter((it) => it.code !== '' && it.label !== '');
 }
 
-/** @returns {Promise<Array<{ code: string, label: string }>>} */
+const RAMO_PERSONAS = 9;
+const FRECUENCIAS_PERSONAS_FALLBACK = [{ cvalor: 'A', xdescripcion: 'ANUAL' }];
+const FRECUENCIAS_GENERIC_FALLBACK = [
+  { cvalor: 'A', xdescripcion: 'Anual' },
+  { cvalor: 'S', xdescripcion: 'Semestral' },
+  { cvalor: 'T', xdescripcion: 'Trimestral' },
+  { cvalor: 'M', xdescripcion: 'Mensual' },
+];
+
+/**
+ * Frecuencias por plan. Ramo 9 (funerario/personas): si nest-api no tiene
+ * filas en maplanes_frec, devolver ANUAL como SysIP persons-alt (nunca 502).
+ * @returns {Promise<Array<{ code: string, label: string, ndias?: number|null }>>}
+ */
+/**
+ * Productores / Brokers desde Sis2000 (POST /api/v1/valrep/brokers)
+ * @returns {Promise<Array<{ code: number, label: string }>>}
+ */
+async function getValrepBrokers() {
+  const urls = [
+    `${getBaseUrl()}/api/v1/valrep/brokers`,
+    `${process.env.LAMUNDIAL_CARDS_URL || process.env.LAMUNDIAL_EMISSION_URL || 'https://qaapisys2000.lamundialdeseguros.com'}/api/v1/valrep/brokers`,
+    'https://apisys2000.lamundialdeseguros.com/api/v1/valrep/brokers',
+  ];
+
+  let raw = [];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const response = await axios.post(
+        url,
+        {},
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10_000,
+          validateStatus: () => true,
+        },
+      );
+      if (response.status >= 200 && response.status < 300 && response.data?.status !== false) {
+        raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+        if (raw.length > 0) break;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!raw.length && lastError) {
+    throw lastError;
+  }
+
+  return raw
+    .map((b) => ({
+      code: Number(b.cproductor),
+      label: String(b.xproductor ?? '').trim(),
+    }))
+    .filter((it) => it.code > 0 && it.label !== '')
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function getValrepFrecuencias(cplan, cramo) {
   const body = { cplan };
   if (cramo != null) body.cramo = cramo;
+  const isPersonas = Number(cramo) === RAMO_PERSONAS;
   const response = await axios.post(
     `${getBaseUrl()}/api/v1/valrep/frecuencia`,
     body,
     await axiosOpts({ validateStatus: () => true }),
   );
-  if (response.status >= 400 || !response.data?.status) {
-    throw new Error(response.data?.message || `HTTP ${response.status} consultando frecuencias`);
+  const msg = response.data?.message || `HTTP ${response.status} consultando frecuencias`;
+  const emptyPlan = /frecuencias para el plan/i.test(String(msg));
+  if ((response.status >= 400 || !response.data?.status) && !(isPersonas && emptyPlan)) {
+    throw new Error(msg);
   }
-  const payload = response.data.data || response.data;
+  const payload = response.data.data || response.data || {};
   let rawItems = payload.frecuencias || payload.plan || payload.items || [];
   if (!rawItems.length) {
-    rawItems = [
-      { cvalor: 'A', xdescripcion: 'Anual' },
-      { cvalor: 'S', xdescripcion: 'Semestral' },
-      { cvalor: 'T', xdescripcion: 'Trimestral' },
-      { cvalor: 'M', xdescripcion: 'Mensual' },
-    ];
+    rawItems = isPersonas ? FRECUENCIAS_PERSONAS_FALLBACK : FRECUENCIAS_GENERIC_FALLBACK;
   }
   const mapped = rawItems.map((f) => ({
     code: f.cvalor || f.ifrecuencia || f.code,
@@ -737,6 +838,7 @@ module.exports = {
   buildAuthHeaders,
   trackResponse,
   getTimeout,
+  getTasaBcvForDateViaNestApi,
   getInmaAnios,
   getInmaMarcas,
   getInmaModelos,
@@ -747,6 +849,4 @@ module.exports = {
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
-  getValrepProveedores,
-  registerPolicyProveedorViaNestApi,
 };

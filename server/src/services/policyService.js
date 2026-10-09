@@ -29,6 +29,8 @@ const {
   getBaseUrl: getNestApiUrl,
 } = require('./nestApiClient');
 const { resolveIngresoCajaAfterPayment } = require('./collectionAfterPayment');
+const { alignQuoteWithPaymentCapture } = require('./paymentQuoteAlign');
+const { activateTarjetaAfterEmit } = require('./tarjetaActivateAfterEmit');
 const {
   buildQuoteRequest,
   buildCalculatePlanCoberturasRequest,
@@ -89,12 +91,18 @@ async function createEmissionAutoViaNestApi(payload, cotizacion) {
 
   // No enviar poliza/cnpoliza_rel: Sis2000 genera cnpoliza; INT-* solo queda en logs locales.
   // mprima siempre 0 al SP (La Mundial recalcula; no reinyectar prima cotizada).
+  const ptasamonPago =
+    cotizacion.ptasamon_pago != null && Number(cotizacion.ptasamon_pago) > 0
+      ? Number(cotizacion.ptasamon_pago)
+      : cotizacion.ptasa;
   const emissionBody = {
     ...laMundialPayload,
     mprima: 0,
     mprimaext: cotizacion.mprimaext,
     ptasa: cotizacion.ptasa,
     tasa: cotizacion.ptasa,
+    ptasamon: cotizacion.ptasa,
+    ptasamon_pago: ptasamonPago,
   };
   if (payload.cgestor) {
     emissionBody.cgestor = String(payload.cgestor).trim();
@@ -128,10 +136,10 @@ function resolveClubArysFallbackUrl(iplaca) {
   const plate = String(iplaca || 'N').trim().toUpperCase();
   const bi =
     process.env.ARYS_AUTO_BI_PDF_URL
-    || 'https://qasys2000.lamundialdeseguros.com/assets/ArysAutoBi.pdf';
+    || 'https://sys2000.lamundialdeseguros.com/assets/ArysAutoBi.pdf';
   const trad =
     process.env.ARYS_TRADICIONAL_PDF_URL
-    || 'https://qasys2000.lamundialdeseguros.com/assets/Arys_Tradicional.pdf';
+    || 'https://sys2000.lamundialdeseguros.com/assets/Arys_Tradicional.pdf';
   return plate === 'B' ? bi : trad;
 }
 
@@ -417,7 +425,8 @@ async function quoteAndEmit(state, overrides = {}) {
 
   // 1) Cotizar
   const emitOverrides = await resolveEmitOverrides(state, overrides);
-  const quoteResult = await quote(state, emitOverrides);
+  let quoteResult = await quote(state, emitOverrides);
+  quoteResult = await alignQuoteWithPaymentCapture(state, quoteResult);
 
   // 2) Construir payload de emision
   const { payload, metadata } = buildEmissionRequest(
@@ -512,6 +521,9 @@ async function quoteAndEmit(state, overrides = {}) {
       );
     }
   }
+
+  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión)
+  await activateTarjetaAfterEmit(state, emission, metadata);
 
   // 5.5) Generar anexo de Conductor Habitual si existe (solo RCV)
   let url_conductor_habitual = undefined;

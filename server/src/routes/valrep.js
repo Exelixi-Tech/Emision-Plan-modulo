@@ -12,6 +12,7 @@ const {
   getValrepProveedores,
   registerPolicyProveedorViaNestApi,
   validateEmissionAutoViaNestApi,
+  getValrepBrokers,
 } = require('../services/nestApiClient');
 
 const router = express.Router();
@@ -47,6 +48,16 @@ router.get('/state', async (_req, res) => {
   } catch (err) {
     logError('state', err);
     res.status(502).json({ ok: false, error: 'No se pudo obtener estados' });
+  }
+});
+
+router.get('/brokers', async (_req, res) => {
+  try {
+    const items = await getValrepBrokers();
+    res.json({ ok: true, source: 'nest-api', items });
+  } catch (err) {
+    logError('brokers', err);
+    res.status(502).json({ ok: false, error: 'No se pudo obtener la lista de productores' });
   }
 });
 

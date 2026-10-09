@@ -1,6 +1,5 @@
 /**
- * Planes funerarios ramo 9 — códigos numéricos (2–12) según BD Sis2000.
- * Los planes RCV usan códigos alfanuméricos (RCVBAS, RUSPAT, …).
+ * Planes producto personas (valrep/planes/producto) — códigos numéricos y alfanuméricos (FUNESP, ACH*, …).
  */
 
 /**
@@ -8,10 +7,7 @@
  * @returns {boolean}
  */
 function isFunerarioCplan(cplan) {
-  const code = String(cplan || '').trim();
-  if (!/^\d+$/.test(code)) return false;
-  const n = parseInt(code, 10);
-  return n >= 2 && n <= 12;
+  return String(cplan || '').trim().length > 0;
 }
 
 /**
@@ -38,6 +34,10 @@ function resolvePersonasCramo(opts = {}) {
   const fromProveedor = selectedProveedor?.cramo != null ? Number(selectedProveedor.cramo) : NaN;
   if (Number.isFinite(fromProveedor) && fromProveedor > 0) return fromProveedor;
 
+  if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
+    const b = parseInt(String(opts.bodyCramo), 10);
+    if (Number.isFinite(b) && b > 0) return b;
+  }
   const prod = String(
     opts.cproducto ?? meta.cproducto ?? process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57',
   ).trim();

@@ -4,7 +4,9 @@ import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
+import { continueTarjetaToPagos, shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
 import { EmissionPlanShell } from './EmissionPlanShell';
+import { getEffectiveSsoMetadata, shouldShowProductorSelector } from '../lib/productor-selector';
 
 /**
  * Paso 4 — RCV únicamente.
@@ -22,7 +24,20 @@ export default function RcvPlansApp() {
 
   function handleContinuar() {
     if (cotizador) {
-      if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
+      const meta = getEffectiveSsoMetadata();
+    if (shouldShowProductorSelector(meta)) {
+      const snap = useWizardStore.getState();
+      const currentProductor = snap.rcv?.cproductor ?? snap.metadataCanal?.cproductor;
+      if (!currentProductor || String(currentProductor).trim() === '80080') {
+        toast.warning(
+          'Productor requerido',
+          'Selecciona el productor al que será asociada la póliza antes de continuar.',
+        );
+        return;
+      }
+    }
+
+    if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
       const usd = quote?.mprimaext ?? quote?.mprima;
       toast.success(
         'Cotización lista',
@@ -37,7 +52,11 @@ export default function RcvPlansApp() {
       '¡Plan seleccionado!',
       `Categoría ${category} · Plan ${selectedPlan!.name} listo para emitir.`,
     );
-    window.__bridgeAdvance?.();
+    if (shouldUseTarjetaPublicApi()) {
+      continueTarjetaToPagos();
+    } else {
+      window.__bridgeAdvance?.();
+    }
   }
 
   return (

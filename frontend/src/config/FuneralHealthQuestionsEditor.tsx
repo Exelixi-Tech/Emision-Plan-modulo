@@ -5,7 +5,7 @@ import {
   RotateCcw, ChevronUp, Percent, Power,
 } from 'lucide-react';
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestionDraft {
   id: string;
@@ -22,9 +22,14 @@ export interface HealthQuestionDraft {
   scoreIfFalse?: number;
   scoreIfFilled?: number;
   optionScores?: Record<string, number>;
+  /** Knockout / referir por valor en select o multi_select */
+  optionActions?: Record<string, 'score' | 'refer' | 'reject'>;
   blockIfTrue?: boolean;
   blockIfFalse?: boolean;
   blockReason?: string;
+  /** score = solo % · refer = mesa técnica · reject = rechazo inmediato */
+  actionIfTrue?: 'score' | 'refer' | 'reject';
+  actionIfFalse?: 'score' | 'refer' | 'reject';
 }
 
 export type PlanOption = { code: string; label: string };
@@ -41,43 +46,84 @@ export const FALLBACK_FUNERAL_PLAN_OPTIONS: PlanOption[] = [
   { code: '9', label: '7.500$ Individual' },
 ];
 
-const FALLBACK_CODES = FALLBACK_FUNERAL_PLAN_OPTIONS.map((p) => p.code);
-
 const TYPE_LABEL: Record<HealthQuestionType, string> = {
   boolean: 'Sí/No',
   text: 'Texto',
   select: 'Lista',
+  multi_select: 'Varias opciones',
 };
 
-/** Seed si la config aún no trae preguntas (mismo default que Nexus). */
+/** Seed Sis2000 producción cproducto 57 · matriz v4 (mismo default que Nexus). */
 export const DEFAULT_HEALTH_QUESTIONS_SEED: HealthQuestionDraft[] = [
   {
     id: 'fuma',
     type: 'boolean',
-    label: '¿Fuma o ha fumado en los últimos 12 meses?',
-    description: 'Incluye cigarrillos, tabaco, puros o vapeo.',
+    label: '¿Es usted fumador?',
     required: true,
-    plans: [...FALLBACK_CODES],
+    plans: ['*'],
     scoreIfTrue: 15,
+    scoreIfFalse: 0,
   },
   {
-    id: 'diagnosticoEnfermedad',
+    id: 'cigarrillosPorDia',
+    type: 'select',
+    label: '¿Cuantos cigarrillos se fuma al día?',
+    required: true,
+    plans: ['*'],
+    showIf: { field: 'fuma', equals: true },
+    options: [
+      { value: 'Bajo', label: '1 a 5' },
+      { value: 'Medio', label: '5 a 10' },
+      { value: 'fumador violento', label: '10 a 15' },
+      { value: 'Alto', label: 'Más de 20' },
+    ],
+    optionScores: { Bajo: 2, Medio: 5, 'fumador violento': 15, Alto: 20 },
+    optionActions: { Alto: 'reject' },
+    blockReason:
+      'Se han detectado varios factores de riesgo inhabilitantes, no es posible continuar con el proceso.',
+  },
+  {
+    id: 'deportesExtremos',
     type: 'boolean',
-    label: '¿Ha sido diagnosticado con alguna enfermedad grave?',
-    description: 'Cáncer, diabetes, hipertensión, cardiopatías, VIH, etc.',
+    label: '¿Practica deportes extremos o de alto riesgo?',
     required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfTrue: 40,
+    plans: ['*'],
+    scoreIfTrue: 20,
+    scoreIfFalse: 0,
   },
   {
-    id: 'descripcionEnfermedad',
-    type: 'text',
-    label: 'Describa la enfermedad diagnosticada',
-    description: 'Indique enfermedad, tratamiento y fecha aproximada del diagnóstico.',
+    id: 'enfermedadCardiovascular',
+    type: 'boolean',
+    label: '¿Ha padecido enfermedades cardiovasculares?',
     required: true,
-    plans: [...FALLBACK_CODES],
-    showIf: { field: 'diagnosticoEnfermedad', equals: true },
-    scoreIfFilled: 5,
+    plans: ['*'],
+    scoreIfTrue: 0,
+    scoreIfFalse: 0,
+  },
+  {
+    id: 'indiqueEnfermedades',
+    type: 'multi_select',
+    label: 'Indique',
+    description: 'Seleccione las condiciones que apliquen.',
+    required: true,
+    plans: ['*'],
+    showIf: { field: 'enfermedadCardiovascular', equals: true },
+    options: [
+      { value: 'HIPCON', label: 'Hipertension controlada' },
+      { value: 'SI', label: 'Diábetes' },
+      { value: 'inf', label: 'Infarto antiguo' },
+      { value: 'diabe01', label: 'diabetes controlada' },
+    ],
+    optionScores: { HIPCON: 8, SI: 12, inf: 10, diabe01: 15 },
+  },
+  {
+    id: 'soyVidente',
+    type: 'boolean',
+    label: 'Soy vidente',
+    required: true,
+    plans: ['*'],
+    scoreIfTrue: 5,
+    scoreIfFalse: 0,
   },
   {
     id: 'aceptaTerminos',
@@ -85,63 +131,10 @@ export const DEFAULT_HEALTH_QUESTIONS_SEED: HealthQuestionDraft[] = [
     label: 'Acepto los términos y condiciones',
     description: 'Declaro que la información suministrada es verídica y acepto las condiciones de la póliza.',
     required: true,
-    plans: [...FALLBACK_CODES],
-    scoreIfFalse: 100,
+    plans: ['*'],
+    scoreIfFalse: 0,
     blockIfFalse: true,
     blockReason: 'Debe aceptar los términos y condiciones.',
-  },
-  {
-    id: 'consumeAlcohol',
-    type: 'boolean',
-    label: '¿Consume alcohol de forma habitual?',
-    description: 'Más de 2 copas por semana de forma regular.',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    scoreIfTrue: 10,
-  },
-  {
-    id: 'hospitalizacionReciente',
-    type: 'boolean',
-    label: '¿Ha sido hospitalizado en los últimos 24 meses?',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    scoreIfTrue: 25,
-  },
-  {
-    id: 'motivoHospitalizacion',
-    type: 'text',
-    label: 'Motivo de la hospitalización',
-    required: true,
-    plans: ['5', '6', '7', '8', '9'],
-    showIf: { field: 'hospitalizacionReciente', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'medicacionCronica',
-    type: 'boolean',
-    label: '¿Toma medicación de forma crónica?',
-    description: 'Medicamentos prescritos de forma continua.',
-    required: true,
-    plans: ['7', '8', '9'],
-    scoreIfTrue: 20,
-  },
-  {
-    id: 'detalleMedicacion',
-    type: 'text',
-    label: 'Indique los medicamentos',
-    required: true,
-    plans: ['7', '8', '9'],
-    showIf: { field: 'medicacionCronica', equals: true },
-    scoreIfFilled: 5,
-  },
-  {
-    id: 'deporteRiesgo',
-    type: 'boolean',
-    label: '¿Practica deportes de alto riesgo?',
-    description: 'Paracaidismo, montañismo, buceo, carreras, etc.',
-    required: true,
-    plans: ['9'],
-    scoreIfTrue: 30,
   },
 ];
 
@@ -157,6 +150,7 @@ export function enrichHealthQuestionScores(list: HealthQuestionDraft[]): HealthQ
       scoreIfFalse: q.scoreIfFalse ?? d.scoreIfFalse,
       scoreIfFilled: q.scoreIfFilled ?? d.scoreIfFilled,
       optionScores: q.optionScores ?? d.optionScores,
+      optionActions: q.optionActions ?? d.optionActions,
       blockIfTrue: q.blockIfTrue ?? d.blockIfTrue,
       blockIfFalse: q.blockIfFalse ?? d.blockIfFalse,
       blockReason: q.blockReason ?? d.blockReason,
@@ -236,6 +230,7 @@ export function FuneralHealthQuestionsEditor({
 }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [previewPlan, setPreviewPlan] = useState('');
+  const [showFullCatalog, setShowFullCatalog] = useState(false);
 
   const planOptions = useMemo(
     () => (planOptionsProp?.length ? planOptionsProp : FALLBACK_FUNERAL_PLAN_OPTIONS),
@@ -246,6 +241,12 @@ export function FuneralHealthQuestionsEditor({
   const clientPreview = useMemo(
     () => (previewCode ? clientViewForPlan(questions, previewCode) : null),
     [questions, previewCode],
+  );
+  const listed = useMemo(
+    () => questions
+      .map((q, idx) => ({ q, idx }))
+      .filter(({ q }) => showFullCatalog || !previewCode || appliesToPlan(q, previewCode)),
+    [questions, showFullCatalog, previewCode],
   );
 
   const update = (idx: number, patch: Partial<HealthQuestionDraft>) => {
@@ -280,12 +281,15 @@ export function FuneralHealthQuestionsEditor({
     setOpenId(id);
   };
 
-  const move = (idx: number, dir: -1 | 1) => {
-    const to = idx + dir;
-    if (to < 0 || to >= questions.length) return;
+  const moveListed = (listedPos: number, dir: -1 | 1) => {
+    const other = listed[listedPos + dir];
+    if (!other) return;
+    const fromIdx = listed[listedPos].idx;
+    const toIdx = other.idx;
     const next = [...questions];
-    const [row] = next.splice(idx, 1);
-    next.splice(to, 0, row);
+    const tmp = next[fromIdx];
+    next[fromIdx] = next[toIdx];
+    next[toIdx] = tmp;
     onChange(next);
   };
 
@@ -363,7 +367,8 @@ export function FuneralHealthQuestionsEditor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
-            Preguntas · {questions.length}
+            Preguntas · {listed.length}
+            {listed.length !== questions.length ? ` de ${questions.length}` : ''}
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
             Pulsa una fila para editarla. El <strong className="font-semibold text-slate-600">%</strong> lo
@@ -415,7 +420,7 @@ export function FuneralHealthQuestionsEditor({
             {clientPreview.otherPlans.length > 0
               ? ` · ${clientPreview.otherPlans.length} no aplica${clientPreview.otherPlans.length === 1 ? '' : 'n'} a este plan`
               : ''}
-            . El panel lista {questions.length}; el cliente nunca las ve todas de golpe.
+            .
           </p>
           {clientPreview.otherPlans.length > 0 && (
             <p className="text-[11px] text-indigo-800">
@@ -423,6 +428,15 @@ export function FuneralHealthQuestionsEditor({
               {clientPreview.otherPlans.map((q) => q.label || q.id).join(' · ')}
             </p>
           )}
+          <label className="flex items-center gap-2 text-[11px] font-semibold text-indigo-800">
+            <input
+              type="checkbox"
+              className="rounded text-indigo-600"
+              checked={showFullCatalog}
+              onChange={(e) => setShowFullCatalog(e.target.checked)}
+            />
+            Ver catálogo completo ({questions.length})
+          </label>
         </div>
       )}
       <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 leading-relaxed space-y-0.5">
@@ -446,9 +460,14 @@ export function FuneralHealthQuestionsEditor({
           No hay preguntas. Pulsa Nueva o Defaults. Luego Guardar.
         </div>
       )}
+      {questions.length > 0 && listed.length === 0 && (
+        <div className="text-center py-8 text-slate-500 text-sm rounded-xl border border-dashed border-slate-200 bg-slate-50">
+          Ninguna pregunta aplica a este plan. Activa “Ver catálogo completo” para editarlas.
+        </div>
+      )}
 
       <ul className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
-        {questions.map((q, idx) => {
+        {listed.map(({ q, idx }, listedPos) => {
           const open = openId === q.id;
           const isChild = Boolean(q.showIf?.field);
           const isActive = q.enabled !== false;
@@ -468,7 +487,7 @@ export function FuneralHealthQuestionsEditor({
                     {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </span>
                   <span className="w-5 text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
-                    {idx + 1}
+                    {listedPos + 1}
                   </span>
                   <span
                     className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
@@ -516,8 +535,8 @@ export function FuneralHealthQuestionsEditor({
                 <div className="flex flex-col justify-center border-l border-slate-100">
                   <button
                     type="button"
-                    onClick={() => move(idx, -1)}
-                    disabled={idx === 0}
+                    onClick={() => moveListed(listedPos, -1)}
+                    disabled={listedPos === 0}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
                     title="Subir en el orden que ve el cliente"
                   >
@@ -525,8 +544,8 @@ export function FuneralHealthQuestionsEditor({
                   </button>
                   <button
                     type="button"
-                    onClick={() => move(idx, 1)}
-                    disabled={idx === questions.length - 1}
+                    onClick={() => moveListed(listedPos, 1)}
+                    disabled={listedPos === listed.length - 1}
                     className="px-1.5 py-0.5 text-slate-300 hover:text-slate-600 disabled:opacity-20"
                     title="Bajar en el orden que ve el cliente"
                   >
@@ -920,37 +939,58 @@ export function FuneralHealthQuestionsEditor({
                     {q.type === 'boolean' && (
                       <div className="pt-1 border-t border-indigo-100 space-y-2">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                          Bloquear el envío
+                          Qué hace esta respuesta
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          Si se cumple, el cliente no puede continuar. El caso no llega a mesa técnica.
+                          Además del %, puedes mandar el caso a revisión o rechazarlo al instante.
                         </p>
-                        <div className="flex flex-wrap gap-3">
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfTrue}
-                              onChange={(e) => update(idx, { blockIfTrue: e.target.checked || undefined })}
-                            />
-                            Bloquear si Sí
-                          </label>
-                          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="rounded text-indigo-600"
-                              checked={!!q.blockIfFalse}
-                              onChange={(e) => update(idx, { blockIfFalse: e.target.checked || undefined })}
-                            />
-                            Bloquear si No
-                          </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className={lbl}>Si responde Sí</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfTrue = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfTrue,
+                                  blockIfTrue: actionIfTrue === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className={lbl}>Si responde No</label>
+                            <select
+                              className={inp}
+                              value={q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')}
+                              onChange={(e) => {
+                                const actionIfFalse = e.target.value as 'score' | 'refer' | 'reject';
+                                update(idx, {
+                                  actionIfFalse,
+                                  blockIfFalse: actionIfFalse === 'reject' || undefined,
+                                });
+                              }}
+                            >
+                              <option value="score">Solo puntaje</option>
+                              <option value="refer">Forzar revisión</option>
+                              <option value="reject">Rechazo inmediato</option>
+                            </select>
+                          </div>
                         </div>
-                        {(q.blockIfTrue || q.blockIfFalse) && (
+                        {((q.actionIfTrue || (q.blockIfTrue ? 'reject' : 'score')) === 'reject' ||
+                          (q.actionIfFalse || (q.blockIfFalse ? 'reject' : 'score')) === 'reject' ||
+                          q.actionIfTrue === 'refer' ||
+                          q.actionIfFalse === 'refer') && (
                           <input
                             className={inp}
                             value={q.blockReason ?? ''}
                             onChange={(e) => update(idx, { blockReason: e.target.value || undefined })}
-                            placeholder="Mensaje que verá el cliente si se bloquea"
+                            placeholder="Mensaje que verá el cliente (rechazo o revisión)"
                           />
                         )}
                       </div>
