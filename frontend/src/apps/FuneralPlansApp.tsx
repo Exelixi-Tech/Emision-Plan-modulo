@@ -87,13 +87,14 @@ function mapHealthToFuneral(
 
 /**
  * Paso 4 — Funerario únicamente.
- * Cuestionario de salud → confirmación al cliente (correo con link de pago) — no avanza a Pagos directo.
+ * Cuestionario de salud → semáforo verde o plan sin preguntas: sigue al pago en la misma
+ * sesión. Mesa técnica: confirmación al cliente (correo con link de pago tras aprobar).
  */
 export default function FuneralPlansApp() {
   const {
     category, selectedPlan, quoteState, quote, funeral,
     tomador, asegurado, sameInsured, hasBeneficiary, beneficiario,
-    documents, metadataCanal, setFuneral,
+    documents, metadataCanal, setFuneral, setMetadataCanal,
   } = useWizardStore();
   const product = getProductConfig();
 
@@ -273,7 +274,7 @@ export default function FuneralPlansApp() {
         answers: packed,
       });
 
-      const { submission, scoring, quote: quoteAjustada, premiumAdjust } = await submitFuneralPolicyReview({
+      const { submission, scoring, quote: quoteAjustada, premiumAdjust, directPay } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
         cramo: effectiveCramo,
@@ -313,6 +314,16 @@ export default function FuneralPlansApp() {
       setHealthModalOpen(false);
       const verdict = (scoring as { verdict?: string }).verdict;
       const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
+
+      if (directPay) {
+        // Verde / sin preguntas: la solicitud queda aprobada y se cobra ya (sin correo).
+        // El id viaja en metadataCanal para registrar la póliza emitida en la solicitud.
+        setMetadataCanal({ ...(metadataCanal ?? {}), funeralSubmissionId: submission.id });
+        toast.success('Solicitud aprobada', 'Continúa con el pago.');
+        void window.__bridgeAdvance?.({ funeralSubmissionId: submission.id });
+        return;
+      }
+
       setPendingSubmission({
         id: submission.id,
         scoreTotal: scoring.total ?? submission.scoreTotal,

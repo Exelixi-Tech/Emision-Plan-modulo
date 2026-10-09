@@ -1029,6 +1029,8 @@ export async function submitFuneralPolicyReview(
   scoring: { total: number; verdict?: string; verdictMessage?: string };
   quote?: PolicyQuote | null;
   premiumAdjust?: PremiumAdjust | null;
+  /** Semáforo verde o plan sin preguntas: sigue al pago en la misma sesión (sin correo). */
+  directPay?: boolean;
 }> {
   try {
     const { data } = await api.post<{
@@ -1037,12 +1039,14 @@ export async function submitFuneralPolicyReview(
       scoring: { total: number; verdict?: string; verdictMessage?: string };
       quote?: PolicyQuote | null;
       premiumAdjust?: PremiumAdjust | null;
+      directPay?: boolean;
     }>('/funeral/submissions', payload);
     return {
       submission: data.submission,
       scoring: data.scoring,
       quote: data.quote,
       premiumAdjust: data.premiumAdjust,
+      directPay: data.directPay === true,
     };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
