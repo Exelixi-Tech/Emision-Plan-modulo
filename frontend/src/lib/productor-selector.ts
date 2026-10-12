@@ -113,36 +113,28 @@ export function isTecnicoRole(meta: Record<string, unknown>): boolean {
   return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
 }
 
+/** Código de productor de La Mundial: en marketplace es el único caso en que se elige productor. */
+const PRODUCTOR_LA_MUNDIAL = '80080';
+
 /**
- * Selector de productor: solo el técnico (rol interno de Sis2000).
- * - Rol productor (VITE_CROL_PRODUCTOR): NO lo ve (toma su propio código).
- * - Sin crol (portal, canales, intermediarios): NO lo ve; usa el productor de la sesión.
- * - Cualquier otro rol interno informado: SÍ lo ve para asociar la emisión.
+ * Selector de productor, según el origen de la sesión:
+ * - Backoffice de Sis2000: solo si el usuario es interno (crol informado) y NO es productor.
+ * - Marketplace: solo si el productor de la sesión es 80080.
+ * - Cualquier otro origen: no se muestra.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
-  // Flujo tarjeta: el productor/canal viene fijo en la tarjeta (lote), aunque haya token de usuario.
-  if (isTarjetaRcvFlow()) {
-    return false;
-  }
-
-  // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
-  if (isProductorRole(meta)) {
-    return false;
-  }
-
-  // Sin crol interno (portal / canal / intermediario) no se muestra
-  if (!isTecnicoRole(meta)) {
-    return false;
-  }
-
-  // Si es marketplace cerrado sin permiso de emisión pendiente
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
-  if (origen === 'marketplace' && String(meta.allowPendingEmission ?? '').trim().toLowerCase() !== 'true') {
-    return false;
+
+  if (origen === 'marketplace') {
+    return String(meta.cproductor ?? '').trim() === PRODUCTOR_LA_MUNDIAL;
   }
 
-  // Técnico interno de Sis2000: SÍ se muestra el selector
-  return true;
+  const esBackoffice = origen === 'backoffice' || (origen === '' && isBackofficeSession(meta));
+  if (esBackoffice) {
+    return isTecnicoRole(meta) && !isProductorRole(meta);
+  }
+
+  return false;
 }
 
 export function initialProductorId(meta: Record<string, unknown>, currentProductor?: string | number): string {
