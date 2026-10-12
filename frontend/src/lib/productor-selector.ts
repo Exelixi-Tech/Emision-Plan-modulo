@@ -101,8 +101,7 @@ export function isProductorRole(meta: Record<string, unknown>): boolean {
 /** Determina si la sesión se originó desde el Backoffice de Sis2000 */
 export function isBackofficeSession(meta: Record<string, unknown>): boolean {
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
-  const allowPending = String(meta.allowPendingEmission ?? '').trim().toLowerCase() === 'true';
-  return origen === 'backoffice' || allowPending;
+  return origen === 'backoffice';
 }
 
 /** crol interno de Sis2000 (técnico/administrativo): viene informado y no es productor. */
@@ -129,8 +128,7 @@ export function shouldShowProductorSelector(meta: Record<string, unknown>): bool
     return String(meta.cproductor ?? '').trim() === PRODUCTOR_LA_MUNDIAL;
   }
 
-  const esBackoffice = origen === 'backoffice' || (origen === '' && isBackofficeSession(meta));
-  if (esBackoffice) {
+  if (isBackofficeSession(meta)) {
     return isTecnicoRole(meta) && !isProductorRole(meta);
   }
 

@@ -60,8 +60,7 @@ function puedeElegirProductor(meta) {
   const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
   if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
 
-  const allowPending = String(meta?.allowPendingEmission ?? '').trim().toLowerCase() === 'true';
-  if (origen === 'backoffice' || (origen === '' && allowPending)) {
+  if (origen === 'backoffice') {
     const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
     return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
   }
