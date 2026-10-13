@@ -1,6 +1,5 @@
 import { decodeNexusTokenMetadata } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
-import { isTarjetaRcvFlow } from './rcv-tarjeta-flow';
 
 const CANDIDATE_TOKEN_KEYS = [
   'nexus_access_token_emision',
