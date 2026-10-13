@@ -122,6 +122,11 @@ const PRODUCTOR_LA_MUNDIAL = '80080';
  * - Cualquier otro origen: no se muestra.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
+  // Flujo tarjeta: el productor/canal viene fijo en la tarjeta (lote), aunque haya token de usuario.
+  if (isTarjetaRcvFlow()) {
+    return false;
+  }
+
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
 
   if (origen === 'marketplace') {
