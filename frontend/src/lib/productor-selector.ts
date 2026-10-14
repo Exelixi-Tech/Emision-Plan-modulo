@@ -117,7 +117,8 @@ const PRODUCTOR_LA_MUNDIAL = '80080';
 
 /**
  * Selector de productor, según el origen de la sesión:
- * - Backoffice de Sis2000: solo si el usuario es interno (crol informado) y NO es productor.
+ * - Backoffice de Sis2000: solo si el usuario es interno (crol informado), NO es productor y su
+ *   productor de sesión es el genérico (80080 o vacío); si ya tiene productor asignado, emite con ese.
  * - Marketplace: solo si el productor de la sesión es 80080.
  * - Cualquier otro origen: no se muestra.
  */
@@ -128,13 +129,17 @@ export function shouldShowProductorSelector(meta: Record<string, unknown>): bool
   }
 
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
+  // Al elegir, el wizard guarda el productor elegido en cproductor: no debe ocultar el selector.
+  const yaElegido = meta.productorSeleccionado === true;
 
   if (origen === 'marketplace') {
-    return String(meta.cproductor ?? '').trim() === PRODUCTOR_LA_MUNDIAL;
+    return yaElegido || String(meta.cproductor ?? '').trim() === PRODUCTOR_LA_MUNDIAL;
   }
 
   if (isBackofficeSession(meta)) {
-    return isTecnicoRole(meta) && !isProductorRole(meta);
+    const productor = String(meta.cproductor ?? '').trim();
+    const productorGenerico = productor === '' || productor === PRODUCTOR_LA_MUNDIAL;
+    return isTecnicoRole(meta) && !isProductorRole(meta) && (productorGenerico || yaElegido);
   }
 
   return false;
