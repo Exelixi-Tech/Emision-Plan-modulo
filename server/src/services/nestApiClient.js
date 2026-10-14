@@ -630,6 +630,31 @@ async function getValrepFrecuencias(cplan, cramo) {
  * Genera anexo conductor habitual vía POST /api/v1/documents/conductor-habitual.
  * Requiere scope documents:write (Bearer o apikey).
  */
+/**
+ * URL pública del anexo Arys Club Plan Básico (emisiones por tarjeta).
+ * POST /api/v1/documents/anexo-arys-plan-basico → { url }.
+ */
+async function getAnexoArysPlanBasicoViaNestApi() {
+  const url = `${getBaseUrl()}/api/v1/documents/anexo-arys-plan-basico`;
+  const response = trackResponse(await axios.post(url, {}, {
+    headers: await buildAuthHeaders(),
+    timeout: getTimeout(),
+    validateStatus: () => true,
+  }));
+
+  if (response.status >= 200 && response.status < 300 && response.data?.url) {
+    return String(response.data.url);
+  }
+
+  const err = new Error(
+    response.data?.message || response.data?.error || `HTTP ${response.status} obteniendo anexo Arys Plan Básico`,
+  );
+  err.code = 'NEST_API_ANEXO_ARYS_ERROR';
+  err.httpStatus = response.status;
+  err.raw = response.data;
+  throw err;
+}
+
 async function generateConductorHabitualViaNestApi(body) {
   const url = `${getBaseUrl()}/api/v1/documents/conductor-habitual`;
   const response = trackResponse(await axios.post(url, body, {
@@ -690,6 +715,7 @@ module.exports = {
   createEmissionAutoViaNestApi,
   validateEmissionAutoViaNestApi,
   generateConductorHabitualViaNestApi,
+  getAnexoArysPlanBasicoViaNestApi,
   sendPolicyEmailViaNestApi,
   getBaseUrl,
   getApiKey,

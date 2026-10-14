@@ -24,13 +24,14 @@ const {
   createEmissionAutoViaNestApi: emitViaNestApi,
   validateEmissionAutoViaNestApi,
   generateConductorHabitualViaNestApi,
+  getAnexoArysPlanBasicoViaNestApi,
   sendPolicyEmailViaNestApi,
   getValrepFrecuencias,
   getBaseUrl: getNestApiUrl,
 } = require('./nestApiClient');
 const { resolveIngresoCajaAfterPayment } = require('./collectionAfterPayment');
 const { alignQuoteWithPaymentCapture } = require('./paymentQuoteAlign');
-const { activateTarjetaAfterEmit } = require('./tarjetaActivateAfterEmit');
+const { activateTarjetaAfterEmit, isRcvTarjetaFlow } = require('./tarjetaActivateAfterEmit');
 const {
   buildQuoteRequest,
   buildCalculatePlanCoberturasRequest,
@@ -544,6 +545,16 @@ async function quoteAndEmit(state, overrides = {}) {
     if (['RCVBAS', 'RUSPAT'].includes(planCode)) {
       url_club_arys = resolveClubArysFallbackUrl(payload.iplaca);
       console.log(`[Policy] URL Club Arys (fallback plan ${planCode}): ${url_club_arys}`);
+    }
+  }
+  // Tarjeta (La Tarjetica): se entrega el anexo Arys Club Plan Básico de marketing,
+  // no el Club Arys estándar. Si nest-api falla se conserva el estándar.
+  if (isRcvTarjetaFlow(state)) {
+    try {
+      url_club_arys = mapConductorPdfPublicUrl(await getAnexoArysPlanBasicoViaNestApi());
+      console.log(`[Policy] Anexo Arys Plan Básico (tarjeta): ${url_club_arys}`);
+    } catch (err) {
+      console.warn('[Policy] No se obtuvo el anexo Arys Plan Básico; se usa Club Arys estándar:', err.message);
     }
   }
   if (url_club_arys) {
