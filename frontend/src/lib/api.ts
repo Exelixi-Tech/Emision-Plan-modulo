@@ -100,8 +100,8 @@ const FUNERAL_CANAL_QUERY_KEYS = [
   'cscanalalt_in',
 ] as const;
 
-/** Canal SSO del wizard funerario (JWT + sid + snapshot), sin pisar RCV. */
-function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
+/** Canal SSO del wizard funerario/vida/AP (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams, cproductoOverride?: string): boolean {
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
   const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
@@ -133,8 +133,14 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     qs.set('cramo', String(meta.cramo).trim());
   }
-  if (!qs.get('cproducto')) qs.set('cproducto', '57');
-  if (qs.get('cproducto') === '57') qs.set('cramo', '45');
+  // El producto del SSO manda. El argumento solo cubre si el token no trae cproducto.
+  const fromSso = qs.get('cproducto');
+  const effectiveCproducto = (fromSso && fromSso.trim() !== '')
+    ? fromSso.trim()
+    : (cproductoOverride || '57');
+  qs.set('cproducto', effectiveCproducto);
+  // Para funerario (57) el SP usa ramo 45 internamente
+  if (effectiveCproducto === '57') qs.set('cramo', '45');
   if (qs.get('cproductor') === '80080') qs.delete('cproductor');
 
   return Boolean(
@@ -155,6 +161,42 @@ function readSsoCanalMeta(): Record<string, unknown> {
     ...(tokenMeta || {}),
     ...storeMeta,
   };
+}
+
+/**
+ * Ramo del cuestionario: el del flujo SSO, si no el del plan o el del producto.
+ */
+export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: number): number {
+  const sso = resolveSsoCramo();
+  if (sso != null) return sso;
+  const plan = Number(planCramo);
+  if (Number.isFinite(plan) && plan > 0) return plan;
+  const product = Number(productCramo);
+  if (Number.isFinite(product) && product > 0) return product;
+  return 9;
+}
+
+/**
+ * Ramo para cotizar: funerario (57 o sin producto) usa el del SSO como hoy;
+ * otro producto usa el ramo del plan elegido (el SSO trae el ramo del producto, ej. vida 47,
+ * pero el plan está tarifado en su ramo técnico, ej. 1). Igual que SysIP.
+ */
+export function resolveQuoteCramo(planCramo: number | undefined, fallback: number): number {
+  const prod = String(readSsoCanalMeta().cproducto ?? '').trim();
+  const plan = Number(planCramo);
+  const planOk = Number.isFinite(plan) && plan > 0;
+  if (prod && prod !== '57' && planOk) return plan;
+  return resolveSsoCramo() ?? (planOk ? plan : fallback);
+}
+
+/** cproducto enviado por el SSO (vacío si el canal no lo declara). */
+export function resolveSsoCproducto(): string {
+  return String(readSsoCanalMeta().cproducto ?? '').trim();
+}
+
+/** Nombre del producto que envía el portal en el SSO (`xproducto`). Vacío si no viene. */
+export function resolveSsoXproducto(): string {
+  return String(readSsoCanalMeta().xproducto ?? '').trim();
 }
 
 /** Ramo enviado por el SSO. `null` si el canal no lo declara. */
@@ -800,10 +842,12 @@ export interface CotizacionPerPayload {
   cramo?: number;
   /** Viajero prorrata: días del plan elegido. */
   ndias?: number;
+  fdesde?: string;
+  fhasta?: string;
 }
 
 export const personasApi = {
-  /** Planes funerarios del canal SSO (productor/entidad/gestor), igual criterio que RCV. */
+  /** Planes del cproducto que trae el SSO. El ramo del token se conserva salvo producto 57. */
   planes: (cramo = 9) => {
     const qs = new URLSearchParams();
     qs.set('cramo', String(cramo));
@@ -913,9 +957,12 @@ export interface HealthQuestion {
   blockReason?: string;
 }
 
-export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
+export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number, cproducto?: string): Promise<HealthQuestion[]> {
+  const qs = new URLSearchParams({ cplan });
+  if (cramo != null && Number.isFinite(cramo) && cramo > 0) qs.set('cramo', String(cramo));
+  if (cproducto) qs.set('cproducto', cproducto);
   const { data } = await api.get<{ success: boolean; questions: HealthQuestion[] }>(
-    `/funeral/health-questions?cplan=${encodeURIComponent(cplan)}`,
+    `/funeral/health-questions?${qs.toString()}`,
   );
   return data?.questions ?? [];
 }
@@ -924,6 +971,7 @@ export interface SaveHealthAnswersPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomadorRif?: string;
   planName?: string;
   answers: Record<string, unknown>;
@@ -943,6 +991,7 @@ export interface SubmitFuneralReviewPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomador: Record<string, unknown>;
   asegurado?: Record<string, unknown>;
   sameInsured?: boolean;
@@ -955,6 +1004,23 @@ export interface SubmitFuneralReviewPayload {
   healthAnswers: Record<string, unknown>;
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
+  /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
+  directCheckout?: boolean;
+}
+
+/** Recargo/descuento del cuestionario aplicado a la prima (servidor). */
+export interface PremiumAdjust {
+  base: { mprima: number; mprimaext: number };
+  quote: { mprima: number; mprimaext: number; ptasa: number };
+  porAsegurado: {
+    key: string;
+    label: string;
+    recargoPct: number;
+    descuentoPct: number;
+    netoPct: number;
+    primaBaseExt: number;
+    primaAjustadaExt: number;
+  }[];
 }
 
 export async function submitFuneralPolicyReview(
@@ -962,14 +1028,31 @@ export async function submitFuneralPolicyReview(
 ): Promise<{
   submission: FuneralSubmissionResult;
   scoring: { total: number; verdict?: string; verdictMessage?: string };
+  quote?: PolicyQuote | null;
+  premiumAdjust?: PremiumAdjust | null;
+  /** Semáforo verde o plan sin preguntas: sigue al pago en la misma sesión (sin correo). */
+  directPay?: boolean;
+  /** Datos de cobro obligatorio para Pagos (mismo formato que el link del correo). */
+  checkoutPatch?: Record<string, unknown>;
 }> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
       scoring: { total: number; verdict?: string; verdictMessage?: string };
+      quote?: PolicyQuote | null;
+      premiumAdjust?: PremiumAdjust | null;
+      directPay?: boolean;
+      checkoutPatch?: Record<string, unknown>;
     }>('/funeral/submissions', payload);
-    return { submission: data.submission, scoring: data.scoring };
+    return {
+      submission: data.submission,
+      scoring: data.scoring,
+      quote: data.quote,
+      premiumAdjust: data.premiumAdjust,
+      directPay: data.directPay === true && Boolean(data.checkoutPatch),
+      checkoutPatch: data.checkoutPatch,
+    };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
     const data = axErr.response?.data;

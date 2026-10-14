@@ -26,6 +26,26 @@ const FREC_LABELS: Record<string, string> = {
   A: 'Pago anual',
 };
 
+function questionnaireForPlan(
+  planCramo: number | undefined,
+  meta: { cproducto?: unknown; xproducto?: unknown; cramo?: unknown } | null | undefined,
+  fallbackCproducto: string | undefined,
+  fallbackCramo: number,
+): { cramo: number; cproducto: string } {
+  const label = String(meta?.xproducto ?? '').toLowerCase();
+  let cproducto = String(meta?.cproducto ?? fallbackCproducto ?? '').trim();
+  if (label && !label.includes('funer') && (!cproducto || cproducto === '57')) {
+    cproducto = 'otro';
+  }
+  const plan = Number(planCramo);
+  const sso = meta?.cramo != null ? Number(meta.cramo) : NaN;
+  const cramo = Number.isFinite(plan) && plan > 0
+    ? plan
+    : (Number.isFinite(sso) && sso > 0 ? sso : fallbackCramo);
+  return { cramo, cproducto };
+}
+
+
 function getSessionId(): string {
   try {
     return new URLSearchParams(window.location.search).get('sid') || 'standalone';
@@ -45,12 +65,20 @@ function insuredLabel(person: { nombre?: string; apellido?: string; identificaci
   return name || String(person.identificacion || '').trim() || `Asegurado ${idx + 1}`;
 }
 
-function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) {
+/**
+ * Como SysIP: los términos solo se exigen si el cuestionario del producto los pregunta.
+ * Producto sin pregunta `aceptaTerminos` (ej. Salud Individual) no bloquea en Pagos.
+ */
+function mapHealthToFuneral(
+  byInsured: Record<string, Record<string, unknown>>,
+  questions: HealthQuestion[],
+) {
   const first = Object.values(byInsured)[0] ?? {};
+  const pideTerminos = questions.some((q) => q.id === 'aceptaTerminos');
   return {
     diagnosticoEnfermedad: first.diagnosticoEnfermedad === true,
     descripcionEnfermedad: String(first.descripcionEnfermedad ?? ''),
-    aceptaTerminos: first.aceptaTerminos === true,
+    aceptaTerminos: pideTerminos ? first.aceptaTerminos === true : true,
     healthAnswers: first,
     healthAnswersByInsured: byInsured,
     healthQuestionnaireDone: true,
@@ -59,13 +87,14 @@ function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) 
 
 /**
  * Paso 4 — Funerario únicamente.
- * Cuestionario de salud → confirmación al cliente (correo con link de pago) — no avanza a Pagos directo.
+ * Cuestionario de salud → semáforo verde o plan sin preguntas: sigue al pago en la misma
+ * sesión. Mesa técnica: confirmación al cliente (correo con link de pago tras aprobar).
  */
 export default function FuneralPlansApp() {
   const {
     category, selectedPlan, quoteState, quote, funeral,
     tomador, asegurado, sameInsured, hasBeneficiary, beneficiario,
-    documents, metadataCanal, setFuneral,
+    documents, metadataCanal, setFuneral, setMetadataCanal,
   } = useWizardStore();
   const product = getProductConfig();
 
@@ -180,13 +209,33 @@ export default function FuneralPlansApp() {
     }
   }
 
+  function emptyAnswersByInsured() {
+    const people = healthInsureds.length
+      ? healthInsureds
+      : [{ key: 'aseg-0', label: 'Asegurado' }];
+    const byInsured: Record<string, Record<string, unknown>> = {};
+    for (const person of people) byInsured[person.key] = {};
+    return byInsured;
+  }
+
   async function openHealthModal() {
     if (!selectedPlan?.cplan) return;
-    setHealthModalOpen(true);
     setLoadingQuestions(true);
     try {
-      const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan);
+      const { cramo: effectiveCramo, cproducto: effectiveCproducto } = questionnaireForPlan(
+        selectedPlan.cramo,
+        metadataCanal,
+        product.cproducto,
+        product.cramo,
+      );
+      const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan, effectiveCramo, effectiveCproducto);
       setHealthQuestions(qs);
+      if (qs.length === 0) {
+        setHealthModalOpen(false);
+        await handleHealthConfirm(emptyAnswersByInsured(), qs);
+        return;
+      }
+      setHealthModalOpen(true);
     } catch {
       toast.error(
         'Error al cargar preguntas',
@@ -198,26 +247,39 @@ export default function FuneralPlansApp() {
     }
   }
 
-  async function handleHealthConfirm(byInsured: Record<string, Record<string, unknown>>) {
+  async function handleHealthConfirm(
+    byInsured: Record<string, Record<string, unknown>>,
+    questions: HealthQuestion[] = healthQuestions,
+  ) {
     if (!selectedPlan?.cplan) return;
     setSavingHealth(true);
     try {
       const sessionId = getSessionId();
       const packed = { byInsured };
 
+      const { cramo: effectiveCramo, cproducto: effectiveCproducto } = questionnaireForPlan(
+        selectedPlan.cramo,
+        metadataCanal,
+        product.cproducto,
+        product.cramo,
+      );
+
       await saveFuneralHealthAnswers({
         sessionId,
         cplan: selectedPlan.cplan,
-        cramo: product.cramo,
+        cramo: effectiveCramo,
+        cproducto: effectiveCproducto,
         tomadorRif: `${tomador.tipoDoc}-${tomador.identificacion}`,
         planName: selectedPlan.name,
         answers: packed,
       });
 
-      const { submission, scoring } = await submitFuneralPolicyReview({
+      const canAdvance = typeof window.__bridgeAdvance === 'function' && sessionId !== 'standalone';
+      const { submission, scoring, quote: quoteAjustada, premiumAdjust, directPay, checkoutPatch } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
-        cramo: product.cramo,
+        cramo: effectiveCramo,
+        cproducto: effectiveCproducto,
         tomador: { ...tomador },
         asegurado: { ...asegurado },
         sameInsured,
@@ -227,19 +289,43 @@ export default function FuneralPlansApp() {
           : funeral.beneficiarios?.[0]
             ? { ...funeral.beneficiarios[0] }
             : undefined,
-        funeral: { ...funeral, ...mapHealthToFuneral(byInsured) },
+        funeral: { ...funeral, ...mapHealthToFuneral(byInsured, questions) },
         selectedPlan: { ...selectedPlan },
         quote: quote ? { ...quote } : null,
         quoteState,
         healthAnswers: packed,
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
+        directCheckout: canAdvance,
       });
 
-      setFuneral(mapHealthToFuneral(byInsured));
+      setFuneral(mapHealthToFuneral(byInsured, questions));
+      // Recargo/descuento por respuestas: Pagos cobra la prima ajustada (misma que emite el servidor).
+      if (premiumAdjust && quoteAjustada) {
+        const snap = useWizardStore.getState();
+        snap.setQuote({ ...(snap.quote ?? quoteAjustada), ...quoteAjustada }, snap.quoteVehicleSignature ?? '');
+        const netos = premiumAdjust.porAsegurado.filter((p) => p.netoPct !== 0);
+        toast.info(
+          'Prima ajustada por el cuestionario',
+          netos
+            .map((p) => `${p.label}: ${p.netoPct > 0 ? '+' : ''}${p.netoPct}%`)
+            .join(' · ') + ` → total ${premiumAdjust.quote.mprimaext.toFixed(2)}`,
+          8000,
+        );
+      }
       setHealthModalOpen(false);
       const verdict = (scoring as { verdict?: string }).verdict;
       const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
+
+      if (directPay && checkoutPatch && canAdvance) {
+        // Verde / sin preguntas: solicitud aprobada sin correo. Se pasa a Pagos con los mismos
+        // datos de cobro que el link (requirePayment): Pagos exige el pago antes de emitir.
+        setMetadataCanal({ ...(metadataCanal ?? {}), funeralSubmissionId: submission.id });
+        toast.success('Solicitud aprobada', 'Continúa con el pago.');
+        await window.__bridgeAdvance?.(checkoutPatch);
+        return;
+      }
+
       setPendingSubmission({
         id: submission.id,
         scoreTotal: scoring.total ?? submission.scoreTotal,
@@ -282,7 +368,7 @@ export default function FuneralPlansApp() {
           initialByInsured={funeral.healthAnswersByInsured}
           saving={savingHealth}
           onClose={() => !savingHealth && setHealthModalOpen(false)}
-          onConfirm={handleHealthConfirm}
+          onConfirm={(byInsured) => handleHealthConfirm(byInsured)}
         />
       )}
 

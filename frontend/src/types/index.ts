@@ -12,7 +12,7 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario' | 'patrimoniales';
+export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'vida' | 'ap' | 'ap79';
 
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -158,6 +158,8 @@ export interface FuneralPerson {
   /** Código de parentesco La Mundial (1=Titular, 2=Cónyuge, 3=Hijo(a)…). */
   parentesco: string;
   pporcen?: number;
+  /** Menor de edad sin cédula: se usa la cédula del titular + correlativo (provisional). */
+  sinCedula?: boolean;
   telefono?: string;
   email?: string;
   estadoCivil?: string;

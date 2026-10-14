@@ -5,12 +5,21 @@ import {
   Loader2, AlertTriangle, Users, CalendarClock
 } from 'lucide-react';
 import type { FuneralPerson, Plan } from '../../types';
-import { personasApi, type PlanPer, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import {
+  personasApi,
+  resolveQuoteCramo,
+  resolveSsoCproducto,
+  resolveSsoXproducto,
+  type PlanPer,
+  getFrecuenciasByPlan,
+  type CatalogItem,
+} from '../../lib/api';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { syncTitularFromTomador } from '../../lib/funeral-sync';
+import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
 function emptyTitular(): FuneralPerson {
@@ -49,31 +58,68 @@ function mergeTitularFromForm(
 const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL' }];
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
-function apiPlanToWizardPlan(p: PlanPer): Plan {
-  const ndias =
+function parseNdiasFromLabel(text: string): number | null {
+  const m = String(text || '').match(/(\d+)\s*d[ií]as?/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Nombre de producto por cproducto (maproductos) cuando el SSO no trae `xproducto`. */
+const PERSONAS_PRODUCT_LABELS: Record<string, string> = {
+  '14': 'Salud Individual',
+  '15': 'Salud Familiar',
+  '25': 'Viajero',
+  '26': 'Viajero Local',
+  '51': 'Combinado Familiar',
+  '52': 'Funerario Familiar',
+  '57': 'Funerario',
+  '58': 'Combinado de Personas',
+  '76': 'Póliza de Vida',
+  '77': '4 en 1',
+  '78': 'Accidentes Personales',
+  '79': 'Accidentes Personales Individual',
+};
+
+/** xproducto del wizard o del SSO; si no, el nombre por cproducto; si no, el del módulo. */
+function resolvePersonasProductLabel(meta: Record<string, unknown> | null, fallback: string): string {
+  const fromMeta = String(meta?.xproducto ?? '').trim() || resolveSsoXproducto();
+  if (fromMeta) return fromMeta;
+  const cproducto = String(meta?.cproducto ?? '').trim() || resolveSsoCproducto();
+  return PERSONAS_PRODUCT_LABELS[cproducto] ?? fallback;
+}
+
+function apiPlanToWizardPlan(p: PlanPer, productName: string = 'Funerario'): Plan {
+  const fromApi =
     p.ndias != null && Number.isFinite(Number(p.ndias)) && Number(p.ndias) > 0
       ? Number(p.ndias)
       : null;
+  const ndias = fromApi ?? parseNdiasFromLabel(p.xplan ?? '') ?? parseNdiasFromLabel(p.cplan ?? '');
   return {
     cplan: p.cplan,
     name: (p.xplan ?? '').trim() || p.cplan,
     price: 'Tarifa La Mundial',
     priceNum: 0,
-    tag: ndias ? `Viajero · ${ndias} días` : 'Funerario',
+    tag: ndias ? `Viajero · ${ndias} días` : productName,
     desc: ndias
       ? `Cobertura por ${ndias} días para las personas aseguradas.`
-      : 'Cobertura de servicios funerarios para las personas aseguradas.',
+      : `Cobertura de ${productName.toLowerCase()} para las personas aseguradas.`,
     benefits: ndias
       ? [
           `Vigencia de ${ndias} días`,
           'Cobertura para el grupo asegurado',
           'Asistencia en viaje',
         ]
-      : [
-          'Servicio funerario completo',
-          'Cobertura para el grupo familiar asegurado',
-          'Asistencia y traslado',
-        ],
+      : /funer/i.test(productName)
+        ? [
+            `Servicio de ${productName.toLowerCase()} completo`,
+            'Cobertura para el grupo asegurado',
+            'Atención especializada',
+          ]
+        : [
+            'Coberturas según el plan elegido',
+            'Cobertura para el grupo asegurado',
+          ],
     sumaAsegurada: 0,
     cramo: p.cramo,
     parentescos: p.parentescos ?? [],
@@ -83,13 +129,51 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
   };
 }
 
+function vigenciasDesdeNdias(ndias: number): { fdesde: string; fhasta: string; ndias: number } {
+  const fdesde = new Date().toISOString().slice(0, 10);
+  const desde = new Date(`${fdesde}T00:00:00Z`);
+  const hasta = new Date(desde);
+  hasta.setUTCDate(hasta.getUTCDate() + ndias - 1);
+  return { fdesde, fhasta: hasta.toISOString().slice(0, 10), ndias };
+}
+
 function planOptionKey(p: Plan): string {
   if (p.ndias != null && p.ndias > 0) return `${p.cplan}|${p.ndias}`;
   return p.cplan;
 }
 
+function planBaseKey(p: Plan): string {
+  return String(p.cplan ?? '').trim();
+}
+
+function daysForPlan(plans: Plan[], cplan: string): Plan[] {
+  const rows = plans.filter((p) => planBaseKey(p) === cplan && p.ndias != null && p.ndias > 0);
+  rows.sort((a, b) => (a.ndias ?? 0) - (b.ndias ?? 0));
+  return rows;
+}
+
+function uniquePlansForSelect(plans: Plan[]): Plan[] {
+  const seen = new Set<string>();
+  const out: Plan[] = [];
+  for (const p of plans) {
+    const key = planBaseKey(p);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const days = daysForPlan(plans, key);
+    out.push(days.length ? days[0] : p);
+  }
+  return out;
+}
+
 function findPlanByOptionKey(plans: Plan[], key: string): Plan | undefined {
   return plans.find((p) => planOptionKey(p) === key);
+}
+
+function selectPlanDisplayName(p: Plan): string {
+  return String(p.name || p.cplan)
+    .replace(/\s*[·•|-]?\s*\d+\s*d[ií]as?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || p.cplan;
 }
 
 function planCramo(plan: Plan | null | undefined, fallback: number): number {
@@ -120,10 +204,14 @@ export function FuneralPlansStep() {
     setPlansLoading(true);
     setPlansError(false);
 
-    personasApi.planes(product.cramo)
+    const meta = useWizardStore.getState().metadataCanal as Record<string, unknown> | null;
+    const effectiveCramo = meta?.cramo != null ? Number(meta.cramo) : product.cramo;
+    const effectiveLabel = resolvePersonasProductLabel(meta, product.label);
+
+    personasApi.planes(effectiveCramo)
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? []).map(apiPlanToWizardPlan);
+        const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, effectiveLabel));
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
         const keep = current
@@ -161,7 +249,7 @@ export function FuneralPlansStep() {
     getFrecuenciasByPlan(planCode, planCramo(selectedPlan, product.cramo))
       .then((items) => {
         if (cancelled) return;
-        const list = items.length ? items : FRECUENCIAS_PERSONAS_FALLBACK;
+        const list = frecuenciasPersonas(items, FRECUENCIAS_PERSONAS_FALLBACK);
         setApiFrecuencias(list);
         const currentValid = list.find((i) => String(i.code) === funeral.frecuencia);
         if (!currentValid) {
@@ -221,7 +309,7 @@ export function FuneralPlansStep() {
   const planCode = selectedPlan?.cplan ?? '';
   const planNdias = selectedPlan?.ndias != null && selectedPlan.ndias > 0
     ? selectedPlan.ndias
-    : null;
+    : parseNdiasFromLabel(selectedPlan?.name ?? selectedPlan?.tag ?? '');
   // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
   // Viajero: prima prorrata por ndias del plan elegido.
   const quoteSig = planCode
@@ -242,11 +330,12 @@ export function FuneralPlansStep() {
     snap.setQuoteState('loading');
 
     const snapPlan = useWizardStore.getState().selectedPlan;
+    const vig = planNdias != null ? vigenciasDesdeNdias(planNdias) : null;
     personasApi.cotizar({
       cplan: planCode,
-      cramo: planCramo(snapPlan, product.cramo),
+      cramo: resolveQuoteCramo(snapPlan?.cramo, product.cramo),
       ifrecuencia: 'A',
-      ...(planNdias != null ? { ndias: planNdias } : {}),
+      ...(vig ?? {}),
       asegurados: aseguradosListos.map(({ a, idx }) => ({
         parentesco: idx === 0 ? '1' : a.parentesco,
         identificacion: a.identificacion,
@@ -255,8 +344,21 @@ export function FuneralPlansStep() {
     })
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;
+        if (!(Number(r.data.mprimaext) > 0)) {
+          // Sin tarifa en Sis2000 para este plan/edad: no se puede cobrar ni emitir.
+          const message = 'Este plan no tiene tarifa para los asegurados indicados. Elige otro plan.';
+          useWizardStore.getState().clearQuote();
+          useWizardStore.getState().setQuoteState('error', message);
+          toast.warning('Plan sin tarifa', message, 9000);
+          return;
+        }
         useWizardStore.getState().setQuote(
-          { mprima: r.data.mprima, mprimaext: r.data.mprimaext, ptasa: r.data.ptasa },
+          {
+            mprima: r.data.mprima,
+            mprimaext: r.data.mprimaext,
+            ptasa: r.data.ptasa,
+            ...(r.data.coberturas?.length ? { coberturas: r.data.coberturas } : {}),
+          },
           quoteSig,
         );
       })
@@ -281,6 +383,60 @@ export function FuneralPlansStep() {
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote = quoteState === 'ready' && Boolean(quote);
   const annualUsd = hasRealQuote ? quote!.mprimaext : 0;
+  const cuotasFrecuencia = getCuotasByFrecuencia(funeral.frecuencia);
+  const planOptions = uniquePlansForSelect(apiPlans);
+  const dayOptions = selectedPlan ? daysForPlan(apiPlans, selectedPlan.cplan) : [];
+  const showDayPicker = dayOptions.length > 1;
+
+  function applySelectedPlan(found: Plan | null) {
+    if (found) setCategory(found.name);
+    setSelectedPlan(found);
+    if (!found) return;
+    const extras = useWizardStore.getState().funeral.asegurados;
+    const max = maxAseguradosDelPlan({
+      maxAsegurados: found.maxAsegurados,
+      nmax_dep: found.nmax_dep,
+      parentescos: found.parentescos,
+    });
+    const nmax = nmaxDepDelPlan({
+      nmax_dep: found.nmax_dep,
+      maxAsegurados: found.maxAsegurados,
+      parentescos: found.parentescos,
+    });
+    const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
+    let nextAsegurados = titularOnly
+      ? extras.slice(0, 1)
+      : extras.map((a, idx) => {
+        if (idx === 0) return a;
+        const allowed = (found.parentescos ?? []).some(
+          (p) => String(p.cparen) === String(a.parentesco),
+        );
+        return allowed ? a : { ...a, parentesco: '' };
+      });
+    if (max != null && nextAsegurados.length > max) {
+      nextAsegurados = nextAsegurados.slice(0, max);
+      toast.warning(
+        'Límite del plan',
+        `Este plan admite hasta ${nmax ?? 0} dependiente${nmax === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
+        6000,
+      );
+    } else if (titularOnly && extras.length > 1) {
+      toast.warning(
+        'Plan solo titular',
+        'Se quitaron los asegurados adicionales porque este plan no los admite.',
+        6000,
+      );
+    }
+    setFuneral({
+      asegurados: nextAsegurados,
+      healthQuestionnaireDone: false,
+      healthAnswers: {},
+      healthAnswersByInsured: {},
+      diagnosticoEnfermedad: false,
+      descripcionEnfermedad: '',
+      aceptaTerminos: false,
+    });
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -295,7 +451,7 @@ export function FuneralPlansStep() {
       </div>
 
       {/* Selectores */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${showDayPicker ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
         {/* Selector de plan */}
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
@@ -311,57 +467,14 @@ export function FuneralPlansStep() {
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
             <select
-              value={selectedPlan ? planOptionKey(selectedPlan) : ''}
+              value={selectedPlan ? selectedPlan.cplan : ''}
               onChange={(e) => {
-                const found = findPlanByOptionKey(apiPlans, e.target.value);
-                if (found) setCategory(found.name);
-                setSelectedPlan(found ?? null);
-                if (found) {
-                  const extras = useWizardStore.getState().funeral.asegurados;
-                  const max = maxAseguradosDelPlan({
-                    maxAsegurados: found.maxAsegurados,
-                    nmax_dep: found.nmax_dep,
-                    parentescos: found.parentescos,
-                  });
-                  const nmax = nmaxDepDelPlan({
-                    nmax_dep: found.nmax_dep,
-                    maxAsegurados: found.maxAsegurados,
-                    parentescos: found.parentescos,
-                  });
-                  const titularOnly = max === 1 || isTitularOnlyPlan(found.parentescos);
-                  let nextAsegurados = titularOnly
-                    ? extras.slice(0, 1)
-                    : extras.map((a, idx) => {
-                      if (idx === 0) return a;
-                      const allowed = (found.parentescos ?? []).some(
-                        (p) => String(p.cparen) === String(a.parentesco),
-                      );
-                      return allowed ? a : { ...a, parentesco: '' };
-                    });
-                  if (max != null && nextAsegurados.length > max) {
-                    nextAsegurados = nextAsegurados.slice(0, max);
-                    toast.warning(
-                      'Límite del plan',
-                      `Este plan admite hasta ${nmax ?? 0} dependiente${nmax === 1 ? '' : 's'}. Se quitaron los que sobraban.`,
-                      6000,
-                    );
-                  } else if (titularOnly && extras.length > 1) {
-                    toast.warning(
-                      'Plan solo titular',
-                      'Se quitaron los asegurados adicionales porque este plan no los admite.',
-                      6000,
-                    );
-                  }
-                  setFuneral({
-                    asegurados: nextAsegurados,
-                    healthQuestionnaireDone: false,
-                    healthAnswers: {},
-                    healthAnswersByInsured: {},
-                    diagnosticoEnfermedad: false,
-                    descripcionEnfermedad: '',
-                    aceptaTerminos: false,
-                  });
-                }
+                const code = e.target.value;
+                const days = daysForPlan(apiPlans, code);
+                const found = days[0]
+                  ?? planOptions.find((p) => p.cplan === code)
+                  ?? null;
+                applySelectedPlan(found);
               }}
               disabled={plansLoading || apiPlans.length === 0}
               className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
@@ -370,24 +483,25 @@ export function FuneralPlansStep() {
                 <option value="">Cargando planes...</option>
               ) : plansError ? (
                 <option value="">Error al cargar planes</option>
-              ) : apiPlans.length === 0 ? (
+              ) : planOptions.length === 0 ? (
                 <option value="">Sin planes disponibles</option>
               ) : (
                 <>
                   <option value="" disabled>— Elige un plan —</option>
-                  {apiPlans.map((p) => {
+                  {planOptions.map((p) => {
                     const nmax = nmaxDepDelPlan({
                       nmax_dep: p.nmax_dep,
                       maxAsegurados: p.maxAsegurados,
                       parentescos: p.parentescos,
                     });
+                    const label = selectPlanDisplayName(p);
                     const cupo = nmax == null
-                      ? p.name
+                      ? label
                       : nmax === 0
-                        ? `${p.name} · sin dependientes`
-                        : `${p.name} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
+                        ? `${label} · sin dependientes`
+                        : `${label} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
                     return (
-                      <option key={planOptionKey(p)} value={planOptionKey(p)}>{cupo}</option>
+                      <option key={p.cplan} value={p.cplan}>{cupo}</option>
                     );
                   })}
                 </>
@@ -396,6 +510,35 @@ export function FuneralPlansStep() {
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
+
+        {showDayPicker ? (
+          <div>
+            <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
+              <CalendarClock size={11} className="text-amber-500" />
+              Días de vigencia
+            </label>
+            <div className="relative group">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+                <CalendarClock size={15} strokeWidth={2.5} />
+              </div>
+              <select
+                value={selectedPlan ? planOptionKey(selectedPlan) : ''}
+                onChange={(e) => {
+                  const found = findPlanByOptionKey(apiPlans, e.target.value) ?? null;
+                  applySelectedPlan(found);
+                }}
+                className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+              >
+                {dayOptions.map((p) => (
+                  <option key={planOptionKey(p)} value={planOptionKey(p)}>
+                    {p.ndias} días
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            </div>
+          </div>
+        ) : null}
 
         {/* Selector de frecuencia */}
         <div>
@@ -431,6 +574,14 @@ export function FuneralPlansStep() {
             </select>
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
+          {cuotasFrecuencia > 1 && (
+            <p className="mt-1.5 text-xs text-slate-600">
+              {annualUsd > 0
+                ? `${cuotasFrecuencia} cuotas de $${(annualUsd / cuotasFrecuencia).toFixed(2)}. `
+                : `${cuotasFrecuencia} cuotas. `}
+              Hoy pagas la 1ª cuota y las siguientes se cobran por domiciliación bancaria.
+            </p>
+          )}
         </div>
       </div>
 
@@ -496,12 +647,27 @@ export function FuneralPlansStep() {
               Cobertura incluida
             </p>
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
-              {selectedPlan.benefits.map((b) => (
-                <li key={b} className="flex items-start gap-2 text-xs text-slate-700">
+              {/* Coberturas reales de la cotización (Sis2000); textos del plan solo si no llegan. */}
+              {(hasRealQuote && quote?.coberturas?.length
+                ? quote.coberturas.map((c) => ({
+                    key: String(c.ccobertura ?? c.name),
+                    text: c.name,
+                    suma: c.sumaAsegurada,
+                  }))
+                : selectedPlan.benefits.map((b) => ({ key: b, text: b, suma: null as number | null }))
+              ).map((item) => (
+                <li key={item.key} className="flex items-start gap-2 text-xs text-slate-700">
                   <span className="w-4 h-4 rounded-full bg-emerald-500 text-white grid place-items-center flex-shrink-0 mt-0.5 shadow-[0_2px_8px_rgba(16,185,129,0.3)]">
                     <Check size={9} strokeWidth={3.5} />
                   </span>
-                  <span className="leading-relaxed font-medium">{b}</span>
+                  <span className="leading-relaxed font-medium">
+                    {item.text}
+                    {item.suma != null && item.suma > 0 && (
+                      <span className="block text-[0.68rem] text-slate-500 font-semibold">
+                        Suma asegurada ${item.suma.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
