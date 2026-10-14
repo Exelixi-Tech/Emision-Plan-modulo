@@ -12,6 +12,7 @@ const { createFuneralSubmission } = require('../services/nexusFuneralSubmission'
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { isFunerarioCplan } = require('../lib/funerarioPlan');
 const { resolveCanalKey } = require('../lib/canalKey');
+const { buildFuneralCheckoutPatch } = require('../lib/funeralCheckoutPatch');
 
 const router = express.Router();
 
@@ -128,6 +129,21 @@ router.post('/submissions', async (req, res) => {
     );
 
     const scoring = computePolicyHealthScore(questions, insureds, rules);
+    // Plan sin preguntas: no hay nada que revisar → se trata como semáforo verde.
+    const sinPreguntas = !Array.isArray(questions) || questions.length === 0;
+    if (sinPreguntas) {
+      scoring.verdict = 'emit';
+      scoring.forcedReject = false;
+    }
+    // Pago directo solo si el cliente viene por el puente de módulos (misma sesión → Pagos)
+    // y la cotización tiene prima válida para cobrar; si no, se mantiene el flujo por correo.
+    const directCheckout =
+      body.directCheckout === true &&
+      sessionId !== 'standalone' &&
+      buildFuneralCheckoutPatch(
+        { quote: body.quote, selectedPlan: body.selectedPlan, funeral: body.funeral, metadataCanal: {} },
+        { cplan, submissionId: 'check' },
+      ) !== null;
 
     // Solo el rechazo de una pregunta (términos, blockIfTrue, etc.) corta sin mesa.
     // El rango "Alto" debe crear solicitud para que mesa técnica la vea.
@@ -213,15 +229,30 @@ router.post('/submissions', async (req, res) => {
       reviewerEmails: rules.reviewerEmails,
       notifyReviewers: scoring.verdict !== 'emit',
       autoApprove: scoring.verdict === 'emit',
+      // Nexus aprueba sin link ni correo; el cobro se hace en Pagos en la misma sesión.
+      directPay: scoring.verdict === 'emit' && directCheckout,
     });
 
     const autoPayOk = scoring.verdict === 'emit' && submission?.estado === 'approved';
+    // Si Nexus generó link (versión sin pago directo), se mantiene el flujo por correo.
+    const checkoutPatch =
+      autoPayOk && directCheckout && !submission?.paymentUrl
+        ? buildFuneralCheckoutPatch(snapshot, {
+            cplan,
+            planName: planName || undefined,
+            submissionId: submission.id,
+            originSessionId: sessionId,
+          })
+        : null;
+    const directPay = Boolean(checkoutPatch);
     const clientVerdict = autoPayOk ? 'emit' : scoring.verdict === 'emit' ? 'referred' : scoring.verdict;
-    const clientMessage = autoPayOk
-      ? scoring.verdictMessage
-      : scoring.verdict === 'emit'
-        ? 'Un técnico revisará tu solicitud antes de continuar al pago.'
-        : scoring.verdictMessage;
+    const clientMessage = directPay
+      ? 'Solicitud aprobada. Continúa con el pago.'
+      : autoPayOk
+        ? scoring.verdictMessage
+        : scoring.verdict === 'emit'
+          ? 'Un técnico revisará tu solicitud antes de continuar al pago.'
+          : scoring.verdictMessage;
 
     return res.status(201).json({
       success: true,
@@ -240,6 +271,8 @@ router.post('/submissions', async (req, res) => {
         })),
       },
       message: clientMessage,
+      directPay,
+      ...(checkoutPatch ? { checkoutPatch } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

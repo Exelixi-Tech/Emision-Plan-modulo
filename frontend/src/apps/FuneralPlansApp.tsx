@@ -58,8 +58,10 @@ function mapHealthToFuneral(byInsured: Record<string, Record<string, unknown>>) 
 }
 
 /**
- * Paso 4 — Funerario únicamente.
- * Cuestionario de salud → confirmación al cliente (correo con link de pago) — no avanza a Pagos directo.
+ * Paso 4 — Personas (funerario y demás productos del wizard).
+ * Cuestionario de salud:
+ * - Verde o plan sin preguntas, con puente de módulos → Pagos en la misma sesión (cobro obligatorio, sin correo).
+ * - Amarillo/rojo, o sin puente → solicitud a mesa / correo con link de pago, como antes.
  */
 export default function FuneralPlansApp() {
   const {
@@ -182,11 +184,17 @@ export default function FuneralPlansApp() {
 
   async function openHealthModal() {
     if (!selectedPlan?.cplan) return;
-    setHealthModalOpen(true);
     setLoadingQuestions(true);
     try {
       const qs = await fetchFuneralHealthQuestions(selectedPlan.cplan);
       setHealthQuestions(qs);
+      if (qs.length === 0) {
+        // Plan sin preguntas: no se muestra cuestionario; se registra la solicitud y sigue al pago.
+        setLoadingQuestions(false);
+        await handleHealthConfirm({}, { sinPreguntas: true });
+        return;
+      }
+      setHealthModalOpen(true);
     } catch {
       toast.error(
         'Error al cargar preguntas',
@@ -198,12 +206,20 @@ export default function FuneralPlansApp() {
     }
   }
 
-  async function handleHealthConfirm(byInsured: Record<string, Record<string, unknown>>) {
+  async function handleHealthConfirm(
+    byInsured: Record<string, Record<string, unknown>>,
+    opts: { sinPreguntas?: boolean } = {},
+  ) {
     if (!selectedPlan?.cplan) return;
     setSavingHealth(true);
     try {
       const sessionId = getSessionId();
       const packed = { byInsured };
+      // Sin preguntas no hay pregunta de términos: el cuestionario se da por completo.
+      const healthFuneral = opts.sinPreguntas
+        ? { ...mapHealthToFuneral(byInsured), aceptaTerminos: true }
+        : mapHealthToFuneral(byInsured);
+      const canAdvance = typeof window.__bridgeAdvance === 'function' && sessionId !== 'standalone';
 
       await saveFuneralHealthAnswers({
         sessionId,
@@ -214,7 +230,7 @@ export default function FuneralPlansApp() {
         answers: packed,
       });
 
-      const { submission, scoring } = await submitFuneralPolicyReview({
+      const { submission, scoring, directPay, checkoutPatch } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
         cramo: product.cramo,
@@ -227,17 +243,26 @@ export default function FuneralPlansApp() {
           : funeral.beneficiarios?.[0]
             ? { ...funeral.beneficiarios[0] }
             : undefined,
-        funeral: { ...funeral, ...mapHealthToFuneral(byInsured) },
+        funeral: { ...funeral, ...healthFuneral },
         selectedPlan: { ...selectedPlan },
         quote: quote ? { ...quote } : null,
         quoteState,
         healthAnswers: packed,
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
+        directCheckout: canAdvance,
       });
 
-      setFuneral(mapHealthToFuneral(byInsured));
+      setFuneral(healthFuneral);
       setHealthModalOpen(false);
+
+      if (directPay && checkoutPatch && canAdvance) {
+        // Verde / sin preguntas: solicitud aprobada sin correo. Pagos exige el cobro (requirePayment).
+        toast.success('Solicitud aprobada', 'Continúa con el pago.');
+        await window.__bridgeAdvance?.(checkoutPatch);
+        return;
+      }
+
       const verdict = (scoring as { verdict?: string }).verdict;
       const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
       setPendingSubmission({

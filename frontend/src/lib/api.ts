@@ -955,6 +955,8 @@ export interface SubmitFuneralReviewPayload {
   healthAnswers: Record<string, unknown>;
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
+  /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
+  directCheckout?: boolean;
 }
 
 export async function submitFuneralPolicyReview(
@@ -962,14 +964,23 @@ export async function submitFuneralPolicyReview(
 ): Promise<{
   submission: FuneralSubmissionResult;
   scoring: { total: number; verdict?: string; verdictMessage?: string };
+  directPay: boolean;
+  checkoutPatch?: Record<string, unknown>;
 }> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
       scoring: { total: number; verdict?: string; verdictMessage?: string };
+      directPay?: boolean;
+      checkoutPatch?: Record<string, unknown>;
     }>('/funeral/submissions', payload);
-    return { submission: data.submission, scoring: data.scoring };
+    return {
+      submission: data.submission,
+      scoring: data.scoring,
+      directPay: data.directPay === true && Boolean(data.checkoutPatch),
+      checkoutPatch: data.checkoutPatch,
+    };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
     const data = axErr.response?.data;
