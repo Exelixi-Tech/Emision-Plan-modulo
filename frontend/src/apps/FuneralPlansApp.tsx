@@ -274,7 +274,8 @@ export default function FuneralPlansApp() {
         answers: packed,
       });
 
-      const { submission, scoring, quote: quoteAjustada, premiumAdjust, directPay } = await submitFuneralPolicyReview({
+      const canAdvance = typeof window.__bridgeAdvance === 'function' && sessionId !== 'standalone';
+      const { submission, scoring, quote: quoteAjustada, premiumAdjust, directPay, checkoutPatch } = await submitFuneralPolicyReview({
         sessionId,
         cplan: selectedPlan.cplan,
         cramo: effectiveCramo,
@@ -295,6 +296,7 @@ export default function FuneralPlansApp() {
         healthAnswers: packed,
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
+        directCheckout: canAdvance,
       });
 
       setFuneral(mapHealthToFuneral(byInsured, questions));
@@ -315,12 +317,12 @@ export default function FuneralPlansApp() {
       const verdict = (scoring as { verdict?: string }).verdict;
       const verdictMessage = (scoring as { verdictMessage?: string }).verdictMessage;
 
-      if (directPay) {
-        // Verde / sin preguntas: la solicitud queda aprobada y se cobra ya (sin correo).
-        // El id viaja en metadataCanal para registrar la póliza emitida en la solicitud.
+      if (directPay && checkoutPatch && canAdvance) {
+        // Verde / sin preguntas: solicitud aprobada sin correo. Se pasa a Pagos con los mismos
+        // datos de cobro que el link (requirePayment): Pagos exige el pago antes de emitir.
         setMetadataCanal({ ...(metadataCanal ?? {}), funeralSubmissionId: submission.id });
         toast.success('Solicitud aprobada', 'Continúa con el pago.');
-        void window.__bridgeAdvance?.({ funeralSubmissionId: submission.id });
+        await window.__bridgeAdvance?.(checkoutPatch);
         return;
       }
 

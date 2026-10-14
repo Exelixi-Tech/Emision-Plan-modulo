@@ -1005,6 +1005,8 @@ export interface SubmitFuneralReviewPayload {
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
   cproveedor?: number | string;
+  /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
+  directCheckout?: boolean;
 }
 
 /** Recargo/descuento del cuestionario aplicado a la prima (servidor). */
@@ -1031,6 +1033,8 @@ export async function submitFuneralPolicyReview(
   premiumAdjust?: PremiumAdjust | null;
   /** Semáforo verde o plan sin preguntas: sigue al pago en la misma sesión (sin correo). */
   directPay?: boolean;
+  /** Datos de cobro obligatorio para Pagos (mismo formato que el link del correo). */
+  checkoutPatch?: Record<string, unknown>;
 }> {
   try {
     const { data } = await api.post<{
@@ -1040,13 +1044,15 @@ export async function submitFuneralPolicyReview(
       quote?: PolicyQuote | null;
       premiumAdjust?: PremiumAdjust | null;
       directPay?: boolean;
+      checkoutPatch?: Record<string, unknown>;
     }>('/funeral/submissions', payload);
     return {
       submission: data.submission,
       scoring: data.scoring,
       quote: data.quote,
       premiumAdjust: data.premiumAdjust,
-      directPay: data.directPay === true,
+      directPay: data.directPay === true && Boolean(data.checkoutPatch),
+      checkoutPatch: data.checkoutPatch,
     };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
