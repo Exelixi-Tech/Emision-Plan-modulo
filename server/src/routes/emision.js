@@ -52,6 +52,24 @@ const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
   .map(Number)
   .filter((n) => Number.isInteger(n));
 
+/**
+ * Misma regla que el selector del frontend: backoffice solo si el usuario es interno, no productor y
+ * con productor de sesión genérico (80080 o vacío); marketplace solo si el productor de la sesión es 80080.
+ * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
+ */
+function puedeElegirProductor(meta) {
+  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
+  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
+
+  if (origen === 'backoffice') {
+    const productor = String(meta?.cproductor ?? '').trim();
+    if (productor !== '' && productor !== '80080') return false;
+    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
+    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
+  }
+  return false;
+}
+
 /** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
@@ -65,11 +83,8 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
-  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
-  const rawCrol = nexusMetadata?.crol ?? state.metadataCanal?.crol;
-  const crolNum = rawCrol != null && String(rawCrol).trim() !== '' ? Number(rawCrol) : NaN;
-  const esTecnico = Number.isFinite(crolNum) && !CROLES_PRODUCTOR.includes(crolNum);
-  const usaSeleccion = esTecnico && state.metadataCanal?.productorSeleccionado === true;
+  // Quien pudo elegir productor en el selector: se emite con ese productor, no con el del token.
+  const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor }) && state.metadataCanal?.productorSeleccionado === true;
   const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
     if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {

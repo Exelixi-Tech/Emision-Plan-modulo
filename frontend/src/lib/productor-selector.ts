@@ -101,8 +101,7 @@ export function isProductorRole(meta: Record<string, unknown>): boolean {
 /** Determina si la sesión se originó desde el Backoffice de Sis2000 */
 export function isBackofficeSession(meta: Record<string, unknown>): boolean {
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
-  const allowPending = String(meta.allowPendingEmission ?? '').trim().toLowerCase() === 'true';
-  return origen === 'backoffice' || allowPending;
+  return origen === 'backoffice';
 }
 
 /** crol interno de Sis2000 (técnico/administrativo): viene informado y no es productor. */
@@ -113,11 +112,15 @@ export function isTecnicoRole(meta: Record<string, unknown>): boolean {
   return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
 }
 
+/** Código de productor de La Mundial: en marketplace es el único caso en que se elige productor. */
+const PRODUCTOR_LA_MUNDIAL = '80080';
+
 /**
- * Selector de productor: solo el técnico (rol interno de Sis2000).
- * - Rol productor (VITE_CROL_PRODUCTOR): NO lo ve (toma su propio código).
- * - Sin crol (portal, canales, intermediarios): NO lo ve; usa el productor de la sesión.
- * - Cualquier otro rol interno informado: SÍ lo ve para asociar la emisión.
+ * Selector de productor, según el origen de la sesión:
+ * - Backoffice de Sis2000: solo si el usuario es interno (crol informado), NO es productor y su
+ *   productor de sesión es el genérico (80080 o vacío); si ya tiene productor asignado, emite con ese.
+ * - Marketplace: solo si el productor de la sesión es 80080.
+ * - Cualquier otro origen: no se muestra.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
   // Flujo tarjeta: el productor/canal viene fijo en la tarjeta (lote), aunque haya token de usuario.
@@ -125,24 +128,21 @@ export function shouldShowProductorSelector(meta: Record<string, unknown>): bool
     return false;
   }
 
-  // Si el usuario es un productor logueado, NUNCA se muestra el selector (toma su propio código)
-  if (isProductorRole(meta)) {
-    return false;
-  }
-
-  // Sin crol interno (portal / canal / intermediario) no se muestra
-  if (!isTecnicoRole(meta)) {
-    return false;
-  }
-
-  // Si es marketplace cerrado sin permiso de emisión pendiente
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
-  if (origen === 'marketplace' && String(meta.allowPendingEmission ?? '').trim().toLowerCase() !== 'true') {
-    return false;
+  // Al elegir, el wizard guarda el productor elegido en cproductor: no debe ocultar el selector.
+  const yaElegido = meta.productorSeleccionado === true;
+
+  if (origen === 'marketplace') {
+    return yaElegido || String(meta.cproductor ?? '').trim() === PRODUCTOR_LA_MUNDIAL;
   }
 
-  // Técnico interno de Sis2000: SÍ se muestra el selector
-  return true;
+  if (isBackofficeSession(meta)) {
+    const productor = String(meta.cproductor ?? '').trim();
+    const productorGenerico = productor === '' || productor === PRODUCTOR_LA_MUNDIAL;
+    return isTecnicoRole(meta) && !isProductorRole(meta) && (productorGenerico || yaElegido);
+  }
+
+  return false;
 }
 
 export function initialProductorId(meta: Record<string, unknown>, currentProductor?: string | number): string {
