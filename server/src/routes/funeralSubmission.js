@@ -16,6 +16,7 @@ const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 const personasClient = require('../services/personasClient');
 const personasMapper = require('../services/personasMapper');
 const { resolveCanalKey } = require('../lib/canalKey');
+const { buildFuneralCheckoutPatch } = require('../lib/funeralCheckoutPatch');
 
 const router = express.Router();
 
@@ -196,6 +197,16 @@ router.post('/submissions', async (req, res) => {
       ? { ...(body.quote || {}), ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || body.quote?.ptasa }
       : body.quote ?? null;
 
+    // Pago directo solo si el cliente viene por el puente de módulos (misma sesión → Pagos)
+    // y la prima permite armar el cobro; si no, se mantiene el flujo por correo.
+    const directCheckout =
+      body.directCheckout === true &&
+      sessionId !== 'standalone' &&
+      buildFuneralCheckoutPatch(
+        { quote: quoteFinal, selectedPlan: body.selectedPlan, funeral: body.funeral, metadataCanal: {} },
+        { cplan, submissionId: 'check' },
+      ) !== null;
+
     upsertHealthAnswers({
       sessionId,
       cplan,
@@ -258,12 +269,22 @@ router.post('/submissions', async (req, res) => {
       reviewerEmails: rules.reviewerEmails,
       notifyReviewers: verdict !== 'emit',
       autoApprove: verdict === 'emit',
-      // Verde: aprobada sin link ni correo; el emisor sigue al pago (Nexus sin soporte: link + correo).
-      directPay: verdict === 'emit',
+      // Verde con puente: aprobada sin link ni correo; el cobro se hace en Pagos en la misma sesión.
+      directPay: verdict === 'emit' && directCheckout,
     });
 
     const autoPayOk = verdict === 'emit' && submission?.estado === 'approved';
-    const directPay = autoPayOk && !submission?.paymentUrl;
+    // Datos de cobro obligatorio para Pagos (nunca se emite sin pago). Si Nexus generó link, sigue el correo.
+    const checkoutPatch =
+      autoPayOk && directCheckout && !submission?.paymentUrl
+        ? buildFuneralCheckoutPatch(snapshot, {
+            cplan,
+            planName: planName || undefined,
+            submissionId: submission.id,
+            originSessionId: sessionId,
+          })
+        : null;
+    const directPay = Boolean(checkoutPatch);
     const clientVerdict = autoPayOk ? 'emit' : verdict === 'emit' ? 'referred' : verdict;
     const clientMessage = directPay
       ? 'Solicitud aprobada. Continúa con el pago.'
@@ -292,6 +313,7 @@ router.post('/submissions', async (req, res) => {
       quote: quoteFinal,
       premiumAdjust: premiumAdjust ?? null,
       directPay,
+      ...(checkoutPatch ? { checkoutPatch } : {}),
       message: clientMessage,
     });
   } catch (err) {
