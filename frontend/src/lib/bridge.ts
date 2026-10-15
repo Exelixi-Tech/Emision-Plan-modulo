@@ -24,7 +24,7 @@ import {
   getNexusTokenFromUrl,
 } from './nexus-token-client';
 import { canNavigateToStep, getDefaultRequiredDocs } from './wizard-navigation';
-import { getProductConfig } from './product';
+import { getProductConfig, isPatrimonial } from './product';
 import { BUILDER_PRODUCT_STORAGE_KEY, isExelixiCatalogFlow, ensureExelixiFlowQueryParam } from './exelixi-catalog';
 import { ensureCotizadorFlowQueryParam, isCotizadorFlow } from './cotizador-flow';
 import { applyWizardStepFromUrl, defaultStepForModule, stepToModuleOrder } from './wizard-step';
@@ -33,8 +33,8 @@ import {
   enrichBridgePayloadForSave,
   extractActorMetadataFromBridgeData,
 } from './sso-metadata';
-import { readFlowHandoff } from './flow-handoff';
 import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
+import { readFlowHandoff, persistFlowHandoff } from './flow-handoff';
 
 // ── Configuración por puerto (dev local) o hostname (HTTPS sslip.io) ───────
 const PORT_TO_ORDER: Record<string, number> = {
@@ -110,7 +110,7 @@ function getModuleTokenKey(): string {
 /** Flow (session/save/done): misma base que NexusGuard (GCIA → nexus-api.exelixitech.com). */
 const bridgeHost = () =>
   resolveNexusApiUrl(import.meta.env?.VITE_NEXUS_API_URL as string | undefined);
-const QUERY_KEY   = 'sid';
+const QUERY_KEY = 'sid';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function getSidFromUrl(): string | null {
@@ -193,11 +193,11 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 // ── Estado del bridge ───────────────────────────────────────────────────────
 interface BridgeAPI {
   active: boolean;
-  sid:    string | null;
-  order:  number | null;
-  ready:  Promise<void>;
+  sid: string | null;
+  order: number | null;
+  ready: Promise<void>;
   hydrate: () => Promise<void>;
-  save:    (extra?: Record<string, unknown>) => Promise<void>;
+  save: (extra?: Record<string, unknown>) => Promise<void>;
   advance: (extra?: Record<string, unknown>) => Promise<{ finished: boolean; nextUrl?: string }>;
   navigateToStep: (targetStep: number) => Promise<boolean>;
 }
@@ -211,7 +211,7 @@ declare global {
 
 // ── Implementación ──────────────────────────────────────────────────────────
 function makeBridge(): BridgeAPI {
-  const sid   = getSidFromUrl();
+  const sid = getSidFromUrl();
   const order = moduleOrder();
   const active = Boolean(sid && order);
 
@@ -224,12 +224,17 @@ function makeBridge(): BridgeAPI {
     }
     // Limpieza de datos fantasma — no aplicar en flujo catálogo Exélixi
     const isCatalogFlow = isExelixiCatalogFlow();
-    const prod = sessionStorage.getItem('exelixi_product') || 'rcv';
+    const prod = sessionStorage.getItem('exelixi_product') || (isPatrimonial() ? 'patrimonial' : 'rcv');
     if (!isCatalogFlow) {
       if (prod === 'funerario' || prod === 'patrimoniales') {
         delete out.vehicle;
+        delete out.patrimoniales;
+      } else if (prod === 'patrimonial') {
+        delete out.vehicle;
+        delete out.funeral;
       } else if (prod === 'rcv') {
         delete out.funeral;
+        delete out.patrimoniales;
       }
     }
     out.product = prod;
@@ -257,7 +262,9 @@ function makeBridge(): BridgeAPI {
       out.fraccionado = isFrecuenciaFraccionada(freq);
     }
 
-    return enrichBridgePayloadForSave(out, getModuleTokenKey());
+    const payload = enrichBridgePayloadForSave(out, getModuleTokenKey());
+    persistFlowHandoff(payload);
+    return payload;
   };
 
   // Campos cuyo valor NO debe sobrescribirse durante la hidratación.
@@ -385,6 +392,34 @@ function makeBridge(): BridgeAPI {
       return out ?? { finished: true };
     } catch (e) {
       console.warn('[bridge] advance failed', e);
+      if (order === 3) {
+        const pagosBase = (
+          (import.meta.env.VITE_PAGOS_CONTINUE_BASE as string | undefined)?.replace(/\/$/, '')
+          || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5184' : '/pagos')
+        );
+        const params = new URLSearchParams();
+        if (sid) params.set('sid', sid);
+        const token =
+          getNexusTokenFromUrl()
+          || (typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem(getModuleTokenKey())
+            : null);
+        if (token) params.set('nexus_token', token);
+        try {
+          const product = sessionStorage.getItem('exelixi_product') || 'rcv';
+          params.set('product', product);
+        } catch {
+          params.set('product', 'rcv');
+        }
+        if (isExelixiCatalogFlow()) {
+          params.set('flow', 'exelixi-catalog');
+        }
+        if (isCotizadorFlow()) {
+          params.set('flow', 'cotizador');
+        }
+        params.set('wizardStep', '5');
+        window.location.href = `${pagosBase}/?${params.toString()}`;
+      }
       return { finished: true };
     }
   };
@@ -474,32 +509,32 @@ async function init() {
     });
 
     bridge.ready = hydratePromise;
-    window.__bridge        = bridge;
+    window.__bridge = bridge;
     window.__bridgeAdvance = (extra) => bridge.advance(extra ?? {}).then(() => undefined);
     window.__bridgeNavigateStep = (targetStep) => bridge.navigateToStep(targetStep);
 
-  // Auto-advance para módulos cuyo "fin" es un cambio de step en el store:
-  //   OCR (1):    step 1 → 2
-  //   Pagos (4):  step 5 → 6 (success)
-  // Para Formulario (2) y Emisión (3) el avance se dispara desde el App.tsx
-  // cuando el botón "Continuar" / "Confirmar plan" / "Guardar" tiene éxito.
-  let lastStep: number | undefined;
-  useWizardStore.subscribe((s: { step?: number }) => {
-    const step = s?.step;
-    if (typeof step !== 'number' || step === lastStep) return;
-    const prev = lastStep;
-    lastStep = step;
+    // Auto-advance para módulos cuyo "fin" es un cambio de step en el store:
+    //   OCR (1):    step 1 → 2
+    //   Pagos (4):  step 5 → 6 (success)
+    // Para Formulario (2) y Emisión (3) el avance se dispara desde el App.tsx
+    // cuando el botón "Continuar" / "Confirmar plan" / "Guardar" tiene éxito.
+    let lastStep: number | undefined;
+    useWizardStore.subscribe((s: { step?: number }) => {
+      const step = s?.step;
+      if (typeof step !== 'number' || step === lastStep) return;
+      const prev = lastStep;
+      lastStep = step;
 
-    // OCR completado: step pasó de 1 → 2
-    if (bridge.order === 1 && prev === 1 && step === 2) {
-      bridge.advance().catch(() => {});
-    }
-    // Pagos completado: step llegó a 6 (success)
-    if (bridge.order === 4 && step === 6) {
-      // No hay siguiente módulo; sólo registra el cierre del flujo.
-      bridge.advance().catch(() => {});
-    }
-  });
+      // OCR completado: step pasó de 1 → 2
+      if (bridge.order === 1 && prev === 1 && step === 2) {
+        bridge.advance().catch(() => { });
+      }
+      // Pagos completado: step llegó a 6 (success)
+      if (bridge.order === 4 && step === 6) {
+        // No hay siguiente módulo; sólo registra el cierre del flujo.
+        bridge.advance().catch(() => { });
+      }
+    });
 
     // eslint-disable-next-line no-console
     console.info('[bridge] active — sid=' + bridge.sid + ' order=' + bridge.order);

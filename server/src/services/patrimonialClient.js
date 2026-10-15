@@ -9,8 +9,9 @@ const {
   trackResponse,
 } = require('./nestTokenService');
 const { resolveEntityContext } = require('./canalClient');
+const personasClient = require('./personasClient');
 
-const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PATRIMONIAL || '20', 10);
+const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PATRIMONIAL || '28', 10);
 const DEFAULT_TIMEOUT = 30_000;
 
 const PATH_PREFIX = '/api/v1/valrep/';
