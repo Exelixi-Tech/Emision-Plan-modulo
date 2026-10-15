@@ -33,7 +33,7 @@ import {
   enrichBridgePayloadForSave,
   extractActorMetadataFromBridgeData,
 } from './sso-metadata';
-import { readFlowHandoff } from './flow-handoff';
+import { readFlowHandoff, persistFlowHandoff } from './flow-handoff';
 import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
 
 // ── Configuración por puerto (dev local) o hostname (HTTPS sslip.io) ───────
@@ -257,7 +257,9 @@ function makeBridge(): BridgeAPI {
       out.fraccionado = isFrecuenciaFraccionada(freq);
     }
 
-    return enrichBridgePayloadForSave(out, getModuleTokenKey());
+    const payload = enrichBridgePayloadForSave(out, getModuleTokenKey());
+    persistFlowHandoff(payload);
+    return payload;
   };
 
   // Campos cuyo valor NO debe sobrescribirse durante la hidratación.
@@ -385,6 +387,38 @@ function makeBridge(): BridgeAPI {
       return out ?? { finished: true };
     } catch (e) {
       console.warn('[bridge] advance failed', e);
+      // Fallback solo para desarrollo local (sin bridge/sid). En QA/prod un fallo de avance
+      // NO debe saltar a Pagos: se respeta la cadena de Nexus.
+      const isLocalDev = typeof window !== 'undefined'
+        && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (order === 3 && isLocalDev) {
+        const pagosBase = (
+          (import.meta.env.VITE_PAGOS_CONTINUE_BASE as string | undefined)?.replace(/\/$/, '')
+          || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5184' : '/pagos')
+        );
+        const params = new URLSearchParams();
+        if (sid) params.set('sid', sid);
+        const token =
+          getNexusTokenFromUrl()
+          || (typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem(getModuleTokenKey())
+            : null);
+        if (token) params.set('nexus_token', token);
+        try {
+          const product = sessionStorage.getItem('exelixi_product') || 'rcv';
+          params.set('product', product);
+        } catch {
+          params.set('product', 'rcv');
+        }
+        if (isExelixiCatalogFlow()) {
+          params.set('flow', 'exelixi-catalog');
+        }
+        if (isCotizadorFlow()) {
+          params.set('flow', 'cotizador');
+        }
+        params.set('wizardStep', '5');
+        window.location.href = `${pagosBase}/?${params.toString()}`;
+      }
       return { finished: true };
     }
   };

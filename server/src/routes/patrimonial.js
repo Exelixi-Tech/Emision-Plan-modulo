@@ -17,7 +17,7 @@ const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 
 const router = express.Router();
-const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 20;
+const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 28;
 
 function patrimonialCanalMeta(req) {
   const meta = { ...(req.nexusMetadata || {}) };
