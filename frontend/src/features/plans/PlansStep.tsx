@@ -77,7 +77,17 @@ function resolveLockedTarjetaPlan(
   return fromApi ?? buildLockedTarjetaPlan(lockedCplan, meta, categoryLabel);
 }
 
-export function PlansStep() {
+interface PlansStepProps {
+  /**
+   * Flujo tarjeta: el plan viene de la tarjeta, así que el paso no se muestra.
+   * Cotiza en segundo plano y llama onAutoReady; si la cotización falla, muestra la vista normal.
+   */
+  autoContinue?: boolean;
+  onAutoReady?: () => void;
+  onAutoFallback?: () => void;
+}
+
+export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }: PlansStepProps = {}) {
   const {
     setCategory, selectedPlan, setSelectedPlan,
     vehicle, quote, quoteState, rcv, setRcv,
@@ -365,6 +375,37 @@ export function PlansStep() {
   const tarjetaForeign = tarjetaCurrencyKind === 'eur';
   const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
   const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
+
+  const autoActive = autoContinue && Boolean(lockedCplan);
+  const autoFailed = autoActive && quoteState === 'error';
+  const autoReady =
+    autoActive
+    && !plansLoading
+    && !frecLoading
+    && selectedPlan?.cplan?.toUpperCase() === lockedCplan.toUpperCase()
+    && hasRealQuote
+    && useWizardStore.getState().quoteVehicleSignature === quoteSig;
+  const autoReadyFired = useRef(false);
+
+  useEffect(() => {
+    if (!autoReady || autoReadyFired.current) return;
+    autoReadyFired.current = true;
+    onAutoReady?.();
+  }, [autoReady, onAutoReady]);
+
+  useEffect(() => {
+    if (autoFailed) onAutoFallback?.();
+  }, [autoFailed, onAutoFallback]);
+
+  if (autoActive && !autoFailed) {
+    return (
+      <div className="animate-fade-in text-center py-14 px-4">
+        <Loader2 size={28} className="animate-spin text-indigo-500 mx-auto mb-4" />
+        <p className="text-sm font-bold text-slate-900">Preparando la emisión de tu póliza…</p>
+        <p className="text-xs text-slate-500 mt-1">Estamos validando el plan asociado a tu tarjeta.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in space-y-6">

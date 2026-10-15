@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PlansStep } from '../features/plans/PlansStep';
 import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
@@ -16,6 +16,18 @@ export default function RcvPlansApp() {
     category, selectedPlan, quoteState, quote, goTo,
   } = useWizardStore();
   const cotizador = isCotizadorFlow();
+  // Flujo tarjeta: el plan lo define la tarjeta → no se muestra este paso.
+  const [tarjetaAuto, setTarjetaAuto] = useState(() => !cotizador && shouldUseTarjetaPublicApi());
+
+  const handleTarjetaAutoReady = useCallback(() => {
+    const s = useWizardStore.getState();
+    if (!validatePlanReady(s.category, s.selectedPlan, s.quoteState, s.quote)) {
+      setTarjetaAuto(false);
+      return;
+    }
+    continueTarjetaToPagos();
+  }, []);
+  const handleTarjetaAutoFallback = useCallback(() => setTarjetaAuto(false), []);
 
   useEffect(() => {
     if (cotizador) goTo(4);
@@ -48,17 +60,24 @@ export default function RcvPlansApp() {
   return (
     <EmissionPlanShell
       eyebrow={cotizador ? 'Paso 02 · Cotización' : undefined}
-      title={cotizador ? 'Planes RCV disponibles' : undefined}
+      title={cotizador ? 'Planes RCV disponibles' : (tarjetaAuto ? 'Preparando tu emisión' : undefined)}
       subtitle={
         cotizador
           ? 'Selecciona un plan para ver la prima cotizada en USD y Bs.'
-          : 'Categorías diseñadas para cada perfil de uso del vehículo.'
+          : tarjetaAuto
+            ? 'Tu plan viene definido por la tarjeta de activación.'
+            : 'Categorías diseñadas para cada perfil de uso del vehículo.'
       }
       helpSubject="Suscripción RCV - Soporte"
       onContinuar={handleContinuar}
       continuarLabel={cotizador ? 'Ver cotización' : undefined}
+      hideContinuar={tarjetaAuto}
     >
-      <PlansStep />
+      <PlansStep
+        autoContinue={tarjetaAuto}
+        onAutoReady={handleTarjetaAutoReady}
+        onAutoFallback={handleTarjetaAutoFallback}
+      />
     </EmissionPlanShell>
   );
 }
