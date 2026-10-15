@@ -481,44 +481,62 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   if (autoActive && !autoFailed) {
     const terminosUrl = (import.meta.env.VITE_TARJETA_TERMINOS_URL as string | undefined)?.trim();
     return (
-      <div className="animate-fade-in space-y-5">
-        <div>
+      <div className="animate-fade-in space-y-4">
+        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5">
+          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-1">Pregunta 1 de 2</p>
           <p className="text-sm font-bold text-slate-900 mb-3">
             ¿Realiza usted traslados o delivery de algún aplicativo?
           </p>
-          <div className="flex gap-3">
-            {(['si', 'no'] as const).map((op) => (
-              <button
-                key={op}
-                type="button"
-                onClick={() => setUsoDelivery(op)}
-                className={`min-w-[96px] px-5 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
-                  usoDelivery === op
+          <div role="radiogroup" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {([
+              { value: 'no', label: 'No' },
+              { value: 'si', label: 'Sí, realizo traslados o delivery' },
+            ] as const).map((op) => (
+              <label
+                key={op.value}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-sm font-bold cursor-pointer transition-all ${
+                  usoDelivery === op.value
                     ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300'
                 }`}
               >
-                {op === 'si' ? 'Sí' : 'No'}
-              </button>
+                <input
+                  type="radio"
+                  name="tarjeta-uso-delivery"
+                  value={op.value}
+                  checked={usoDelivery === op.value}
+                  onChange={() => {
+                    setUsoDelivery(op.value);
+                    if (op.value === 'si') setAceptaMecanismos(false);
+                  }}
+                  className="h-4 w-4 accent-indigo-600"
+                />
+                {op.label}
+              </label>
             ))}
           </div>
           {usoDelivery === 'si' && (
             <div className="mt-3 flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
               <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
-              <p>
-                Debe dirigirse a la sucursal de La Mundial de Seguros más cercana o comunicarse al
-                {' '}<strong>0500-5526256</strong> (y seleccionar la opción 1), ya que debe ajustar la
-                prima o gestionar devolución de su pago debido a que la tarifa para taxi es diferente.
-              </p>
+              <div>
+                <p>
+                  Debe dirigirse a la sucursal de La Mundial de Seguros más cercana o comunicarse al
+                  {' '}<strong>0500-5526256</strong> (y seleccionar la opción 1), ya que debe ajustar la
+                  prima o gestionar devolución de su pago debido a que la tarifa para taxi es diferente.
+                </p>
+                <p className="mt-2 text-xs text-amber-800">Si marcó esta opción por error, seleccione «No» para continuar.</p>
+              </div>
             </div>
           )}
         </div>
 
-        {usoDelivery === 'no' && (
-          <label className="flex gap-3 items-start rounded-xl border-2 border-slate-200 bg-white p-4 cursor-pointer">
+        <div className={`rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5 transition-opacity ${usoDelivery === 'no' ? '' : 'opacity-50'}`}>
+          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2">Pregunta 2 de 2 · Declaración de mecanismos electrónicos</p>
+          <label className={`flex gap-3 items-start ${usoDelivery === 'no' ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
             <input
               type="checkbox"
               checked={aceptaMecanismos}
+              disabled={usoDelivery !== 'no'}
               onChange={(e) => setAceptaMecanismos(e.target.checked)}
               className="mt-0.5 h-4 w-4 accent-indigo-600"
             />
@@ -541,7 +559,7 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
               )}
             </span>
           </label>
-        )}
+        </div>
 
         {declaracionesOk && (
           <div className="flex items-center gap-2 text-sm text-slate-500">
