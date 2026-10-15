@@ -22,6 +22,11 @@ const router = express.Router();
 
 /** Actor de la emisión en flujo tarjeta: siempre el de la tarjeta (lote/canal). */
 const TARJETA_ACTOR_KEYS = ['centidad', 'citem', 'cproductor', 'ccanalalt', 'cscanalalt'];
+/**
+ * Producto de la emisión en flujo tarjeta: el de la tarjeta. Un token de sesión de otro
+ * producto (ej. funerario cramo 9) no debe cambiar el ramo/plan → "Error en cálculos".
+ */
+const TARJETA_PRODUCT_KEYS = ['cplan', 'cproducto', 'cmoneda'];
 
 function decodeJwtMetadata(token) {
   if (!token || typeof token !== 'string') return {};
@@ -102,12 +107,13 @@ function withNexusMetadata(state, nexusMetadata) {
   // del lote). Un token de usuario o el selector de productor no deben reemplazarlo.
   if (isRcvTarjetaFlow(state)) {
     const card = state.metadataCanal || {};
-    for (const key of TARJETA_ACTOR_KEYS) {
+    for (const key of [...TARJETA_ACTOR_KEYS, ...TARJETA_PRODUCT_KEYS]) {
       const v = card[key];
       if (v != null && String(v).trim() !== '') mergedMeta[key] = v;
       else delete mergedMeta[key];
     }
-    for (const key of ['cgestor', 'cgestor_in', 'ccanalalt_in', 'cscanalalt_in', 'productorSeleccionado']) {
+    // Tarjetas son RCV: el ramo lo resuelve el vehículo (18, o 28 binacional), nunca la sesión.
+    for (const key of ['cramo', 'cgestor', 'cgestor_in', 'ccanalalt_in', 'cscanalalt_in', 'productorSeleccionado']) {
       delete mergedMeta[key];
     }
     const { cgestor: _ignored, ...rest } = state;
