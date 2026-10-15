@@ -120,7 +120,7 @@ export function getProductConfig(): ProductConfig {
 
 export function isPatrimonial(): boolean {
   const p = getProductId();
-  return p === 'patrimonial' || p === 'patrimoniales';
+  return p === 'patrimoniales';
 }
 
 export function isFunerario(): boolean {

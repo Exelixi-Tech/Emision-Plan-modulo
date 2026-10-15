@@ -189,12 +189,12 @@ router.post('/policies/quote', async (req, res) => {
   try {
     const { state, plan } = req.body || {};
     const isPatrimonial =
-      state?.product === 'patrimonial' ||
+      state?.product === 'patrimoniales' ||
       Boolean(state?.patrimoniales) ||
-      state?.cramo === 20 ||
+      state?.cramo === 28 ||
       state?.selectedPlan?.tag === 'Patrimonial' ||
-      req.body?.product === 'patrimonial' ||
-      req.body?.cramo === 20;
+      req.body?.product === 'patrimoniales' ||
+      req.body?.cramo === 28;
 
     if (isPatrimonial) {
       return handlePatrimonialQuote(req, res);
