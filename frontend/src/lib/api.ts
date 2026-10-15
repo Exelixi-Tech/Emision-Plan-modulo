@@ -1059,7 +1059,7 @@ export async function submitFuneralPolicyReview(
     if (data && (data.code || data.message)) {
       throw new PolicyEmitError({
         code: data.code ?? 'SUBMISSION_ERROR',
-        message: data.message ?? 'No se pudo registrar la solicitud funeraria.',
+        message: data.message ?? 'No se pudo registrar la solicitud.',
         httpStatus: axErr.response?.status,
         stage: 'validate',
       });
@@ -1090,7 +1090,7 @@ export async function validateFuneralEmission(payload: {
     if (data && (data.code || data.message)) {
       throw new PolicyEmitError({
         code: data.code ?? 'PERSONAS_VALIDATION_ERROR',
-        message: data.message ?? 'No se pudo validar la emisión funeraria.',
+        message: data.message ?? 'No se pudo validar la emisión.',
         httpStatus: axErr.response?.status,
         stage: data.stage ?? 'validate',
       });
