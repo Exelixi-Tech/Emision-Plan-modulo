@@ -82,7 +82,7 @@ const PERSONAS_PRODUCT_LABELS: Record<string, string> = {
 };
 
 /** xproducto del wizard o del SSO; si no, el nombre por cproducto; si no, el del módulo. */
-function resolvePersonasProductLabel(meta: Record<string, unknown> | null, fallback: string): string {
+export function resolvePersonasProductLabel(meta: Record<string, unknown> | null, fallback: string): string {
   const fromMeta = String(meta?.xproducto ?? '').trim() || resolveSsoXproducto();
   if (fromMeta) return fromMeta;
   const cproducto = String(meta?.cproducto ?? '').trim() || resolveSsoCproducto();

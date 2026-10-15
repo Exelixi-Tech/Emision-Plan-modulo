@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FuneralPlansStep } from '../features/plans/FuneralPlansStep';
+import { FuneralPlansStep, resolvePersonasProductLabel } from '../features/plans/FuneralPlansStep';
 import { FuneralHealthModal } from '../features/plans/FuneralHealthModal';
 import { FuneralSubmissionPending } from '../features/plans/FuneralSubmissionPending';
 import { useWizardStore } from '../store/wizardStore';
@@ -97,6 +97,11 @@ export default function FuneralPlansApp() {
     documents, metadataCanal, setFuneral, setMetadataCanal,
   } = useWizardStore();
   const product = getProductConfig();
+  // Producto de personas que se emite (solo visual): Vida, AP, Salud… o Funerario.
+  const productLabel = resolvePersonasProductLabel(
+    metadataCanal as Record<string, unknown> | null,
+    product.label,
+  );
 
   useEffect(() => {
     syncTitularFromTomador();
@@ -152,7 +157,7 @@ export default function FuneralPlansApp() {
     const msg =
       err instanceof Error
         ? err.message
-        : 'Ya existe una póliza funeraria activa para este asegurado.';
+        : 'Ya existe una póliza activa para este asegurado.';
     if (code === 'PERSONAS_DUPLICATE' || /póliza vigente|mismo asegurado/i.test(msg)) {
       toast.warning(
         'Póliza vigente',
@@ -347,8 +352,12 @@ export default function FuneralPlansApp() {
   return (
     <>
       <EmissionPlanShell
-        subtitle="Planes funerarios para proteger a tu grupo familiar."
-        helpSubject="Suscripción Funerario - Soporte"
+        subtitle={
+          productLabel === product.label
+            ? 'Planes funerarios para proteger a tu grupo familiar.'
+            : `Planes de ${productLabel} para proteger a tu grupo familiar.`
+        }
+        helpSubject={`Suscripción ${productLabel} - Soporte`}
         onContinuar={() => { void handleContinuar(); }}
         hideContinuar={Boolean(pendingSubmission)}
         continuarBusy={validatingEmit}
