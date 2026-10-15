@@ -74,12 +74,12 @@ export default function RcvPlansApp() {
   return (
     <EmissionPlanShell
       eyebrow={cotizador ? 'Paso 02 · Cotización' : undefined}
-      title={cotizador ? 'Planes RCV disponibles' : (tarjetaAuto ? 'Preparando tu emisión' : undefined)}
+      title={cotizador ? 'Planes RCV disponibles' : (tarjetaAuto ? 'Antes de emitir' : undefined)}
       subtitle={
         cotizador
           ? 'Selecciona un plan para ver la prima cotizada en USD y Bs.'
           : tarjetaAuto
-            ? 'Tu plan viene definido por la tarjeta de activación.'
+            ? 'Tu plan viene definido por la tarjeta de activación. Responde para continuar.'
             : 'Categorías diseñadas para cada perfil de uso del vehículo.'
       }
       helpSubject="Suscripción RCV - Soporte"

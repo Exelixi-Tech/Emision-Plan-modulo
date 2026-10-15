@@ -451,10 +451,16 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
   const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
 
+  // Declaraciones previas a la emisión por tarjeta (mismas de la pasarela La Mundial).
+  const [usoDelivery, setUsoDelivery] = useState<'si' | 'no' | null>(null);
+  const [aceptaMecanismos, setAceptaMecanismos] = useState(false);
+  const declaracionesOk = usoDelivery === 'no' && aceptaMecanismos;
+
   const autoActive = autoContinue && Boolean(lockedCplan);
   const autoFailed = autoActive && quoteState === 'error';
   const autoReady =
     autoActive
+    && declaracionesOk
     && !plansLoading
     && !frecLoading
     && selectedPlan?.cplan?.toUpperCase() === lockedCplan.toUpperCase()
@@ -473,11 +479,76 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   }, [autoFailed, onAutoFallback]);
 
   if (autoActive && !autoFailed) {
+    const terminosUrl = (import.meta.env.VITE_TARJETA_TERMINOS_URL as string | undefined)?.trim();
     return (
-      <div className="animate-fade-in text-center py-14 px-4">
-        <Loader2 size={28} className="animate-spin text-indigo-500 mx-auto mb-4" />
-        <p className="text-sm font-bold text-slate-900">Preparando la emisión de tu póliza…</p>
-        <p className="text-xs text-slate-500 mt-1">Estamos validando el plan asociado a tu tarjeta.</p>
+      <div className="animate-fade-in space-y-5">
+        <div>
+          <p className="text-sm font-bold text-slate-900 mb-3">
+            ¿Realiza usted traslados o delivery de algún aplicativo?
+          </p>
+          <div className="flex gap-3">
+            {(['si', 'no'] as const).map((op) => (
+              <button
+                key={op}
+                type="button"
+                onClick={() => setUsoDelivery(op)}
+                className={`min-w-[96px] px-5 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                  usoDelivery === op
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300'
+                }`}
+              >
+                {op === 'si' ? 'Sí' : 'No'}
+              </button>
+            ))}
+          </div>
+          {usoDelivery === 'si' && (
+            <div className="mt-3 flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
+              <p>
+                Debe dirigirse a la sucursal de La Mundial de Seguros más cercana o comunicarse al
+                {' '}<strong>0500-5526256</strong> (y seleccionar la opción 1), ya que debe ajustar la
+                prima o gestionar devolución de su pago debido a que la tarifa para taxi es diferente.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {usoDelivery === 'no' && (
+          <label className="flex gap-3 items-start rounded-xl border-2 border-slate-200 bg-white p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={aceptaMecanismos}
+              onChange={(e) => setAceptaMecanismos(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-indigo-600"
+            />
+            <span className="text-sm text-slate-700 leading-relaxed">
+              Declaro que acepto todos los mecanismos electrónicos dispuestos por La Mundial de
+              Seguros C.A., para la contratación de la presente póliza.
+              {terminosUrl && (
+                <>
+                  {' '}
+                  <a
+                    href={terminosUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold text-indigo-600 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Ver términos y condiciones
+                  </a>
+                </>
+              )}
+            </span>
+          </label>
+        )}
+
+        {declaracionesOk && (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 size={16} className="animate-spin text-indigo-500" />
+            Preparando la emisión de tu póliza…
+          </div>
+        )}
       </div>
     );
   }
