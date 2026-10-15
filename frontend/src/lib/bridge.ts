@@ -33,8 +33,8 @@ import {
   enrichBridgePayloadForSave,
   extractActorMetadataFromBridgeData,
 } from './sso-metadata';
-import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
 import { readFlowHandoff, persistFlowHandoff } from './flow-handoff';
+import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
 
 // ── Configuración por puerto (dev local) o hostname (HTTPS sslip.io) ───────
 const PORT_TO_ORDER: Record<string, number> = {
@@ -110,7 +110,7 @@ function getModuleTokenKey(): string {
 /** Flow (session/save/done): misma base que NexusGuard (GCIA → nexus-api.exelixitech.com). */
 const bridgeHost = () =>
   resolveNexusApiUrl(import.meta.env?.VITE_NEXUS_API_URL as string | undefined);
-const QUERY_KEY = 'sid';
+const QUERY_KEY   = 'sid';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function getSidFromUrl(): string | null {
@@ -193,11 +193,11 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 // ── Estado del bridge ───────────────────────────────────────────────────────
 interface BridgeAPI {
   active: boolean;
-  sid: string | null;
-  order: number | null;
-  ready: Promise<void>;
+  sid:    string | null;
+  order:  number | null;
+  ready:  Promise<void>;
   hydrate: () => Promise<void>;
-  save: (extra?: Record<string, unknown>) => Promise<void>;
+  save:    (extra?: Record<string, unknown>) => Promise<void>;
   advance: (extra?: Record<string, unknown>) => Promise<{ finished: boolean; nextUrl?: string }>;
   navigateToStep: (targetStep: number) => Promise<boolean>;
 }
@@ -211,7 +211,7 @@ declare global {
 
 // ── Implementación ──────────────────────────────────────────────────────────
 function makeBridge(): BridgeAPI {
-  const sid = getSidFromUrl();
+  const sid   = getSidFromUrl();
   const order = moduleOrder();
   const active = Boolean(sid && order);
 
@@ -509,32 +509,32 @@ async function init() {
     });
 
     bridge.ready = hydratePromise;
-    window.__bridge = bridge;
+    window.__bridge        = bridge;
     window.__bridgeAdvance = (extra) => bridge.advance(extra ?? {}).then(() => undefined);
     window.__bridgeNavigateStep = (targetStep) => bridge.navigateToStep(targetStep);
 
-    // Auto-advance para módulos cuyo "fin" es un cambio de step en el store:
-    //   OCR (1):    step 1 → 2
-    //   Pagos (4):  step 5 → 6 (success)
-    // Para Formulario (2) y Emisión (3) el avance se dispara desde el App.tsx
-    // cuando el botón "Continuar" / "Confirmar plan" / "Guardar" tiene éxito.
-    let lastStep: number | undefined;
-    useWizardStore.subscribe((s: { step?: number }) => {
-      const step = s?.step;
-      if (typeof step !== 'number' || step === lastStep) return;
-      const prev = lastStep;
-      lastStep = step;
+  // Auto-advance para módulos cuyo "fin" es un cambio de step en el store:
+  //   OCR (1):    step 1 → 2
+  //   Pagos (4):  step 5 → 6 (success)
+  // Para Formulario (2) y Emisión (3) el avance se dispara desde el App.tsx
+  // cuando el botón "Continuar" / "Confirmar plan" / "Guardar" tiene éxito.
+  let lastStep: number | undefined;
+  useWizardStore.subscribe((s: { step?: number }) => {
+    const step = s?.step;
+    if (typeof step !== 'number' || step === lastStep) return;
+    const prev = lastStep;
+    lastStep = step;
 
-      // OCR completado: step pasó de 1 → 2
-      if (bridge.order === 1 && prev === 1 && step === 2) {
-        bridge.advance().catch(() => { });
-      }
-      // Pagos completado: step llegó a 6 (success)
-      if (bridge.order === 4 && step === 6) {
-        // No hay siguiente módulo; sólo registra el cierre del flujo.
-        bridge.advance().catch(() => { });
-      }
-    });
+    // OCR completado: step pasó de 1 → 2
+    if (bridge.order === 1 && prev === 1 && step === 2) {
+      bridge.advance().catch(() => {});
+    }
+    // Pagos completado: step llegó a 6 (success)
+    if (bridge.order === 4 && step === 6) {
+      // No hay siguiente módulo; sólo registra el cierre del flujo.
+      bridge.advance().catch(() => {});
+    }
+  });
 
     // eslint-disable-next-line no-console
     console.info('[bridge] active — sid=' + bridge.sid + ' order=' + bridge.order);

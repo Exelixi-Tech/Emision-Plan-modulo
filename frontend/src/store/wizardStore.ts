@@ -93,12 +93,6 @@ const defaultFuneral = (): FuneralData => ({
   healthQuestionnaireDone: false,
 });
 
-const defaultPatrimoniales = (): import('../types').PatrimonialesData => ({
-  datosBien: '',
-  tipo: '',
-  descripcion: '',
-});
-
 interface WizardActions {
   goTo: (step: number) => void;
   nextStep: () => void;

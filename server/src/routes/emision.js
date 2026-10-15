@@ -246,10 +246,8 @@ router.post('/policies/emit', async (req, res) => {
     const isPatrimonial =
       state?.product === 'patrimonial' ||
       Boolean(state?.patrimoniales) ||
-      state?.cramo === 20 ||
-      state?.selectedPlan?.tag === 'Patrimonial' ||
-      req.body?.product === 'patrimonial' ||
-      req.body?.cramo === 20;
+      state?.cramo === 28 ||
+      req.body?.cramo === 28;
 
     if (isPatrimonial) {
       return handlePatrimonialEmit(req, res);

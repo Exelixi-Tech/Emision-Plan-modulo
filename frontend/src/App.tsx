@@ -17,4 +17,3 @@ export default function App() {
   if (isPatrimoniales()) return <PatrimonialPlansApp />;
   return <RcvPlansApp />;
 }
-

@@ -146,7 +146,7 @@ export function NexusGuard({ children, recheckInterval = 30 }: NexusGuardProps) 
   // Si venimos del bridge (hay sid + nexus_token), mostramos el contenido
   // de inmediato y verificamos en background para no interrumpir la UX.
   const chained = isChainedFlow();
-  const [state, setState] = useState<GuardState>({ status: (chained) ? 'active' : 'loading' });
+  const [state, setState] = useState<GuardState>({ status: chained ? 'active' : 'loading' });
   const nexusApiUrl = resolveNexusApiUrl(import.meta.env.VITE_NEXUS_API_URL);
   const isMounted = useRef(true);
 
