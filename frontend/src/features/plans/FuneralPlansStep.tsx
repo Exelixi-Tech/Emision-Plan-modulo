@@ -131,6 +131,8 @@ function apiPlanToWizardPlan(p: PlanPer, productName: string = 'Funerario'): Pla
 
 /** Viajero por días (SysIP alt-viajero): tope de días del viaje. */
 const VIAJE_MAX_DIAS = 15;
+/** SysIP: el regreso es como mínimo la salida + 2 días (viaje de 3 días). */
+const VIAJE_MIN_DIAS = 3;
 
 /** Planes VIAJ* (ramo 5): el plan sale de las fechas del viaje, no se elige de una lista. */
 function isViajeroPorDias(plans: Plan[]): boolean {
@@ -157,7 +159,7 @@ function diasViaje(fdesde?: string, fhasta?: string): number | null {
   const hasta = new Date(`${fhasta}T00:00:00Z`).getTime();
   if (!Number.isFinite(desde) || !Number.isFinite(hasta) || hasta < desde) return null;
   const n = Math.round((hasta - desde) / 86_400_000) + 1;
-  return n >= 1 && n <= VIAJE_MAX_DIAS ? n : null;
+  return n >= VIAJE_MIN_DIAS && n <= VIAJE_MAX_DIAS ? n : null;
 }
 
 /** "Plan II 1.500$ Viajero por 15 días" → "Plan II 1.500$ Viajero" (los días los pone el viaje). */
@@ -173,7 +175,16 @@ function planPorDiasViaje(plans: Plan[], ndias: number): Plan | null {
   // VIAJE4 = 3 días … VIAJE9 = 8; si no hay plan exacto, el de mayor vigencia (VIAJ10, 15 días).
   const plan = plans.find((p) => p.ndias === ndias)
     ?? [...plans].sort((a, b) => (b.ndias ?? 0) - (a.ndias ?? 0))[0];
-  return plan ? { ...plan, ndias } : null;
+  if (!plan) return null;
+  // La tarjeta muestra los días del viaje, no los del plan base (VIAJ10 se prorratea).
+  return {
+    ...plan,
+    ndias,
+    name: viajePlanName(plan),
+    tag: `Viajero · ${ndias} días`,
+    desc: `Cobertura por ${ndias} días para las personas aseguradas.`,
+    benefits: (plan.benefits ?? []).map((b) => (/^Vigencia de \d+ d/.test(b) ? `Vigencia de ${ndias} días` : b)),
+  };
 }
 
 function vigenciasDesdeNdias(ndias: number): { fdesde: string; fhasta: string; ndias: number } {
@@ -461,6 +472,7 @@ export function FuneralPlansStep() {
 
   const hoy = todayYmd();
   const viajeHastaMax = funeral.viajeFdesde ? addDaysYmd(funeral.viajeFdesde, VIAJE_MAX_DIAS - 1) : undefined;
+  const viajeHastaMin = funeral.viajeFdesde ? addDaysYmd(funeral.viajeFdesde, VIAJE_MIN_DIAS - 1) : undefined;
 
   function applySelectedPlan(found: Plan | null) {
     if (found) setCategory(found.name);
@@ -517,7 +529,7 @@ export function FuneralPlansStep() {
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
           {viajeroPorDias
-            ? `Indica las fechas de tu viaje (máximo ${VIAJE_MAX_DIAS} días): el plan y la prima se calculan según los días.`
+            ? `Indica las fechas de tu viaje (de ${VIAJE_MIN_DIAS} a ${VIAJE_MAX_DIAS} días): el plan y la prima se calculan según los días.`
             : isFunerarioLabel
               ? 'Selecciona el plan funerario que mejor se ajuste a tu grupo familiar.'
               : `Selecciona el plan de ${productLabel} que mejor se ajuste a tu grupo familiar.`}
@@ -547,9 +559,10 @@ export function FuneralPlansStep() {
                 const fdesde = e.target.value;
                 const fhasta = funeral.viajeFhasta;
                 const tope = fdesde ? addDaysYmd(fdesde, VIAJE_MAX_DIAS - 1) : undefined;
+                const minimo = fdesde ? addDaysYmd(fdesde, VIAJE_MIN_DIAS - 1) : undefined;
                 setFuneral({
                   viajeFdesde: fdesde,
-                  viajeFhasta: fhasta && fdesde && fhasta >= fdesde && (!tope || fhasta <= tope) ? fhasta : '',
+                  viajeFhasta: fhasta && minimo && fhasta >= minimo && (!tope || fhasta <= tope) ? fhasta : '',
                 });
               }}
               className="w-full px-3 py-3 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100"
@@ -558,7 +571,7 @@ export function FuneralPlansStep() {
               type="date"
               aria-label="Fecha de regreso"
               value={funeral.viajeFhasta ?? ''}
-              min={funeral.viajeFdesde || hoy}
+              min={viajeHastaMin || hoy}
               max={viajeHastaMax}
               disabled={!funeral.viajeFdesde}
               onChange={(e) => setFuneral({ viajeFhasta: e.target.value })}
@@ -568,7 +581,7 @@ export function FuneralPlansStep() {
           <p className="mt-1.5 text-xs text-slate-600">
             {viajeNdias != null && selectedPlan
               ? `${viajeNdias} día${viajeNdias === 1 ? '' : 's'} · ${viajePlanName(selectedPlan)}`
-              : `Salida y regreso. Máximo ${VIAJE_MAX_DIAS} días.`}
+              : `Salida y regreso: de ${VIAJE_MIN_DIAS} a ${VIAJE_MAX_DIAS} días.`}
           </p>
         </div>
         ) : (
@@ -752,7 +765,7 @@ export function FuneralPlansStep() {
                     </span>
                   )}
                 </div>
-                <p className="text-[0.7rem] text-slate-500 font-semibold mt-1 uppercase">/ año</p>
+                <p className="text-[0.7rem] text-slate-500 font-semibold mt-1 uppercase">{viajeroPorDias ? '/ viaje' : '/ año'}</p>
                 {hasRealQuote && quote && quote.mprima > 0 && (
                   <p className="text-[0.65rem] font-bold text-indigo-700/80 mt-1.5 tabular-nums">
                     ≈ Bs {quote.mprima.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
