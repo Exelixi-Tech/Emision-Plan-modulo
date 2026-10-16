@@ -91,9 +91,23 @@ function personasIfrecuenciaCotiza(ifrecuencia) {
   return FRECUENCIAS_FRACCIONADAS.has(ifrecuencia) ? 'A' : ifrecuencia;
 }
 
-/** Viajero: vigencia desde hoy por los días del plan (igual que la cotización del wizard). */
-function resolveViajeroVigencia(selectedPlan, cramo) {
+/** Viajero: fechas del viaje elegidas en el plan (salida/regreso, tope 15 días). */
+function viajeroVigenciaDesdeFechas(funeral) {
+  const fdesde = String(funeral?.viajeFdesde ?? '').trim();
+  const fhasta = String(funeral?.viajeFhasta ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fdesde) || !/^\d{4}-\d{2}-\d{2}$/.test(fhasta)) return null;
+  const ndias = Math.round(
+    (new Date(`${fhasta}T00:00:00Z`).getTime() - new Date(`${fdesde}T00:00:00Z`).getTime()) / 86400000,
+  ) + 1;
+  if (!Number.isFinite(ndias) || ndias < 1 || ndias > 15) return null;
+  return { ndias, fdesde, fhasta };
+}
+
+/** Viajero: vigencia del viaje; sin fechas, desde hoy por los días del plan (igual que la cotización del wizard). */
+function resolveViajeroVigencia(selectedPlan, cramo, funeral) {
   if (!VIAJERO_RAMOS.has(Number(cramo))) return null;
+  const delViaje = viajeroVigenciaDesdeFechas(funeral);
+  if (delViaje) return delViaje;
   let ndias = Number(selectedPlan?.ndias);
   if (!Number.isFinite(ndias) || ndias <= 0) {
     const m = String(selectedPlan?.name ?? selectedPlan?.tag ?? '').match(/(\d+)\s*d[ií]as?/i);
@@ -388,7 +402,7 @@ router.post('/emision', async (req, res) => {
 
   const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
   const ifrecuenciaCotiza = personasIfrecuenciaCotiza(ifrecuencia);
-  const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo);
+  const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo, funeral);
   const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
     tomador: state.tomador,
     asegurado: state.asegurado,

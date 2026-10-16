@@ -218,6 +218,9 @@ export interface FuneralData {
   healthAnswersByInsured?: Record<string, Record<string, unknown>>;
   /** true cuando el cuestionario fue completado y guardado en BD. */
   healthQuestionnaireDone?: boolean;
+  /** Viajero: fechas del viaje (YYYY-MM-DD); definen días, plan y vigencia de la póliza. */
+  viajeFdesde?: string;
+  viajeFhasta?: string;
 }
 
 /** Datos del bien asegurado (producto patrimoniales). */
