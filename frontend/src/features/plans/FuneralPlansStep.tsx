@@ -162,11 +162,6 @@ function diasViaje(fdesde?: string, fhasta?: string): number | null {
   return n >= VIAJE_MIN_DIAS && n <= VIAJE_MAX_DIAS ? n : null;
 }
 
-/** "Plan II 1.500$ Viajero por 15 días" → "Plan II 1.500$ Viajero" (los días los pone el viaje). */
-function viajePlanName(p: Plan): string {
-  return String(p.name || p.cplan).replace(/\s*por\s+\d+\s*d[ií]as?/i, '').replace(/\s+/g, ' ').trim() || p.cplan;
-}
-
 /**
  * Regla SysIP (products/plan/frecuency): plan con los días del viaje; si no hay,
  * el plan sin días fijos (VIAJ10). La prima es prorrata por los días del viaje.
@@ -176,11 +171,10 @@ function planPorDiasViaje(plans: Plan[], ndias: number): Plan | null {
   const plan = plans.find((p) => p.ndias === ndias)
     ?? [...plans].sort((a, b) => (b.ndias ?? 0) - (a.ndias ?? 0))[0];
   if (!plan) return null;
-  // La tarjeta muestra los días del viaje, no los del plan base (VIAJ10 se prorratea).
+  // Nombre real del plan de Sis2000; etiqueta y cobertura con los días del viaje (VIAJ10 se prorratea).
   return {
     ...plan,
     ndias,
-    name: viajePlanName(plan),
     tag: `Viajero · ${ndias} días`,
     desc: `Cobertura por ${ndias} días para las personas aseguradas.`,
     benefits: (plan.benefits ?? []).map((b) => (/^Vigencia de \d+ d/.test(b) ? `Vigencia de ${ndias} días` : b)),
@@ -580,7 +574,7 @@ export function FuneralPlansStep() {
           </div>
           <p className="mt-1.5 text-xs text-slate-600">
             {viajeNdias != null && selectedPlan
-              ? `${viajeNdias} día${viajeNdias === 1 ? '' : 's'} · ${viajePlanName(selectedPlan)}`
+              ? `${viajeNdias} día${viajeNdias === 1 ? '' : 's'} · ${selectedPlan.name}`
               : `Salida y regreso: de ${VIAJE_MIN_DIAS} a ${VIAJE_MAX_DIAS} días.`}
           </p>
         </div>
