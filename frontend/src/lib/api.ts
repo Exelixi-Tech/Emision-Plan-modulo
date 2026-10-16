@@ -182,10 +182,10 @@ export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: num
  * pero el plan está tarifado en su ramo técnico, ej. 1). Igual que SysIP.
  */
 export function resolveQuoteCramo(planCramo: number | undefined, fallback: number): number {
-  const prod = String(readSsoCanalMeta().cproducto ?? '').trim();
   const plan = Number(planCramo);
   const planOk = Number.isFinite(plan) && plan > 0;
-  if (prod && prod !== '57' && planOk) return plan;
+  // El ramo del plan manda (SysIP cotiza con item.cramo), también en Funerario 57.
+  if (planOk) return plan;
   return resolveSsoCramo() ?? (planOk ? plan : fallback);
 }
 

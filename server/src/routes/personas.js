@@ -246,10 +246,10 @@ router.get('/planes', async (req, res) => {
 // ── POST /cotizacion ──────────────────────────────────────────────────────────
 router.post('/cotizacion', async (req, res) => {
   const { cplan, ifrecuencia, ndias, fdesde, fhasta } = req.body || {};
-  const quoteProducto = String(req.nexusMetadata?.cproducto ?? '').trim();
   const cramo = resolvePersonasCramo({
-    // Otro producto que no es funerario: manda el ramo del plan (body), no el del producto SSO.
-    ...(quoteProducto && quoteProducto !== '57' ? { selectedPlan: { cramo: req.body?.cramo } } : {}),
+    // Manda el ramo del plan (body), como SysIP. Funerario 57 tiene sus planes en el ramo 9
+    // (en el 45 solo está FUNESP): forzar 45 dejaba la cotización en prima cero.
+    selectedPlan: { cramo: req.body?.cramo },
     bodyCramo: req.body?.cramo,
     metadataCanal: req.nexusMetadata,
     cproducto: req.nexusMetadata?.cproducto,
