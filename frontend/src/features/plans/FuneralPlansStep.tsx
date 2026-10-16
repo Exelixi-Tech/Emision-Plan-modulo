@@ -18,7 +18,7 @@ import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
-import { syncTitularFromTomador } from '../../lib/funeral-sync';
+import { resolveTitularSource, syncTitularFromTomador } from '../../lib/funeral-sync';
 import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 
@@ -358,7 +358,7 @@ export function FuneralPlansStep() {
     maxAsegurados: selectedPlan?.maxAsegurados,
     parentescos: planParentescos,
   });
-  const titularSrc = sameInsured !== false ? tomador : asegurado;
+  const titularSrc = resolveTitularSource(sameInsured, tomador, asegurado);
   const aseguradosConTitular = mergeTitularFromForm(funeral.asegurados, titularSrc);
   const aseguradosListos = aseguradosConTitular
     .map((a, idx) => ({ a, idx }))
