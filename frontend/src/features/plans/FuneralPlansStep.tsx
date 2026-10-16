@@ -185,16 +185,19 @@ function vigenciasDesdeNdias(ndias: number): { fdesde: string; fhasta: string; n
 }
 
 function planOptionKey(p: Plan): string {
-  if (p.ndias != null && p.ndias > 0) return `${p.cplan}|${p.ndias}`;
-  return p.cplan;
+  if (p.ndias != null && p.ndias > 0) return `${planBaseKey(p)}|${p.ndias}`;
+  return planBaseKey(p);
 }
 
+/** Ramo + plan (como spBuscaPlanProducto): el mismo código existe en varios ramos del producto. */
 function planBaseKey(p: Plan): string {
-  return String(p.cplan ?? '').trim();
+  const cplan = String(p.cplan ?? '').trim();
+  if (!cplan) return '';
+  return p.cramo != null ? `${p.cramo}:${cplan}` : cplan;
 }
 
-function daysForPlan(plans: Plan[], cplan: string): Plan[] {
-  const rows = plans.filter((p) => planBaseKey(p) === cplan && p.ndias != null && p.ndias > 0);
+function daysForPlan(plans: Plan[], baseKey: string): Plan[] {
+  const rows = plans.filter((p) => planBaseKey(p) === baseKey && p.ndias != null && p.ndias > 0);
   rows.sort((a, b) => (a.ndias ?? 0) - (b.ndias ?? 0));
   return rows;
 }
@@ -270,7 +273,7 @@ export function FuneralPlansStep() {
           ? mapped.find(
               (p) =>
                 planOptionKey(p) === planOptionKey(current)
-                || (p.cplan === current.cplan && (current.ndias == null || p.ndias === current.ndias)),
+                || (planBaseKey(p) === planBaseKey(current) && (current.ndias == null || p.ndias === current.ndias)),
             ) ?? null
           : null;
         setSelectedPlan(keep);
@@ -371,7 +374,7 @@ export function FuneralPlansStep() {
   // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
   // Viajero: prima prorrata por ndias del plan elegido.
   const quoteSig = planCode
-    ? `funeral|${planCode}|${planNdias ?? 'A'}|${viajeVig?.fdesde ?? ''}|${aseguradosListos
+    ? `funeral|${selectedPlan?.cramo ?? ''}:${planCode}|${planNdias ?? 'A'}|${viajeVig?.fdesde ?? ''}|${aseguradosListos
         .map(({ a, idx }) => `${idx === 0 ? '1' : a.parentesco}:${a.identificacion}:${a.fechaNac}`)
         .join(',')}`
     : '';
@@ -443,7 +446,7 @@ export function FuneralPlansStep() {
   const annualUsd = hasRealQuote ? quote!.mprimaext : 0;
   const cuotasFrecuencia = getCuotasByFrecuencia(funeral.frecuencia);
   const planOptions = uniquePlansForSelect(apiPlans);
-  const dayOptions = selectedPlan ? daysForPlan(apiPlans, selectedPlan.cplan) : [];
+  const dayOptions = selectedPlan ? daysForPlan(apiPlans, planBaseKey(selectedPlan)) : [];
   const showDayPicker = !viajeroPorDias && dayOptions.length > 1;
 
   // Viajero: al cambiar las fechas, el plan se toma solo según los días del viaje.
@@ -584,12 +587,12 @@ export function FuneralPlansStep() {
               {plansLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.5} />}
             </div>
             <select
-              value={selectedPlan ? selectedPlan.cplan : ''}
+              value={selectedPlan ? planBaseKey(selectedPlan) : ''}
               onChange={(e) => {
-                const code = e.target.value;
-                const days = daysForPlan(apiPlans, code);
+                const key = e.target.value;
+                const days = daysForPlan(apiPlans, key);
                 const found = days[0]
-                  ?? planOptions.find((p) => p.cplan === code)
+                  ?? planOptions.find((p) => planBaseKey(p) === key)
                   ?? null;
                 applySelectedPlan(found);
               }}
@@ -618,7 +621,7 @@ export function FuneralPlansStep() {
                         ? `${label} · sin dependientes`
                         : `${label} · hasta ${nmax} dependiente${nmax === 1 ? '' : 's'}`;
                     return (
-                      <option key={p.cplan} value={p.cplan}>{cupo}</option>
+                      <option key={planBaseKey(p)} value={planBaseKey(p)}>{cupo}</option>
                     );
                   })}
                 </>
