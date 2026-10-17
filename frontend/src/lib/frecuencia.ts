@@ -35,6 +35,15 @@ export function isFrecuenciaFraccionada(code?: string | null): boolean {
   return FREQ_FRACCIONADA.has(normalizeFrecuenciaCode(code));
 }
 
+/**
+ * Personas: A/S/T/M como RCV (Pagos cobra la 1ª cuota y domicilia el resto).
+ * C (cuatrimestral) no se ofrece. Si no queda ninguna, se usa `fallback` (Anual).
+ */
+export function frecuenciasPersonas<T extends { code: number | string }>(items: T[], fallback: T[]): T[] {
+  const list = items.filter((i) => normalizeFrecuenciaCode(String(i.code)) !== 'C');
+  return list.length ? list : fallback;
+}
+
 export function getCuotasByFrecuencia(code?: string | null): number {
   const n = CUOTAS_BY_FREC[normalizeFrecuenciaCode(code)];
   return n != null && n > 0 ? n : 1;

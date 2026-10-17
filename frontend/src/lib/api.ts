@@ -5,46 +5,65 @@ import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
-import { readMarketplaceActorSnapshot } from './sso-metadata';
+import {
+  composeGestorCsubitem,
+  normalizeCentidad,
+  readMarketplaceActorSnapshot,
+  resolveGestorForQuery,
+} from './sso-metadata';
 
 const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
 
-/** centidad/citem del JWT SSO o metadataCanal (flujo tarjeta sin token). */
-function appendCanalEntityQuery(qs: URLSearchParams): boolean {
-  if (shouldUseTarjetaPublicApi()) {
-    const storeMeta = (
-      useWizardStore.getState().metadataCanal as Record<string, unknown> | null
-    ) ?? readTarjetaMetadataCanal();
-    if (storeMeta) {
-      const centidad = storeMeta.centidad != null ? String(storeMeta.centidad).trim().toUpperCase() : '';
-      const citemRaw = storeMeta.citem
-        ?? (centidad === 'P' ? storeMeta.cproductor : null)
-        ?? (centidad === 'C' ? (storeMeta.ccanalalt_in ?? storeMeta.ccanalalt) : null);
-      const citem = citemRaw != null && citemRaw !== '' ? String(citemRaw).trim() : '';
-
-      if (centidad) qs.set('centidad', centidad);
-      if (citem) qs.set('citem', citem);
-      if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
-      if (storeMeta.cramo != null) qs.set('cramo', String(storeMeta.cramo));
-      if (centidad && citem) return true;
-
-      if (storeMeta.cproductor != null) {
-        if (!centidad) qs.set('centidad', 'P');
-        if (!citem) qs.set('citem', String(storeMeta.cproductor));
-        if (storeMeta.cproducto != null) qs.set('cproducto', String(storeMeta.cproducto));
-        return true;
-      }
-    }
+function scrubActorMetaForExclusion(meta: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...meta };
+  const composed = composeGestorCsubitem(out);
+  if (composed) {
+    out.cgestor = composed;
+    out.csubitem = composed;
+    return out;
   }
+  delete out.csubitem;
+  delete out.cgestor;
+  delete out.cgestor_in;
+  return out;
+}
 
+function appendGestorExclusionQuery(qs: URLSearchParams, meta: Record<string, unknown>): void {
+  const actor = scrubActorMetaForExclusion(meta);
+  const csubitem = composeGestorCsubitem(actor);
+  if (!csubitem) return;
+
+  qs.set('csubitem', csubitem);
+  qs.set('cgestor', csubitem);
+}
+
+/** centidad/citem del JWT SSO, snapshot bridge o metadataCanal (flujo tarjeta). */
+function appendCanalEntityQuery(qs: URLSearchParams): boolean {
+  const storeMeta = (
+    useWizardStore.getState().metadataCanal as Record<string, unknown> | null
+  ) ?? {};
+  const tarjetaMeta = shouldUseTarjetaPublicApi() ? readTarjetaMetadataCanal() : null;
   const token = getNexusToken(NEXUS_TOKEN_KEY);
-  const meta = token ? decodeNexusTokenMetadata(token) : null;
-  if (!meta) return false;
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
 
-  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const snapshot = readMarketplaceActorSnapshot();
+  const meta: Record<string, unknown> = {
+    ...snapshot,
+    ...(tarjetaMeta || {}),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+  const gestorHint = resolveGestorForQuery({
+    ...snapshot,
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  });
+  if (gestorHint) meta.cgestor = gestorHint;
+
+  const centidad = normalizeCentidad(meta);
   const citemRaw = meta.citem
     ?? (centidad === 'P' ? meta.cproductor : null)
     ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
@@ -54,8 +73,17 @@ function appendCanalEntityQuery(qs: URLSearchParams): boolean {
   if (citem) qs.set('citem', citem);
   if (meta.cproducto != null) qs.set('cproducto', String(meta.cproducto));
   if (meta.cramo != null) qs.set('cramo', String(meta.cramo));
+  appendGestorExclusionQuery(qs, meta);
 
-  return Boolean(centidad && citem);
+  if (centidad && citem) return true;
+
+  if (meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    if (!centidad) qs.set('centidad', 'P');
+    if (!citem) qs.set('citem', String(meta.cproductor).trim());
+    return true;
+  }
+
+  return Boolean(resolveGestorForQuery(meta));
 }
 
 const FUNERAL_CANAL_QUERY_KEYS = [
@@ -72,8 +100,8 @@ const FUNERAL_CANAL_QUERY_KEYS = [
   'cscanalalt_in',
 ] as const;
 
-/** Canal SSO del wizard funerario (JWT + sid + snapshot), sin pisar RCV. */
-function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
+/** Canal SSO del wizard funerario/vida/AP (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams, cproductoOverride?: string): boolean {
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
   const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
@@ -105,8 +133,14 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     qs.set('cramo', String(meta.cramo).trim());
   }
-  if (!qs.get('cproducto')) qs.set('cproducto', '57');
-  if (qs.get('cproducto') === '57') qs.set('cramo', '45');
+  // El producto del SSO manda. El argumento solo cubre si el token no trae cproducto.
+  const fromSso = qs.get('cproducto');
+  const effectiveCproducto = (fromSso && fromSso.trim() !== '')
+    ? fromSso.trim()
+    : (cproductoOverride || '57');
+  qs.set('cproducto', effectiveCproducto);
+  // Para funerario (57) el SP usa ramo 45 internamente
+  if (effectiveCproducto === '57') qs.set('cramo', '45');
   if (qs.get('cproductor') === '80080') qs.delete('cproductor');
 
   return Boolean(
@@ -115,6 +149,90 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
     || (meta.cgestor != null && String(meta.cgestor).trim() !== '')
     || (meta.cgestor_in != null && String(meta.cgestor_in).trim() !== ''),
   );
+}
+
+/** Metadata del canal SSO: snapshot marketplace → JWT → metadataCanal del wizard. */
+function readSsoCanalMeta(): Record<string, unknown> {
+  const token = getNexusToken(NEXUS_TOKEN_KEY);
+  const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
+  const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
+  return {
+    ...readMarketplaceActorSnapshot(),
+    ...(tokenMeta || {}),
+    ...storeMeta,
+  };
+}
+
+/**
+ * Ramo del cuestionario: el del flujo SSO, si no el del plan o el del producto.
+ */
+export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: number): number {
+  const sso = resolveSsoCramo();
+  if (sso != null) return sso;
+  const plan = Number(planCramo);
+  if (Number.isFinite(plan) && plan > 0) return plan;
+  const product = Number(productCramo);
+  if (Number.isFinite(product) && product > 0) return product;
+  return 9;
+}
+
+/**
+ * Ramo para cotizar: funerario (57 o sin producto) usa el del SSO como hoy;
+ * otro producto usa el ramo del plan elegido (el SSO trae el ramo del producto, ej. vida 47,
+ * pero el plan está tarifado en su ramo técnico, ej. 1). Igual que SysIP.
+ */
+export function resolveQuoteCramo(planCramo: number | undefined, fallback: number): number {
+  const plan = Number(planCramo);
+  const planOk = Number.isFinite(plan) && plan > 0;
+  // El ramo del plan manda (SysIP cotiza con item.cramo), también en Funerario 57.
+  if (planOk) return plan;
+  return resolveSsoCramo() ?? (planOk ? plan : fallback);
+}
+
+/** cproducto enviado por el SSO (vacío si el canal no lo declara). */
+export function resolveSsoCproducto(): string {
+  return String(readSsoCanalMeta().cproducto ?? '').trim();
+}
+
+/** Nombre del producto que envía el portal en el SSO (`xproducto`). Vacío si no viene. */
+export function resolveSsoXproducto(): string {
+  return String(readSsoCanalMeta().xproducto ?? '').trim();
+}
+
+/** Ramo enviado por el SSO. `null` si el canal no lo declara. */
+export function resolveSsoCramo(): number | null {
+  const raw = readSsoCanalMeta().cramo;
+  if (raw == null || String(raw).trim() === '') return null;
+  const cramo = parseInt(String(raw).trim(), 10);
+  return Number.isFinite(cramo) && cramo > 0 ? cramo : null;
+}
+
+/** Canal SSO genérico (JWT + sid + snapshot) sin forzar cproducto funerario 57. */
+function appendSsoCanalQuery(qs: URLSearchParams): void {
+  const meta = readSsoCanalMeta();
+
+  for (const key of FUNERAL_CANAL_QUERY_KEYS) {
+    if (meta[key] != null && String(meta[key]).trim() !== '') {
+      qs.set(key, String(meta[key]).trim());
+    }
+  }
+
+  const centidad = meta.centidad != null ? String(meta.centidad).trim().toUpperCase() : '';
+  const citemRaw = meta.citem
+    ?? (centidad === 'P' ? meta.cproductor : null)
+    ?? (centidad === 'C' ? (meta.ccanalalt_in ?? meta.ccanalalt) : null);
+  const citem = citemRaw != null && String(citemRaw).trim() !== '' ? String(citemRaw).trim() : '';
+  if (centidad && !qs.get('centidad')) qs.set('centidad', centidad);
+  if (citem && !qs.get('citem')) qs.set('citem', citem);
+  if (!qs.get('centidad') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('centidad', 'P');
+  }
+  if (!qs.get('citem') && meta.cproductor != null && String(meta.cproductor).trim() !== '') {
+    qs.set('citem', String(meta.cproductor).trim());
+  }
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    qs.set('cramo', String(meta.cramo).trim());
+  }
 }
 
 function shouldUseBridgeRules(): boolean {
@@ -652,14 +770,24 @@ export const catalogoApi = {
    * ctipo: 1=particular, 4=moto, 3=pick-up, etc.
    * iplaca: N=nacional, E=extranjera, B=binacional (spBuscaPlan bnacional).
    */
-  planesRcv: (ctipo?: number, iplaca?: 'N' | 'E' | 'B') => {
+  planesRcv: (ctipo?: number, iplaca?: 'N' | 'E' | 'B', cproductor?: number | string) => {
     const qs = new URLSearchParams();
     if (ctipo != null) qs.set('ctipo', String(ctipo));
     if (iplaca) qs.set('iplaca', iplaca);
+    if (cproductor != null && String(cproductor).trim() !== '') {
+      qs.set('cproductor', String(cproductor).trim());
+      qs.set('centidad', 'P');
+      qs.set('citem', String(cproductor).trim());
+    }
     const hasEntity = appendCanalEntityQuery(qs);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
-    return api.get<{ success: boolean; planes: PlanRcv[]; canalVisibility?: CanalVisibility | null }>(
+    return api.get<{
+      success: boolean;
+      planes: PlanRcv[];
+      mensaje?: string;
+      canalVisibility?: CanalVisibility | null;
+    }>(
       `/catalogo/planes${query ? `?${query}` : ''}`,
     );
   },
@@ -690,10 +818,13 @@ export interface PlanParentescoPer {
 export interface PlanPer {
   cplan: string;
   xplan?: string;
+  cramo?: number;
   cmoneda?: string;
   nmax_dep?: number | null;
   maxAsegurados?: number;
   parentescos?: PlanParentescoPer[];
+  /** Días de vigencia (Viajero / maplanes_frec). */
+  ndias?: number | null;
 }
 
 /** Asegurado que se envía a la cotización de personas (formato amigable). */
@@ -709,10 +840,14 @@ export interface CotizacionPerPayload {
   asegurados: CotizacionPerAsegurado[];
   ifrecuencia: string;
   cramo?: number;
+  /** Viajero prorrata: días del plan elegido. */
+  ndias?: number;
+  fdesde?: string;
+  fhasta?: string;
 }
 
 export const personasApi = {
-  /** Planes funerarios del canal SSO (productor/entidad/gestor), igual criterio que RCV. */
+  /** Planes del cproducto que trae el SSO. El ramo del token se conserva salvo producto 57. */
   planes: (cramo = 9) => {
     const qs = new URLSearchParams();
     qs.set('cramo', String(cramo));
@@ -722,6 +857,27 @@ export const personasApi = {
   /** Cotización de personas (getCotizacionPer). */
   cotizar: (payload: CotizacionPerPayload) =>
     api.post<QuotePolicyResponse>('/personas/cotizacion', payload),
+};
+
+export const patrimonialApi = {
+  /** El ramo del SSO manda; `cramo` solo se usa si el canal no lo declara. */
+  planes: (cramo?: number) => {
+    const qs = new URLSearchParams();
+    const ramo = resolveSsoCramo() ?? cramo;
+    if (ramo != null) qs.set('cramo', String(ramo));
+    appendSsoCanalQuery(qs);
+    return api.get<{ success: boolean; planes: PlanRcv[] }>(`/patrimonial/planes?${qs.toString()}`);
+  },
+  cotizar: (payload: {
+    cplan: string;
+    cramo?: number;
+    ifrecuencia?: string;
+    pdescuento?: number;
+    precargo?: number;
+  }) => {
+    const cramo = resolveSsoCramo() ?? payload.cramo;
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -771,6 +927,11 @@ export function getValrepList(domain: string): Promise<CatalogItem[]> {
 /**
  * Frecuencias dinámicas por plan y ramo.
  */
+/** Lista de productores / brokers para emisión backoffice */
+export function getBrokers(): Promise<CatalogItem[]> {
+  return _fetchValrep('/valrep/brokers');
+}
+
 export async function getFrecuenciasByPlan(cplan: string, cramo: number = 9): Promise<CatalogItem[]> {
   const { data } = await api.post<{ ok: boolean; items: CatalogItem[] }>('/valrep/frecuencia', { cplan, cramo });
   return data?.items ?? [];
@@ -780,7 +941,7 @@ export async function getFrecuenciasByPlan(cplan: string, cramo: number = 9): Pr
 //  Cuestionario de salud funerario (preguntas Exélixi + persistencia BD)
 // ──────────────────────────────────────────────────────────────────────
 
-export type HealthQuestionType = 'boolean' | 'text' | 'select';
+export type HealthQuestionType = 'boolean' | 'text' | 'select' | 'multi_select';
 
 export interface HealthQuestion {
   id: string;
@@ -796,9 +957,12 @@ export interface HealthQuestion {
   blockReason?: string;
 }
 
-export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
+export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number, cproducto?: string): Promise<HealthQuestion[]> {
+  const qs = new URLSearchParams({ cplan });
+  if (cramo != null && Number.isFinite(cramo) && cramo > 0) qs.set('cramo', String(cramo));
+  if (cproducto) qs.set('cproducto', cproducto);
   const { data } = await api.get<{ success: boolean; questions: HealthQuestion[] }>(
-    `/funeral/health-questions?cplan=${encodeURIComponent(cplan)}`,
+    `/funeral/health-questions?${qs.toString()}`,
   );
   return data?.questions ?? [];
 }
@@ -807,6 +971,7 @@ export interface SaveHealthAnswersPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomadorRif?: string;
   planName?: string;
   answers: Record<string, unknown>;
@@ -826,6 +991,7 @@ export interface SubmitFuneralReviewPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomador: Record<string, unknown>;
   asegurado?: Record<string, unknown>;
   sameInsured?: boolean;
@@ -838,6 +1004,23 @@ export interface SubmitFuneralReviewPayload {
   healthAnswers: Record<string, unknown>;
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
+  /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
+  directCheckout?: boolean;
+}
+
+/** Recargo/descuento del cuestionario aplicado a la prima (servidor). */
+export interface PremiumAdjust {
+  base: { mprima: number; mprimaext: number };
+  quote: { mprima: number; mprimaext: number; ptasa: number };
+  porAsegurado: {
+    key: string;
+    label: string;
+    recargoPct: number;
+    descuentoPct: number;
+    netoPct: number;
+    primaBaseExt: number;
+    primaAjustadaExt: number;
+  }[];
 }
 
 export async function submitFuneralPolicyReview(
@@ -845,21 +1028,38 @@ export async function submitFuneralPolicyReview(
 ): Promise<{
   submission: FuneralSubmissionResult;
   scoring: { total: number; verdict?: string; verdictMessage?: string };
+  quote?: PolicyQuote | null;
+  premiumAdjust?: PremiumAdjust | null;
+  /** Semáforo verde o plan sin preguntas: sigue al pago en la misma sesión (sin correo). */
+  directPay?: boolean;
+  /** Datos de cobro obligatorio para Pagos (mismo formato que el link del correo). */
+  checkoutPatch?: Record<string, unknown>;
 }> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
       scoring: { total: number; verdict?: string; verdictMessage?: string };
+      quote?: PolicyQuote | null;
+      premiumAdjust?: PremiumAdjust | null;
+      directPay?: boolean;
+      checkoutPatch?: Record<string, unknown>;
     }>('/funeral/submissions', payload);
-    return { submission: data.submission, scoring: data.scoring };
+    return {
+      submission: data.submission,
+      scoring: data.scoring,
+      quote: data.quote,
+      premiumAdjust: data.premiumAdjust,
+      directPay: data.directPay === true && Boolean(data.checkoutPatch),
+      checkoutPatch: data.checkoutPatch,
+    };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
     const data = axErr.response?.data;
     if (data && (data.code || data.message)) {
       throw new PolicyEmitError({
         code: data.code ?? 'SUBMISSION_ERROR',
-        message: data.message ?? 'No se pudo registrar la solicitud funeraria.',
+        message: data.message ?? 'No se pudo registrar la solicitud.',
         httpStatus: axErr.response?.status,
         stage: 'validate',
       });
@@ -890,7 +1090,7 @@ export async function validateFuneralEmission(payload: {
     if (data && (data.code || data.message)) {
       throw new PolicyEmitError({
         code: data.code ?? 'PERSONAS_VALIDATION_ERROR',
-        message: data.message ?? 'No se pudo validar la emisión funeraria.',
+        message: data.message ?? 'No se pudo validar la emisión.',
         httpStatus: axErr.response?.status,
         stage: data.stage ?? 'validate',
       });
@@ -898,3 +1098,140 @@ export async function validateFuneralEmission(payload: {
     throw err;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+//  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
+// ──────────────────────────────────────────────────────────────────────
+
+export interface QuoteGeneralRisksDto {
+  cramo: number;
+  cplan: string;
+  ptasamon?: number;
+  cuotas?: number;
+  ifrecuencia?: string;
+  pdescuento?: number;
+  precargo?: number;
+}
+
+export type CotizacionPatrimonialPayload = Partial<QuoteGeneralRisksDto> & {
+  cplan: string;
+};
+
+export interface QuoteGeneralRisksResponse extends QuotePolicyResponse {
+  status: boolean;
+  data: Array<{
+    ccobertura: number | string;
+    xcobertura: string;
+    msuma: number;
+    mprima: number;
+    mprimaext: number;
+  }>;
+  recordset?: unknown[];
+}
+
+export interface CreateEmissionGeneralRiskDto {
+  keys: {
+    cnpoliza_rel: string | null;
+    cplan: string;
+    cramo: number;
+  };
+  tomador: {
+    tipo_tomador: string;
+    rif_tomador: number;
+    nombre_tomador: string;
+    apellido_tomador: string;
+    sexo_tomador: string;
+    estado_civil_tomador: string;
+    fnac_tomador: string;
+    telefono_tomador: string;
+    correo_tomador: string;
+    estado_tomador: string;
+    ciudad_tomador: string;
+    direccion_tomador: string;
+  };
+  asegurado: {
+    tipo_asegurado: string;
+    rif_asegurado: number;
+    nombre_asegurado: string;
+    apellido_asegurado: string;
+    sexo_asegurado: string;
+    estado_civil_asegurado: string;
+    fnac_asegurado: string;
+    telefono_asegurado: string;
+    correo_asegurado: string;
+    estado_asegurado: string;
+    ciudad_asegurado: string;
+    direccion_asegurado: string;
+  };
+  bien_asegurado: {
+    xdescrip1: string;
+    xdescrip2: string;
+    xdescrip3: string;
+    xdescrip4: string;
+  };
+  suma_asegurada: number;
+  prima: number;
+  ptasamon: number;
+  femision: string;
+  fdesde: string;
+  fhasta: string;
+  dec_persona_politica: number;
+  dec_term_y_cod: number;
+  cproductor: number;
+  ifrecuencia: string;
+  ctipocanal: string | null;
+  ccanalalt: string | null;
+  cscanalalt: string | null;
+  xfuente: string;
+}
+
+export interface EmissionGeneralRiskResponse extends EmitPolicyResponse {
+  status: boolean;
+  message: string;
+  cnpoliza: string;
+  urlpoliza: string;
+  lapso: number;
+  mes: string;
+  cnrecibo: string;
+  ncuota: number;
+}
+
+export interface SubmitPatrimonialReviewPayload {
+  sessionId: string;
+  cplan: string;
+  cramo?: number;
+  tomador: Record<string, unknown>;
+  asegurado?: Record<string, unknown>;
+  sameInsured?: boolean;
+  patrimoniales?: Record<string, unknown>;
+  selectedPlan: Record<string, unknown>;
+  quote?: Record<string, unknown> | null;
+  quoteState?: string;
+  documents?: Record<string, unknown>;
+  metadataCanal?: Record<string, unknown> | null;
+}
+
+export async function submitPatrimonialPolicyReview(
+  payload: SubmitPatrimonialReviewPayload,
+): Promise<{ submission: FuneralSubmissionResult }> {
+  try {
+    const { data } = await api.post<{
+      success: boolean;
+      submission: FuneralSubmissionResult;
+    }>('/patrimonial/submissions', payload);
+    return { submission: data.submission };
+  } catch (err) {
+    const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
+    const data = axErr.response?.data;
+    if (data && (data.code || data.message)) {
+      throw new PolicyEmitError({
+        code: data.code ?? 'SUBMISSION_ERROR',
+        message: data.message ?? 'No se pudo registrar la solicitud patrimonial.',
+        httpStatus: axErr.response?.status,
+        stage: 'submission',
+      });
+    }
+    throw err;
+  }
+}
+

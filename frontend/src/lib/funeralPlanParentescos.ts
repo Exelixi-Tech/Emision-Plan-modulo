@@ -5,6 +5,16 @@ export interface PlanParentesco {
   max_edad: number;
 }
 
+/** El plan existe si Sis2000 devolvió código (numérico o alfanumérico). */
+export function isFunerarioCplan(cplan?: string | null): boolean {
+  return String(cplan ?? '').trim().length > 0;
+}
+
+/** El plan es el que devolvió el producto del SSO. */
+export function isPersonasCplan(cplan?: string | null): boolean {
+  return String(cplan ?? '').trim().length > 0;
+}
+
 export function isTitularOnlyPlan(parentescos?: PlanParentesco[] | null): boolean {
   if (!parentescos?.length) return false;
   return parentescos.length === 1 && Number(parentescos[0].cparen) === 1;
