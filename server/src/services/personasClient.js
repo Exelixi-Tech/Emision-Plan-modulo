@@ -141,7 +141,20 @@ async function getPlanesPer(input) {
  * @param {{ cramo:number, cplan:string, asegurados:Array, ifrecuencia:string }} input
  * @returns {{ mprima:number, mprimaext:number, ptasa:number, raw:object }}
  */
-async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia }) {
+/** Coberturas de nest (ccobertura/xcobertura/msumaasegext/mprimaext) al formato PolicyCoverageLine. */
+function mapCoberturasPer(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((c) => c && String(c.xcobertura ?? '').trim())
+    .map((c) => ({
+      ccobertura: c.ccobertura,
+      name: String(c.xcobertura).trim(),
+      sumaAsegurada: Number(c.msumaasegext) > 0 ? Number(c.msumaasegext) : null,
+      prima: Number(c.mprimaext) || 0,
+    }));
+}
+
+async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia, ndias, fdesde, fhasta }) {
   const endpoint = '/cotizacion';
   const body = {
     cramo: cramo || getConfig().cramo,
@@ -149,6 +162,9 @@ async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia }) {
     asegurados,
     ifrecuencia: ifrecuencia || 'A',
   };
+  if (ndias != null && Number(ndias) > 0) body.ndias = Number(ndias);
+  if (fdesde) body.fdesde = String(fdesde).trim();
+  if (fhasta) body.fhasta = String(fhasta).trim();
   const response = await post(endpoint, body);
   if (response.status >= 200 && response.status < 300 && response.data?.status === true) {
     const d = response.data.data ?? {};
@@ -156,6 +172,7 @@ async function getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia }) {
       mprima: Number(d.mprima ?? 0),
       mprimaext: Number(d.mprimaext ?? 0),
       ptasa: Number(d.ptasa ?? 0),
+      coberturas: mapCoberturasPer(d.coberturas),
       raw: response.data,
     };
   }
@@ -199,6 +216,9 @@ async function createEmissionPerson(payload) {
       ncuota: r.ncuota,
       fanopol: r.fanopol,
       fmespol: r.fmespol,
+      // Activación de tarjeta (cards/activate) tras emitir.
+      cpoliza: r.cpoliza,
+      casegurado: r.casegurado,
       message: r.message,
       raw: response.data,
     };

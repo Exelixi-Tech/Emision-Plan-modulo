@@ -82,9 +82,26 @@ function validateAnswers(
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Selecciona una opción';
+    } else if (q.type === 'multi_select') {
+      const picked = Array.isArray(val) ? val : [];
+      if (picked.length === 0) errors[q.id] = 'Selecciona al menos una opción';
     }
   }
   return errors;
+}
+
+function toggleMultiAnswer(
+  current: unknown,
+  value: string,
+  checked: boolean,
+): string[] {
+  const list = Array.isArray(current) ? [...current.map(String)] : [];
+  if (checked) {
+    if (!list.includes(value)) list.push(value);
+  } else {
+    return list.filter((v) => v !== value);
+  }
+  return list;
 }
 
 function joinInsuredNames(names: string[]): string {
@@ -374,6 +391,42 @@ export function FuneralHealthModal({
                       onChange={(e) => setAnswer(q.id, e.target.value)}
                       rows={3}
                     />
+                    {err && <p className="text-xs text-rose-500 font-medium mt-1.5">{err}</p>}
+                  </div>
+                ) : q.type === 'multi_select' ? (
+                  <div className={questionCardClass(Boolean(err), (Array.isArray(answers[q.id]) ? answers[q.id] as unknown[] : []).length > 0)}>
+                    <p className="font-bold text-sm text-slate-700 leading-snug">
+                      {label}{q.required ? ' *' : ''}
+                    </p>
+                    {q.description && (
+                      <p className="mt-1 text-[0.78rem] leading-relaxed text-slate-500">{q.description}</p>
+                    )}
+                    <div className="mt-3 space-y-2">
+                      {(q.options ?? []).map((o) => {
+                        const picked = Array.isArray(answers[q.id])
+                          ? (answers[q.id] as string[]).includes(o.value)
+                          : false;
+                        return (
+                          <label
+                            key={o.value}
+                            className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 cursor-pointer hover:border-indigo-200"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600"
+                              checked={picked}
+                              onChange={(e) =>
+                                setAnswer(
+                                  q.id,
+                                  toggleMultiAnswer(answers[q.id], o.value, e.target.checked),
+                                )
+                              }
+                            />
+                            <span className="text-sm font-medium text-slate-700">{o.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                     {err && <p className="text-xs text-rose-500 font-medium mt-1.5">{err}</p>}
                   </div>
                 ) : (

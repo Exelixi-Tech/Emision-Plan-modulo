@@ -43,13 +43,13 @@ function resolveTarjetaFarmaciaNfactura(state, pay) {
 async function resolveIngresoCajaAfterPayment(state, { cnrecibo, mpagoFallback, metadata = {} }) {
   if (!cnrecibo) return undefined;
 
-  if (!state?.paymentVerified) {
+  const pay = state.paymentCapture || {};
+  const farmacia = isTarjetaFarmaciaPayment(state, pay);
+
+  if (!state?.paymentVerified && !farmacia) {
     metadata.collectionSkipped = 'pago_no_verificado';
     return undefined;
   }
-
-  const pay = state.paymentCapture || {};
-  const farmacia = isTarjetaFarmaciaPayment(state, pay);
   let xreferencia = farmacia
     ? resolveTarjetaFarmaciaNfactura(state, pay)
     : (pay.reference || pay.transactionId || pay.xreferencia);

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { formatQuoteUsdMoney, formatQuoteVesLabel, formatQuoteTasaValue, resolveQuoteVesAmount } from '../../lib/money';
 import { openEmissionPdfs } from '../../lib/openEmissionPdfs';
+import { copyToClipboard } from '../../lib/copyToClipboard';
 
 function getOcrRestartFromZeroUrl(): string {
   const configured = import.meta.env.VITE_OCR_CONTINUE_BASE as string | undefined;
@@ -69,10 +70,9 @@ export function SuccessStep() {
   const primaVes = resolveQuoteVesAmount(primaUsd, ptasa, policy?.quote?.mprima);
 
   const copyPolicy = async () => {
-    try {
-      await navigator.clipboard.writeText(policyNum);
+    if (await copyToClipboard(policyNum)) {
       toast.success('Copiado al portapapeles', `Número ${policyNum}`, 2800);
-    } catch {
+    } else {
       toast.error('No se pudo copiar', 'Intenta de nuevo o copia manualmente.');
     }
   };

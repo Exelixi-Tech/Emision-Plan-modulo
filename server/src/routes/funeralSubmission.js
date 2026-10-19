@@ -10,8 +10,13 @@ const { parseScoringRules } = require('../lib/funeralScoringRules');
 const { upsertHealthAnswers } = require('../services/healthDb');
 const { createFuneralSubmission } = require('../services/nexusFuneralSubmission');
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
-const { isFunerarioCplan } = require('../lib/funerarioPlan');
+const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
+const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
+const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
+const personasClient = require('../services/personasClient');
+const personasMapper = require('../services/personasMapper');
 const { resolveCanalKey } = require('../lib/canalKey');
+const { buildFuneralCheckoutPatch } = require('../lib/funeralCheckoutPatch');
 
 const router = express.Router();
 
@@ -19,6 +24,11 @@ function pickTomadorNombre(tomador) {
   if (!tomador || typeof tomador !== 'object') return '';
   const n = [tomador.nombre, tomador.apellido].filter(Boolean).join(' ').trim();
   return n || String(tomador.razonSocial ?? '').trim();
+}
+
+function positiveCramo(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function pickTomadorRif(tomador) {
@@ -46,11 +56,11 @@ router.post('/submissions', async (req, res) => {
     });
   }
 
-  if (!isFunerarioCplan(cplan)) {
+  if (!isPersonasCplan(cplan, body.cproducto)) {
     return res.status(400).json({
       success: false,
-      code: 'NOT_FUNERARIO_PLAN',
-      message: `El cplan "${cplan}" no es un plan funerario.`,
+      code: 'NOT_PERSONAS_PLAN',
+      message: `El cplan "${cplan}" no es un plan de personas.`,
     });
   }
 
@@ -73,7 +83,10 @@ router.post('/submissions', async (req, res) => {
 
   const tomador = body.tomador ?? {};
   const selectedPlan = body.selectedPlan ?? {};
-  const cramo = body.cramo != null ? Number(body.cramo) : 9;
+  const cramo = positiveCramo(metadata.cramo)
+    ?? positiveCramo(body.cramo)
+    ?? positiveCramo(selectedPlan.cramo)
+    ?? 9;
   const planName = String(selectedPlan.name ?? body.planName ?? '').trim() || null;
   const tomadorRif = pickTomadorRif(tomador) || body.tomadorRif;
   const tomadorNombre = pickTomadorNombre(tomador) || body.tomadorNombre;
@@ -94,6 +107,9 @@ router.post('/submissions', async (req, res) => {
     const { questions, scoringRules } = await resolveQuestionsForPlan(cplan, {
       empresaId,
       metadata,
+      cramo,
+      selectedPlan,
+      cproducto: metadata.cproducto ?? body.cproducto,
     });
     const rules = parseScoringRules(scoringRules);
 
@@ -128,8 +144,13 @@ router.post('/submissions', async (req, res) => {
     );
 
     const scoring = computePolicyHealthScore(questions, insureds, rules);
+    // Sin preguntas en el plan no hay semáforo que evaluar: pasa como verde (pago directo).
+    const sinPreguntas = !Array.isArray(questions) || questions.length === 0;
+    const verdict = sinPreguntas ? 'emit' : scoring.verdict;
 
-    if (scoring.verdict === 'reject') {
+    // Solo el rechazo de una pregunta (términos, blockIfTrue, etc.) corta sin mesa.
+    // El rango "Alto" debe crear solicitud para que mesa técnica la vea.
+    if (scoring.forcedReject) {
       return res.status(422).json({
         success: false,
         code: 'HEALTH_BLOCKED',
@@ -153,6 +174,39 @@ router.post('/submissions', async (req, res) => {
       });
     }
 
+    // Recargos/descuentos por respuesta: prima ajustada por asegurado (cotiza anual como la
+    // pantalla de planes). La emisión recalcula igual con su cotización autoritativa.
+    const quoteCramo = resolvePersonasCramo({
+      selectedPlan,
+      metadataCanal: metadata,
+      cproducto: metadata.cproducto,
+    });
+    const premiumAdjust = await adjustPremiumByAnswers({
+      questions,
+      persons: rawAsegurados,
+      asegurados: personasMapper.buildAseguradosForQuote(funeral, {
+        tomador: body.tomador,
+        asegurado: body.asegurado,
+        sameInsured: body.sameInsured,
+      }),
+      byInsured: Object.fromEntries(insureds.map((i) => [i.key, i.answers])),
+      quoteOne: (aseg) =>
+        personasClient.getCotizacionPer({ cramo: quoteCramo, cplan, asegurados: [aseg], ifrecuencia: 'A' }),
+    });
+    const quoteFinal = premiumAdjust
+      ? { ...(body.quote || {}), ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || body.quote?.ptasa }
+      : body.quote ?? null;
+
+    // Pago directo solo si el cliente viene por el puente de módulos (misma sesión → Pagos)
+    // y la prima permite armar el cobro; si no, se mantiene el flujo por correo.
+    const directCheckout =
+      body.directCheckout === true &&
+      sessionId !== 'standalone' &&
+      buildFuneralCheckoutPatch(
+        { quote: quoteFinal, selectedPlan: body.selectedPlan, funeral: body.funeral, metadataCanal: {} },
+        { cplan, submissionId: 'check' },
+      ) !== null;
+
     upsertHealthAnswers({
       sessionId,
       cplan,
@@ -170,11 +224,15 @@ router.post('/submissions', async (req, res) => {
       beneficiario: body.beneficiario ?? null,
       funeral: body.funeral ?? null,
       selectedPlan: body.selectedPlan ?? null,
-      quote: body.quote ?? null,
+      quote: quoteFinal,
       quoteState: body.quoteState ?? null,
+      /** Detalle interno: prima base, recargo/descuento por asegurado y preguntas. */
+      premiumAdjust: premiumAdjust ?? null,
       documents: body.documents ?? null,
       metadataCanal: body.metadataCanal ?? metadata,
       product: 'funerario',
+      /** Producto real para los correos (Nexus lo lee del snapshot). */
+      productLabel: productLabelFromMeta(body.metadataCanal ?? metadata),
     };
 
     const submission = await createFuneralSubmission({
@@ -199,7 +257,7 @@ router.post('/submissions', async (req, res) => {
       },
       snapshot: {
         ...snapshot,
-        healthVerdict: scoring.verdict,
+        healthVerdict: verdict,
         healthByInsured: (scoring.perInsured || []).map((p) => ({
           key: p.key,
           label: p.label,
@@ -207,11 +265,34 @@ router.post('/submissions', async (req, res) => {
           verdict: p.scoring.verdict,
         })),
       },
-      verdict: scoring.verdict,
+      verdict,
       reviewerEmails: rules.reviewerEmails,
-      notifyReviewers: scoring.verdict === 'referred',
-      autoApprove: scoring.verdict === 'emit',
+      notifyReviewers: verdict !== 'emit',
+      autoApprove: verdict === 'emit',
+      // Verde con puente: aprobada sin link ni correo; el cobro se hace en Pagos en la misma sesión.
+      directPay: verdict === 'emit' && directCheckout,
     });
+
+    const autoPayOk = verdict === 'emit' && submission?.estado === 'approved';
+    // Datos de cobro obligatorio para Pagos (nunca se emite sin pago). Si Nexus generó link, sigue el correo.
+    const checkoutPatch =
+      autoPayOk && directCheckout && !submission?.paymentUrl
+        ? buildFuneralCheckoutPatch(snapshot, {
+            cplan,
+            planName: planName || undefined,
+            submissionId: submission.id,
+            originSessionId: sessionId,
+          })
+        : null;
+    const directPay = Boolean(checkoutPatch);
+    const clientVerdict = autoPayOk ? 'emit' : verdict === 'emit' ? 'referred' : verdict;
+    const clientMessage = directPay
+      ? 'Solicitud aprobada. Continúa con el pago.'
+      : autoPayOk
+        ? scoring.verdictMessage
+        : verdict === 'emit'
+          ? 'Un técnico revisará tu solicitud antes de continuar al pago.'
+          : scoring.verdictMessage;
 
     return res.status(201).json({
       success: true,
@@ -220,8 +301,8 @@ router.post('/submissions', async (req, res) => {
         total: scoring.total,
         breakdown: scoring.breakdown,
         blocked: scoring.blocked,
-        verdict: scoring.verdict,
-        verdictMessage: scoring.verdictMessage,
+        verdict: clientVerdict,
+        verdictMessage: clientMessage,
         perInsured: scoring.perInsured?.map((p) => ({
           key: p.key,
           label: p.label,
@@ -229,7 +310,11 @@ router.post('/submissions', async (req, res) => {
           verdict: p.scoring.verdict,
         })),
       },
-      message: scoring.verdictMessage,
+      quote: quoteFinal,
+      premiumAdjust: premiumAdjust ?? null,
+      directPay,
+      ...(checkoutPatch ? { checkoutPatch } : {}),
+      message: clientMessage,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

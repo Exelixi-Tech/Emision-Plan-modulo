@@ -176,6 +176,109 @@ function resolvePlanesParams(nexusMetadata = {}) {
 }
 
 /**
+ * Sub-canal alterno (cscanalalt) desde metadata SSO / query bridge.
+ * @param {Record<string, unknown>} meta
+ * @returns {number|null}
+ */
+function parseCscanalalt(meta = {}) {
+  const raw = meta.cscanalalt_in ?? meta.cscanalalt ?? meta.csub ?? null;
+  if (raw == null || raw === '') return null;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Arma csubitem compuesto estilo Sis2000 (ej. productor 348 + gestor 342 → "348-342").
+ * Paridad remisión/emisión legacy SysIP.
+ * @param {Record<string, unknown>} meta
+ * @returns {string|null}
+ */
+function preferGestorCode(a, b) {
+  const sa = a != null ? String(a).trim() : '';
+  const sb = b != null ? String(b).trim() : '';
+  if (!sa) return sb || null;
+  if (!sb) return sa || null;
+  if (sb.startsWith(`${sa}-`)) return sb;
+  if (sa.startsWith(`${sb}-`)) return sa;
+  if (sa.includes('-') && !sb.includes('-')) return sa;
+  if (sb.includes('-') && !sa.includes('-')) return sb;
+  return sa;
+}
+
+function isLikelyGestorCode(code, parent) {
+  if (!code || String(code).includes('@')) return false;
+  const value = String(code).trim();
+  if (value.includes('-')) return true;
+  if (!/^\d+$/.test(value) || value.length < 3) return false;
+  return !parent || value !== String(parent).trim();
+}
+
+function composeGestorCsubitem(meta = {}) {
+  const parentRaw =
+    meta.citem
+    ?? meta.cproductor
+    ?? meta.ccanalalt_in
+    ?? meta.ccanalalt;
+  const parent = parentRaw != null ? String(parentRaw).trim() : '';
+
+  const gestorStr = preferGestorCode(meta.cgestor, meta.cgestor_in) || '';
+  if (gestorStr.includes('-') && !gestorStr.includes('@')) {
+    return gestorStr;
+  }
+
+  const explicit = meta.csubitem != null ? String(meta.csubitem).trim() : '';
+  if (explicit.includes('-') && !explicit.includes('@')) {
+    return explicit;
+  }
+
+  if (gestorStr && !gestorStr.includes('@') && isLikelyGestorCode(gestorStr, parent)) {
+    if (parent && parent !== gestorStr) {
+      return `${parent}-${gestorStr}`;
+    }
+    return gestorStr;
+  }
+
+  if (explicit && isLikelyGestorCode(explicit, parent)) {
+    if (parent && parent !== explicit && !explicit.includes('-')) {
+      return `${parent}-${explicit}`;
+    }
+    return explicit;
+  }
+
+  return null;
+}
+
+/**
+ * Código gestor para exclusión mausuplan (itipouso=E).
+ * Solo se envía cuando hay contexto de actor marketplace; sin match → null (sin filtro).
+ * @param {Record<string, unknown>} meta
+ * @returns {string|null}
+ */
+function resolveCsubitemForExclusion(meta = {}) {
+  const composed = composeGestorCsubitem(meta);
+  if (composed) return composed;
+
+  const centidad = meta.centidad != null
+    ? String(meta.centidad).trim().toUpperCase()
+    : '';
+  if (!centidad || centidad === 'G') return null;
+
+  const cscanalalt = parseCscanalalt(meta);
+  if (centidad === 'C' && cscanalalt != null) {
+    return String(cscanalalt);
+  }
+
+  if (centidad === 'C') {
+    const raw = meta.citem ?? meta.ccanalalt_in ?? meta.ccanalalt;
+    if (raw != null && String(raw).trim() !== '') {
+      return String(raw).trim();
+    }
+  }
+
+  return null;
+}
+
+/**
  * Arma el body para valrep/planes/v2 según contrato La Mundial QA.
  * @param {Record<string, unknown>} nexusMetadata
  * @param {number|null|undefined} ctipoQuery — ?ctipo= del GET /catalogo/planes
@@ -214,6 +317,18 @@ function buildPlanesV2Body(nexusMetadata = {}, ctipoQuery, iplacaQuery) {
 
   if (iplaca === 'B' || iplaca === 'E' || iplaca === 'N') {
     body.iplaca = iplaca;
+  }
+
+  const csubitem = resolveCsubitemForExclusion(nexusMetadata);
+  if (csubitem) {
+    body.csubitem = csubitem;
+  }
+
+  const cproducto = nexusMetadata.cproducto != null
+    ? String(nexusMetadata.cproducto).trim()
+    : '';
+  if (cproducto) {
+    body.cproducto = cproducto;
   }
 
   return body;
@@ -416,9 +531,19 @@ async function fetchPlanesV2(nexusMetadata = {}, ctipoQuery, iplacaQuery) {
     .map((p) => normalizePlanRow(p, body.cramo))
     .filter((p) => p.cplan);
 
+  const mensajeRaw =
+    data?.data?.mensaje
+    ?? data?.data?.message
+    ?? data?.mensaje
+    ?? data?.message
+    ?? '';
+  const mensaje = typeof mensajeRaw === 'string' && mensajeRaw.trim()
+    ? mensajeRaw.trim()
+    : undefined;
+
   logPlanesResponse(source, status, elapsed, planes, data);
 
-  return { planes, source, request: body };
+  return { planes, mensaje, source, request: body };
 }
 
 module.exports = {
@@ -426,6 +551,9 @@ module.exports = {
   resolveCusuarioFromMetadata,
   resolveCusuarioCoberturas,
   resolvePlanesParams,
+  resolveCsubitemForExclusion,
+  composeGestorCsubitem,
+  parseCscanalalt,
   buildPlanesV2Body,
   normalizePlanRow,
   fetchPlanesV2,
