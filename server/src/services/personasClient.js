@@ -216,6 +216,9 @@ async function createEmissionPerson(payload) {
       ncuota: r.ncuota,
       fanopol: r.fanopol,
       fmespol: r.fmespol,
+      // Activación de tarjeta (cards/activate) tras emitir.
+      cpoliza: r.cpoliza,
+      casegurado: r.casegurado,
       message: r.message,
       raw: response.data,
     };
