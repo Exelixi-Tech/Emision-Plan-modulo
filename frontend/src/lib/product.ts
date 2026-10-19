@@ -22,7 +22,7 @@ export interface ProductConfig {
 
 /** Ramo patrimonial por defecto. Solo aplica si el SSO no envía `cramo`. */
 export const PATRIMONIAL_RAMO_DEFAULT = parseInt(
-  import.meta.env.VITE_LAMUNDIAL_RAMO_PATRIMONIAL || '20',
+  import.meta.env.VITE_LAMUNDIAL_RAMO_PATRIMONIAL || '28',
   10,
 );
 
