@@ -137,7 +137,7 @@ function mapWizardToGeneralRisksEmitDto(state, cotizacion = {}, overrides = {}) 
     state.cramo ||
     metadataCanal.cramo ||
     process.env.LAMUNDIAL_RAMO_PATRIMONIAL ||
-    20,
+    28,
   );
 
   const cplan = String(

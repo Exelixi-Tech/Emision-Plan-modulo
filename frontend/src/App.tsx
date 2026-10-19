@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSessionTokenDelegation } from './hooks/useSessionTokenDelegation';
-import { isFunerario, isPatrimoniales } from './lib/product';
+import { isCombinadoFamiliar, isFunerarioLike, isPatrimoniales } from './lib/product';
 import { isExelixiCatalogFlow } from './lib/exelixi-catalog';
 import RcvPlansApp from './apps/RcvPlansApp';
 import FuneralPlansApp from './apps/FuneralPlansApp';
@@ -23,57 +23,19 @@ function resolveInitialFlow(): FlowType {
   }
 
   if (isExelixiCatalogFlow()) return 'exelixi';
-  return isFunerario() ? 'funerario' : 'rcv';
+  return isFunerarioLike() ? 'funerario' : 'rcv';
 }
 
 /**
- * Enrutador por producto.
+ * Enrutador por producto — RCV, funerario/vida/AP, patrimoniales y catálogo Exélixi en apps aisladas.
+ * El flujo La Mundial no importa lógica del catálogo Exélixi.
+ * Productos personas (wizard FuneralPlansApp): funerario (57), vida (76), ap (78), ap79 (79).
  */
 export default function App() {
   useSessionTokenDelegation();
-
-  const [activeFlow, setActiveFlow] = useState<FlowType>(resolveInitialFlow);
-
-  useEffect(() => {
-    const onPopState = () => {
-      setActiveFlow(resolveInitialFlow());
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  const handleSelectFlow = (flow: FlowType) => {
-    setActiveFlow(flow);
-
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('flow', flow);
-      window.history.pushState({}, '', url.toString());
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const renderApp = () => {
-    switch (activeFlow) {
-      case 'proveedor':
-        return <ProveedorPlansApp />;
-      case 'exelixi':
-        return <ExelixiCatalogPlansApp />;
-      case 'funerario':
-        return <FuneralPlansApp />;
-      case 'rcv':
-      default:
-        return <RcvPlansApp />;
-    }
-  };
-
-  return (
-    <>
-      {renderApp()}
-      {import.meta.env.DEV && (
-        <DevFlowSwitcher currentFlow={activeFlow} onSelectFlow={handleSelectFlow} />
-      )}
-    </>
-  );
+  if (isExelixiCatalogFlow()) return <ExelixiCatalogPlansApp />;
+  if (isFunerarioLike()) return <FuneralPlansApp />;
+  if (isPatrimoniales()) return <PatrimonialPlansApp />;
+  if (isCombinadoFamiliar()) return <ProveedorPlansApp />;
+  return <RcvPlansApp />;
 }

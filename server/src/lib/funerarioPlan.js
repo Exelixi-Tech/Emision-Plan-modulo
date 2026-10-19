@@ -1,5 +1,6 @@
 /**
- * Planes producto personas (valrep/planes/producto) — códigos numéricos y alfanuméricos (FUNESP, ACH*, …).
+ * Planes del producto que trae el SSO (valrep/planes/producto).
+ * El código lo devuelve Sis2000: numérico o alfanumérico.
  */
 
 /**
