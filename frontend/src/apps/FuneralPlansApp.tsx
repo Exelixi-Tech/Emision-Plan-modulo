@@ -17,6 +17,7 @@ import {
 import { EmissionPlanShell } from './EmissionPlanShell';
 import { isFuneralInsuredComplete } from '../features/plans/FuneralInsuredsEditor';
 import { syncTitularFromTomador } from '../lib/funeral-sync';
+import { continueTarjetaToPagos, shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
 
 const FREC_LABELS: Record<string, string> = {
   M: 'Pago mensual',
@@ -257,6 +258,31 @@ export default function FuneralPlansApp() {
     questions: HealthQuestion[] = healthQuestions,
   ) {
     if (!selectedPlan?.cplan) return;
+
+    // Tarjeta (sin sesión SSO): no pasa por mesa técnica, sigue a Pagos como RCV con tarjeta.
+    // Con una enfermedad declarada no se emite en línea.
+    if (shouldUseTarjetaPublicApi()) {
+      const conEnfermedad = Object.values(byInsured).some((a) => a?.diagnosticoEnfermedad === true);
+      if (conEnfermedad) {
+        setHealthModalOpen(false);
+        toast.warning(
+          'Cuestionario de salud',
+          'Con una enfermedad declarada la póliza no se puede emitir en línea con la tarjeta. Comunícate con La Mundial.',
+          9000,
+        );
+        return;
+      }
+      const health = mapHealthToFuneral(byInsured, questions);
+      if (!health.aceptaTerminos) {
+        toast.warning('Términos pendientes', 'Debes aceptar los términos para continuar.');
+        return;
+      }
+      setFuneral(health);
+      setHealthModalOpen(false);
+      continueTarjetaToPagos();
+      return;
+    }
+
     setSavingHealth(true);
     try {
       const sessionId = getSessionId();

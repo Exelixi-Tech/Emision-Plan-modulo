@@ -15,6 +15,7 @@ const personasMapper = require('../services/personasMapper');
 const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
+const { activateTarjetaAfterEmit, isRcvTarjetaFlow: isTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
@@ -512,6 +513,20 @@ router.post('/emision', async (req, res) => {
     });
     if (url_ingreso_caja) {
       console.log(`[personas/emision] URL ingreso caja: ${url_ingreso_caja}`);
+    }
+
+    // Flujo tarjeta: activa la tarjeta en La Mundial (fail-open, igual que RCV).
+    // casegurado = titular si nest-api no lo devuelve.
+    if (isTarjetaFlow(state)) {
+      await activateTarjetaAfterEmit(
+        state,
+        {
+          ...emitted,
+          casegurado: emitted.casegurado
+            ?? (Number(String(validatePayload.rif_titular ?? '').replace(/\D/g, '')) || undefined),
+        },
+        emitMetadata,
+      );
     }
 
     const emissionRecord = {
