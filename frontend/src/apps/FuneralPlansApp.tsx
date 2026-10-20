@@ -146,6 +146,31 @@ export default function FuneralPlansApp() {
     message?: string;
   } | null>(null);
 
+  // ¿El plan elegido tiene cuestionario? Con preguntas no se muestra la prima en Emisión
+  // (recargos/descuentos o revisión pueden cambiarla): se ve al pagar. null = consultando.
+  const [planHasQuestions, setPlanHasQuestions] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!selectedPlan?.cplan) {
+      setPlanHasQuestions(null);
+      return;
+    }
+    let cancelled = false;
+    setPlanHasQuestions(null);
+    const { cramo, cproducto } = questionnaireForPlan(
+      selectedPlan.cramo,
+      metadataCanal,
+      product.cproducto,
+      product.cramo,
+    );
+    fetchFuneralHealthQuestions(selectedPlan.cplan, cramo, cproducto)
+      .then((qs) => { if (!cancelled) setPlanHasQuestions(qs.length > 0); })
+      // Sin poder confirmarlo, se oculta la prima (no se muestra un monto que podría cambiar).
+      .catch(() => { if (!cancelled) setPlanHasQuestions(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlan?.cplan, selectedPlan?.cramo, metadataCanal?.cproducto, metadataCanal?.cramo]);
+  const hidePrice = Boolean(selectedPlan) && planHasQuestions !== false;
+
   const healthInsureds = (funeral.asegurados || [])
     .filter((a) => String(a.identificacion || '').trim())
     .map((a, idx) => ({
@@ -332,17 +357,10 @@ export default function FuneralPlansApp() {
 
       setFuneral(mapHealthToFuneral(byInsured, questions));
       // Recargo/descuento por respuestas: Pagos cobra la prima ajustada (misma que emite el servidor).
+      // Sin aviso de montos: con cuestionario el cliente ve la prima recién al pagar.
       if (premiumAdjust && quoteAjustada) {
         const snap = useWizardStore.getState();
         snap.setQuote({ ...(snap.quote ?? quoteAjustada), ...quoteAjustada }, snap.quoteVehicleSignature ?? '');
-        const netos = premiumAdjust.porAsegurado.filter((p) => p.netoPct !== 0);
-        toast.info(
-          'Prima ajustada por el cuestionario',
-          netos
-            .map((p) => `${p.label}: ${p.netoPct > 0 ? '+' : ''}${p.netoPct}%`)
-            .join(' · ') + ` → total ${premiumAdjust.quote.mprimaext.toFixed(2)}`,
-          8000,
-        );
       }
       setHealthModalOpen(false);
       const verdict = (scoring as { verdict?: string }).verdict;
@@ -388,14 +406,14 @@ export default function FuneralPlansApp() {
         hideContinuar={Boolean(pendingSubmission)}
         continuarBusy={validatingEmit}
       >
-        <FuneralPlansStep />
+        <FuneralPlansStep hidePrice={hidePrice} />
       </EmissionPlanShell>
 
       {selectedPlan && (
         <FuneralHealthModal
           open={healthModalOpen}
           plan={selectedPlan}
-          quote={quote}
+          quote={null /* con cuestionario la prima se ve al pagar */}
           frecuenciaLabel={FREC_LABELS[funeral.frecuencia ?? 'A'] ?? 'Pago anual'}
           questions={healthQuestions}
           loadingQuestions={loadingQuestions}
