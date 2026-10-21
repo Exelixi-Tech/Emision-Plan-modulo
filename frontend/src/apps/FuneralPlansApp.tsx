@@ -95,6 +95,7 @@ export default function FuneralPlansApp() {
     category, selectedPlan, quoteState, quote, funeral,
     tomador, asegurado, sameInsured, hasBeneficiary, beneficiario,
     documents, metadataCanal, setFuneral, setMetadataCanal,
+    funeralSubmission, setFuneralSubmission,
   } = useWizardStore();
   const product = getProductConfig();
   // Producto de personas que se emite (solo visual): Vida, AP, Salud… o Funerario.
@@ -145,6 +146,56 @@ export default function FuneralPlansApp() {
     message?: string;
   } | null>(null);
 
+  // Solicitud ya enviada a mesa técnica en esta sesión (store ← sesión Nexus al recargar,
+  // o sessionStorage sin puente): se vuelve a mostrar "en revisión" y no se puede recotizar
+  // ni cambiar respuestas. Verde no bloquea: sigue a Pagos.
+  useEffect(() => {
+    if (pendingSubmission) return;
+    let lock = funeralSubmission;
+    if (!lock) {
+      try {
+        const raw = sessionStorage.getItem(`emision_funeral_submission:${getSessionId()}`);
+        if (raw) lock = JSON.parse(raw) as typeof funeralSubmission;
+      } catch { /* ignore */ }
+    }
+    if (!lock || lock.verdict === 'emit') return;
+    if (lock.sessionId !== getSessionId()) return;
+    if (!funeralSubmission) setFuneralSubmission(lock);
+    setPendingSubmission({
+      id: lock.id,
+      scoreTotal: lock.scoreTotal,
+      verdict: lock.verdict,
+      message: lock.message,
+    });
+    setHealthModalOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [funeralSubmission]);
+
+  // ¿El plan elegido tiene cuestionario? Con preguntas no se muestra la prima en Emisión
+  // (recargos/descuentos o revisión pueden cambiarla): se ve al pagar. null = consultando.
+  const [planHasQuestions, setPlanHasQuestions] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!selectedPlan?.cplan) {
+      setPlanHasQuestions(null);
+      return;
+    }
+    let cancelled = false;
+    setPlanHasQuestions(null);
+    const { cramo, cproducto } = questionnaireForPlan(
+      selectedPlan.cramo,
+      metadataCanal,
+      product.cproducto,
+      product.cramo,
+    );
+    fetchFuneralHealthQuestions(selectedPlan.cplan, cramo, cproducto)
+      .then((qs) => { if (!cancelled) setPlanHasQuestions(qs.length > 0); })
+      // Sin poder confirmarlo, se oculta la prima (no se muestra un monto que podría cambiar).
+      .catch(() => { if (!cancelled) setPlanHasQuestions(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlan?.cplan, selectedPlan?.cramo, metadataCanal?.cproducto, metadataCanal?.cramo]);
+  const hidePrice = Boolean(selectedPlan) && planHasQuestions !== false;
+
   const healthInsureds = (funeral.asegurados || [])
     .filter((a) => String(a.identificacion || '').trim())
     .map((a, idx) => ({
@@ -178,6 +229,10 @@ export default function FuneralPlansApp() {
   }
 
   async function handleContinuar() {
+    if (pendingSubmission || (funeralSubmission && funeralSubmission.verdict !== 'emit')) {
+      toast.warning('Solicitud en revisión', 'Esta solicitud ya fue enviada a mesa técnica. Un técnico te contactará.');
+      return;
+    }
     if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
     if (!selectedPlan?.cplan) return;
     const incomplete = (funeral.asegurados || []).findIndex(
@@ -302,21 +357,17 @@ export default function FuneralPlansApp() {
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
         directCheckout: canAdvance,
+        priorSubmission: funeralSubmission
+          ? { id: funeralSubmission.id, sessionId: funeralSubmission.sessionId, verdict: funeralSubmission.verdict }
+          : null,
       });
 
       setFuneral(mapHealthToFuneral(byInsured, questions));
       // Recargo/descuento por respuestas: Pagos cobra la prima ajustada (misma que emite el servidor).
+      // Sin aviso de montos: con cuestionario el cliente ve la prima recién al pagar.
       if (premiumAdjust && quoteAjustada) {
         const snap = useWizardStore.getState();
         snap.setQuote({ ...(snap.quote ?? quoteAjustada), ...quoteAjustada }, snap.quoteVehicleSignature ?? '');
-        const netos = premiumAdjust.porAsegurado.filter((p) => p.netoPct !== 0);
-        toast.info(
-          'Prima ajustada por el cuestionario',
-          netos
-            .map((p) => `${p.label}: ${p.netoPct > 0 ? '+' : ''}${p.netoPct}%`)
-            .join(' · ') + ` → total ${premiumAdjust.quote.mprimaext.toFixed(2)}`,
-          8000,
-        );
       }
       setHealthModalOpen(false);
       const verdict = (scoring as { verdict?: string }).verdict;
@@ -337,6 +388,22 @@ export default function FuneralPlansApp() {
         verdict,
         message: verdictMessage,
       });
+
+      // Amarillo / rojo: queda bloqueado en esta sesión aunque recargue la página.
+      if (verdict && verdict !== 'emit') {
+        const lock = {
+          id: submission.id,
+          sessionId,
+          cplan: selectedPlan.cplan,
+          verdict,
+          scoreTotal: scoring.total ?? submission.scoreTotal,
+          message: verdictMessage,
+          createdAt: new Date().toISOString(),
+        };
+        setFuneralSubmission(lock);
+        try { sessionStorage.setItem(`emision_funeral_submission:${sessionId}`, JSON.stringify(lock)); } catch { /* ignore */ }
+        try { await window.__bridge?.save?.(); } catch { /* ignore */ }
+      }
 
       toast.success(
         verdict === 'emit' ? 'Puedes continuar al pago' : 'Solicitud enviada',
@@ -362,14 +429,14 @@ export default function FuneralPlansApp() {
         hideContinuar={Boolean(pendingSubmission)}
         continuarBusy={validatingEmit}
       >
-        <FuneralPlansStep />
+        <FuneralPlansStep hidePrice={hidePrice} />
       </EmissionPlanShell>
 
       {selectedPlan && (
         <FuneralHealthModal
           open={healthModalOpen}
           plan={selectedPlan}
-          quote={quote}
+          quote={null /* con cuestionario la prima se ve al pagar */}
           frecuenciaLabel={FREC_LABELS[funeral.frecuencia ?? 'A'] ?? 'Pago anual'}
           questions={healthQuestions}
           loadingQuestions={loadingQuestions}

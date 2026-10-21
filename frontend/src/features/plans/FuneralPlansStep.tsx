@@ -236,7 +236,12 @@ function planCramo(plan: Plan | null | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-export function FuneralPlansStep() {
+/**
+ * `hidePrice`: el producto tiene cuestionario de salud. Las respuestas pueden recargar o
+ * descontar la prima (o mandar a revisión), así que no se muestra ningún monto aquí:
+ * el cliente ve la prima final recién al pagar.
+ */
+export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } = {}) {
   const {
     funeral, selectedPlan, setSelectedPlan, setCategory,
     quote, quoteState, quoteError,
@@ -704,7 +709,7 @@ export function FuneralPlansStep() {
           </div>
           {cuotasFrecuencia > 1 && (
             <p className="mt-1.5 text-xs text-slate-600">
-              {annualUsd > 0
+              {annualUsd > 0 && !hidePrice
                 ? `${cuotasFrecuencia} cuotas de $${(annualUsd / cuotasFrecuencia).toFixed(2)}. `
                 : `${cuotasFrecuencia} cuotas. `}
               Hoy pagas la 1ª cuota y las siguientes se cobran por domiciliación bancaria.
@@ -745,6 +750,14 @@ export function FuneralPlansStep() {
                 )}
               </div>
 
+              {hidePrice ? (
+                <div className="w-full sm:w-auto sm:max-w-[15rem] sm:shrink-0 text-left sm:text-right">
+                  <p className="text-[0.62rem] font-black text-indigo-700 uppercase tracking-widest">Prima</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600 leading-relaxed">
+                    Se calcula según las respuestas del cuestionario de salud. Verás el monto al pagar.
+                  </p>
+                </div>
+              ) : (
               <div className="w-full sm:w-auto sm:shrink-0 text-left sm:text-right">
                 <div className="flex items-end gap-1 sm:justify-end">
                   <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
@@ -766,6 +779,7 @@ export function FuneralPlansStep() {
                   </p>
                 )}
               </div>
+              )}
             </div>
 
             <div className="divider-soft mb-5" />

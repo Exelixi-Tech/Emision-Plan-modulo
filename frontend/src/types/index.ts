@@ -357,4 +357,16 @@ export interface WizardState {
   diligencia: import('../lib/diligencia').DiligenciaState | null;
   /** Reglas de visibilidad del canal (SysIP / nest-api canal/visibility). */
   canalVisibility: CanalVisibility | null;
+  /** Solicitud de personas ya enviada a mesa técnica en esta sesión (bloquea recotizar/responder). */
+  funeralSubmission: FuneralSubmissionLock | null;
+}
+
+export interface FuneralSubmissionLock {
+  id: string;
+  sessionId: string;
+  cplan: string;
+  verdict: string;
+  scoreTotal: number;
+  message?: string;
+  createdAt: string;
 }

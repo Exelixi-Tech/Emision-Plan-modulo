@@ -1006,6 +1006,8 @@ export interface SubmitFuneralReviewPayload {
   metadataCanal?: Record<string, unknown> | null;
   /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
   directCheckout?: boolean;
+  /** Solicitud ya enviada a mesa en esta sesión: el servidor no deja crear otra. */
+  priorSubmission?: { id: string; sessionId: string; verdict: string } | null;
 }
 
 /** Recargo/descuento del cuestionario aplicado a la prima (servidor). */
