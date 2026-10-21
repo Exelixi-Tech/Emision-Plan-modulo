@@ -1,10 +1,11 @@
 import { useSessionTokenDelegation } from './hooks/useSessionTokenDelegation';
-import { isFunerarioLike, isPatrimoniales } from './lib/product';
+import { isCombinadoFamiliar, isFunerarioLike, isPatrimoniales } from './lib/product';
 import { isExelixiCatalogFlow } from './lib/exelixi-catalog';
 import RcvPlansApp from './apps/RcvPlansApp';
 import FuneralPlansApp from './apps/FuneralPlansApp';
 import PatrimonialPlansApp from './apps/PatrimonialPlansApp';
 import ExelixiCatalogPlansApp from './apps/ExelixiCatalogPlansApp';
+import ProveedorPlansApp from './apps/ProveedorPlansApp';
 
 /**
  * Enrutador por producto — RCV, funerario/vida/AP, patrimoniales y catálogo Exélixi en apps aisladas.
@@ -16,5 +17,6 @@ export default function App() {
   if (isExelixiCatalogFlow()) return <ExelixiCatalogPlansApp />;
   if (isFunerarioLike()) return <FuneralPlansApp />;
   if (isPatrimoniales()) return <PatrimonialPlansApp />;
+  if (isCombinadoFamiliar()) return <ProveedorPlansApp />;
   return <RcvPlansApp />;
 }

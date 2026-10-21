@@ -22,7 +22,7 @@ function isPersonasCplan(cplan) {
 
 /**
  * Ramo Sis2000 para cotizar/emitir (producto 57 → 45; si no, plan o metadata SSO).
- * @param {{ selectedPlan?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
+ * @param {{ selectedPlan?: { cramo?: number }, selectedProveedor?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
  * @returns {number}
  */
 function resolvePersonasCramo(opts = {}) {
@@ -31,6 +31,14 @@ function resolvePersonasCramo(opts = {}) {
   const fromPlan = selectedPlan?.cramo != null ? Number(selectedPlan.cramo) : NaN;
   if (Number.isFinite(fromPlan) && fromPlan > 0) return fromPlan;
 
+  const selectedProveedor = opts.selectedProveedor;
+  const fromProveedor = selectedProveedor?.cramo != null ? Number(selectedProveedor.cramo) : NaN;
+  if (Number.isFinite(fromProveedor) && fromProveedor > 0) return fromProveedor;
+
+  if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
+    const b = parseInt(String(opts.bodyCramo), 10);
+    if (Number.isFinite(b) && b > 0) return b;
+  }
   const prod = String(
     opts.cproducto ?? meta.cproducto ?? process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57',
   ).trim();
