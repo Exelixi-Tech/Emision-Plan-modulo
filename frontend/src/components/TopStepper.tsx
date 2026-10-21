@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import {
-  Check, ChevronLeft, ChevronRight, FileText, UserCog, ShieldCheck, CreditCard, Car, Users, Building2,
+  ChevronLeft, ChevronRight, FileText, UserCog, ShieldCheck, CreditCard, Car, Users, Building2,
 } from 'lucide-react';
 import {
   canNavigateToStep,
@@ -12,6 +12,7 @@ import { useWizardStore } from '../store/wizardStore';
 import { getProductConfig } from '../lib/product';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { toast } from '../store/toastStore';
+import { StepGlyph, StepKicker, StepperFxStyles, StepperProgress, STEPPER_TONE_EMERALD } from './StepperFx';
 
 type StepItem = { n: number; label: string; Icon: typeof Car; displayStep?: number };
 
@@ -27,6 +28,7 @@ export function TopStepper() {
   const product = getProductConfig();
   const cotizadorRcv = isCotizadorFlow() && product.id === 'rcv';
   const [navigating, setNavigating] = useState(false);
+  const [navTarget, setNavTarget] = useState<number | null>(null);
 
   const navSnapshot = {
     step,
@@ -101,6 +103,7 @@ export function TopStepper() {
     }
 
     setNavigating(true);
+    setNavTarget(target);
     try {
       await window.__bridge?.ready;
       const fn = window.__bridgeNavigateStep ?? window.__bridge?.navigateToStep;
@@ -111,8 +114,12 @@ export function TopStepper() {
       }
     } finally {
       setNavigating(false);
+      setNavTarget(null);
     }
   }
+
+  const activeIdx = STEPS.findIndex((st) => st.n >= step);
+  const progressRatio = STEPS.length > 1 ? (activeIdx < 0 ? 1 : activeIdx / (STEPS.length - 1)) : 0;
 
   const prevStep = getPreviousAllowedStep(step);
   const canPrev = prevStep != null && !navigating && canGoTo(prevStep);
@@ -121,14 +128,15 @@ export function TopStepper() {
   const canNext = nextStep != null && !navigating && canGoTo(nextStep);
 
   return (
-    <div className="hidden lg:block w-full mb-8 animate-fade-in">
+    <div className="sfx-root hidden lg:block w-full mb-8 animate-fade-in">
+      <StepperFxStyles tone={STEPPER_TONE_EMERALD} />
       <div className={cotizadorRcv ? 'flex justify-center' : 'flex items-center gap-2.5'}>
         <div className={cotizadorRcv ? 'inline-flex items-center gap-2.5' : 'flex items-center gap-2.5 flex-1 min-w-0'}>
         <button
           type="button"
           onClick={() => prevStep != null && goToStep(prevStep)}
           disabled={!canPrev}
-          className="flex-shrink-0 w-9 h-9 rounded-full bg-slate-700 text-white grid place-items-center shadow-md hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-slate-700"
+          className="sfx-arrow flex-shrink-0 w-9 h-9 rounded-full bg-slate-700 text-white grid place-items-center shadow-md hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-slate-700"
           aria-label="Paso anterior"
         >
           <ChevronLeft size={18} strokeWidth={2.5} />
@@ -138,7 +146,7 @@ export function TopStepper() {
           className={
             cotizadorRcv
               ? 'bg-white rounded-full shadow-[0_8px_32px_rgba(15,23,42,0.09)] border border-slate-200/70 px-6 py-3.5'
-              : 'flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-white rounded-full shadow-[0_8px_32px_rgba(15,23,42,0.09)] border border-slate-200/70 px-5 py-3.5'
+              : 'relative flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-white rounded-full shadow-[0_8px_32px_rgba(15,23,42,0.09)] border border-slate-200/70 px-5 py-3.5'
           }
           aria-label="Progreso de suscripción"
         >
@@ -147,6 +155,9 @@ export function TopStepper() {
               const isComplete = n < step;
               const isActive = n === step;
               const isClickable = n !== step && !navigating && canGoTo(n);
+              const reachable = n !== step && canGoTo(n);
+              const canReturn = reachable && n < step;
+              const lockedDone = isComplete && !reachable;
               const stepLabel = displayStep ?? n;
 
               return (
@@ -165,13 +176,17 @@ export function TopStepper() {
                     type="button"
                     disabled={!isClickable}
                     onClick={() => isClickable && goToStep(n)}
-                    className={`flex items-center gap-2.5 text-left rounded-lg transition-opacity ${
-                      isClickable ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
-                    }`}
+                    title={canReturn ? `Volver a ${label}` : lockedDone ? (n === 1 ? 'Los documentos ya fueron cargados' : 'Este paso ya no se puede modificar') : undefined}
+                    style={{ animationDelay: `${idx * 70}ms` }}
+                    className={`sfx-step flex items-center gap-2.5 text-left rounded-lg ${
+                      isClickable ? 'cursor-pointer' : 'cursor-default'
+                    } ${canReturn ? 'sfx-can-return' : reachable ? 'sfx-can-advance' : ''} ${
+                      isActive ? 'sfx-active' : ''
+                    } ${lockedDone ? 'sfx-locked' : ''}`}
                   >
                     <div
                       className={`
-                        w-10 h-10 rounded-full grid place-items-center flex-shrink-0 transition-colors duration-200
+                        sfx-circle w-10 h-10 rounded-full grid place-items-center flex-shrink-0 transition-colors duration-200
                         ${isComplete
                           ? 'bg-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
                           : isActive
@@ -180,15 +195,14 @@ export function TopStepper() {
                         }
                       `}
                     >
-                      {isComplete ? (
-                        <Check size={18} className="text-white" strokeWidth={3} />
-                      ) : (
-                        <Icon
-                          size={18}
-                          className={isActive ? 'text-slate-600' : 'text-slate-400'}
-                          strokeWidth={2}
-                        />
-                      )}
+                      <StepGlyph
+                        Icon={Icon}
+                        isComplete={isComplete}
+                        isActive={isActive}
+                        canReturn={canReturn}
+                        locked={lockedDone}
+                        loading={navTarget === n}
+                      />
                     </div>
 
                     <div className="min-w-0">
@@ -197,7 +211,13 @@ export function TopStepper() {
                           isComplete ? 'text-emerald-500' : isActive ? 'text-sky-600' : 'text-slate-400'
                         }`}
                       >
-                        PASO 0{stepLabel}
+                        <StepKicker
+                          label={`PASO 0${stepLabel}`}
+                          canReturn={canReturn}
+                          canAdvance={reachable && n > step}
+                          locked={lockedDone}
+                          lockedText={n === 1 ? 'Ya cargados' : 'Bloqueado'}
+                        />
                       </p>
                       <p
                         className={`mt-1 text-[0.88rem] font-bold leading-tight truncate max-w-[9.5rem] ${
@@ -213,13 +233,14 @@ export function TopStepper() {
               );
             })}
           </ol>
+          {!cotizadorRcv && <StepperProgress ratio={progressRatio} />}
         </nav>
 
         <button
           type="button"
           onClick={() => nextStep != null && goToStep(nextStep)}
           disabled={!canNext}
-          className="flex-shrink-0 w-9 h-9 rounded-full bg-slate-700 text-white grid place-items-center shadow-md hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-slate-700"
+          className="sfx-arrow flex-shrink-0 w-9 h-9 rounded-full bg-slate-700 text-white grid place-items-center shadow-md hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-slate-700"
           aria-label="Paso siguiente"
         >
           <ChevronRight size={18} strokeWidth={2.5} />
