@@ -24,6 +24,7 @@ const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
+const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 
 function asRecord(value) {
@@ -530,13 +531,20 @@ router.post('/emision', async (req, res) => {
     };
     const funeralRefs = resolveFuneralRefs(state);
     try {
+      // Tráfico (admin Nexus): producto real de personas (Vida, AP, Salud, 4 en 1…), no "funerario".
+      const trafficMeta = { ...(req.nexusMetadata || {}), ...(state.metadataCanal || {}) };
       await registerIssuedPolicy({
         empresaId: req.empresa?.id,
-        producto: 'funerario',
+        producto: productLabelFromMeta(trafficMeta) || 'funerario',
         emission: emissionRecord,
         state,
         planNombre: cplan,
         frecuencia: ifrecuencia,
+        extra: {
+          flujo: 'personas',
+          cproducto: trafficMeta.cproducto ?? null,
+          cramo: trafficMeta.cramo ?? null,
+        },
       });
     } catch (feedErr) {
       console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);

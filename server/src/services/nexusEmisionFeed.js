@@ -30,11 +30,12 @@ function tomadorIdentificacion(state) {
 /**
  * @param {object} opts
  * @param {number} [opts.empresaId]
- * @param {'rcv'|'funerario'} opts.producto
+ * @param {string} opts.producto  rcv | nombre del producto de personas (Vida, Accidentes Personales…)
  * @param {object} opts.emission
  * @param {object} [opts.state]
  * @param {string} [opts.planNombre]
  * @param {string} [opts.frecuencia]
+ * @param {Record<string, unknown>} [opts.extra]  datos adicionales para jsonData (flujo, cproducto, cramo)
  */
 async function registerIssuedPolicy(opts) {
   const empresaId = Number(opts.empresaId);
@@ -63,6 +64,7 @@ async function registerIssuedPolicy(opts) {
     frecuencia: opts.frecuencia || opts.state?.rcv?.frecuencia || undefined,
     monto: quote.mprimaext != null ? Number(quote.mprimaext) : undefined,
     jsonData: {
+      ...(opts.extra && typeof opts.extra === 'object' ? opts.extra : {}),
       producto: opts.producto,
       cnrecibo: opts.emission?.cnrecibo ?? null,
       urlpoliza: opts.emission?.urlpoliza ?? null,
