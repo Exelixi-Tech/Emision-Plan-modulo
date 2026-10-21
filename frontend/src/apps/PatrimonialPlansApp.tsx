@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { PatrimonialPlansStep } from '../features/plans/PatrimonialPlansStep';
 import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
