@@ -95,6 +95,7 @@ export default function FuneralPlansApp() {
     category, selectedPlan, quoteState, quote, funeral,
     tomador, asegurado, sameInsured, hasBeneficiary, beneficiario,
     documents, metadataCanal, setFuneral, setMetadataCanal,
+    funeralSubmission, setFuneralSubmission,
   } = useWizardStore();
   const product = getProductConfig();
   // Producto de personas que se emite (solo visual): Vida, AP, Salud… o Funerario.
@@ -144,6 +145,31 @@ export default function FuneralPlansApp() {
     verdict?: string;
     message?: string;
   } | null>(null);
+
+  // Solicitud ya enviada a mesa técnica en esta sesión (store ← sesión Nexus al recargar,
+  // o sessionStorage sin puente): se vuelve a mostrar "en revisión" y no se puede recotizar
+  // ni cambiar respuestas. Verde no bloquea: sigue a Pagos.
+  useEffect(() => {
+    if (pendingSubmission) return;
+    let lock = funeralSubmission;
+    if (!lock) {
+      try {
+        const raw = sessionStorage.getItem(`emision_funeral_submission:${getSessionId()}`);
+        if (raw) lock = JSON.parse(raw) as typeof funeralSubmission;
+      } catch { /* ignore */ }
+    }
+    if (!lock || lock.verdict === 'emit') return;
+    if (lock.sessionId !== getSessionId()) return;
+    if (!funeralSubmission) setFuneralSubmission(lock);
+    setPendingSubmission({
+      id: lock.id,
+      scoreTotal: lock.scoreTotal,
+      verdict: lock.verdict,
+      message: lock.message,
+    });
+    setHealthModalOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [funeralSubmission]);
 
   // ¿El plan elegido tiene cuestionario? Con preguntas no se muestra la prima en Emisión
   // (recargos/descuentos o revisión pueden cambiarla): se ve al pagar. null = consultando.
@@ -203,6 +229,10 @@ export default function FuneralPlansApp() {
   }
 
   async function handleContinuar() {
+    if (pendingSubmission || (funeralSubmission && funeralSubmission.verdict !== 'emit')) {
+      toast.warning('Solicitud en revisión', 'Esta solicitud ya fue enviada a mesa técnica. Un técnico te contactará.');
+      return;
+    }
     if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
     if (!selectedPlan?.cplan) return;
     const incomplete = (funeral.asegurados || []).findIndex(
@@ -327,6 +357,9 @@ export default function FuneralPlansApp() {
         documents: { ...documents },
         metadataCanal: metadataCanal ?? undefined,
         directCheckout: canAdvance,
+        priorSubmission: funeralSubmission
+          ? { id: funeralSubmission.id, sessionId: funeralSubmission.sessionId, verdict: funeralSubmission.verdict }
+          : null,
       });
 
       setFuneral(mapHealthToFuneral(byInsured, questions));
@@ -355,6 +388,22 @@ export default function FuneralPlansApp() {
         verdict,
         message: verdictMessage,
       });
+
+      // Amarillo / rojo: queda bloqueado en esta sesión aunque recargue la página.
+      if (verdict && verdict !== 'emit') {
+        const lock = {
+          id: submission.id,
+          sessionId,
+          cplan: selectedPlan.cplan,
+          verdict,
+          scoreTotal: scoring.total ?? submission.scoreTotal,
+          message: verdictMessage,
+          createdAt: new Date().toISOString(),
+        };
+        setFuneralSubmission(lock);
+        try { sessionStorage.setItem(`emision_funeral_submission:${sessionId}`, JSON.stringify(lock)); } catch { /* ignore */ }
+        try { await window.__bridge?.save?.(); } catch { /* ignore */ }
+      }
 
       toast.success(
         verdict === 'emit' ? 'Puedes continuar al pago' : 'Solicitud enviada',

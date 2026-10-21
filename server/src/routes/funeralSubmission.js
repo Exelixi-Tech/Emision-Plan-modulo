@@ -72,6 +72,21 @@ router.post('/submissions', async (req, res) => {
     });
   }
 
+  // Ya hay una solicitud en mesa para esta sesión (amarillo/rojo): no se crea otra
+  // ni se vuelve a correr el scoring con respuestas distintas.
+  const prior = body.priorSubmission;
+  if (
+    prior && typeof prior === 'object' && String(prior.id ?? '').trim() &&
+    String(prior.sessionId ?? '') === sessionId && String(prior.verdict ?? '') !== 'emit'
+  ) {
+    return res.status(409).json({
+      success: false,
+      code: 'FUNERAL_SUBMISSION_EXISTS',
+      message: 'Esta solicitud ya fue enviada a mesa técnica. Un técnico te contactará.',
+      submissionId: String(prior.id),
+    });
+  }
+
   const empresaId =
     Number(req.empresa?.id ?? body.empresaId ?? process.env.EMPRESA_ID ?? 1) || 1;
 
