@@ -331,8 +331,22 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     triedEmpresas: candidates,
     canal: canalKey,
     resolvedCanal,
-    scoringRules: ramoRulesRaw ?? scoringRulesRaw ?? DEFAULT_SCORING_RULES,
+    scoringRules: mergeReviewerEmails(ramoRulesRaw, scoringRulesRaw) ?? DEFAULT_SCORING_RULES,
   };
+}
+
+/**
+ * El semáforo por ramo reemplaza al general, pero los correos de mesa técnica
+ * se configuran una sola vez en las reglas generales (panel "Alertas").
+ * Si el ramo no trae `reviewerEmails`, hereda los generales.
+ */
+function mergeReviewerEmails(ramoRules, generalRules) {
+  if (!ramoRules || typeof ramoRules !== 'object') return generalRules ?? null;
+  const own = Array.isArray(ramoRules.reviewerEmails) ? ramoRules.reviewerEmails : [];
+  if (own.length > 0) return ramoRules;
+  const general =
+    generalRules && Array.isArray(generalRules.reviewerEmails) ? generalRules.reviewerEmails : [];
+  return general.length > 0 ? { ...ramoRules, reviewerEmails: general } : ramoRules;
 }
 
 /** Etiqueta legible para mostrar en logs/admin */
