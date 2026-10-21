@@ -368,4 +368,16 @@ export interface WizardState {
   cclave_num?: number;
   itiposerv?: string;
   selectedProveedor?: ProveedorItem | null;
+  /** Solicitud de personas ya enviada a mesa técnica en esta sesión (bloquea recotizar/responder). */
+  funeralSubmission: FuneralSubmissionLock | null;
+}
+
+export interface FuneralSubmissionLock {
+  id: string;
+  sessionId: string;
+  cplan: string;
+  verdict: string;
+  scoreTotal: number;
+  message?: string;
+  createdAt: string;
 }

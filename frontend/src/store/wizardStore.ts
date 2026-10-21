@@ -14,6 +14,7 @@ import type {
   IssuedPolicy,
   PolicyQuote,
   QuoteState,
+  FuneralSubmissionLock,
 } from '../types';
 import { getProductId } from '../lib/product';
 import { isFrecuenciaFraccionada } from '../lib/frecuencia';
@@ -124,6 +125,7 @@ interface WizardActions {
   setCanalVisibility: (data: CanalVisibility | null) => void;
   setCproveedor: (cproveedor?: number | string, xproveedor?: string, extra?: Partial<import('../types').ProveedorItem>) => void;
   setSelectedProveedor: (proveedor?: import('../types').ProveedorItem | null) => void;
+  setFuneralSubmission: (data: FuneralSubmissionLock | null) => void;
   reset: () => void;
 }
 
@@ -174,6 +176,7 @@ const initialState: WizardState = {
   metadataCanal: null,
   diligencia: buildDiligenciaState({ itipoDiligencia: 'S', clasificadoEn: 'emision' }),
   canalVisibility: null,
+  funeralSubmission: null,
 };
 
 export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
@@ -299,6 +302,8 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
     set({ quote: null, quoteState: 'idle', quoteError: null, quoteVehicleSignature: null }),
 
   setMetadataCanal: (data) => set({ metadataCanal: data }),
+
+  setFuneralSubmission: (data) => set({ funeralSubmission: data }),
 
   setDiligencia: (data) =>
     set((s) => {
