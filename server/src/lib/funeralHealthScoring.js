@@ -170,6 +170,8 @@ function isQuestionVisible(q, answers) {
     const want = expected === true || expected === 'true';
     return actual === want;
   }
+  // Selección múltiple: la hija aparece si la opción está entre las marcadas.
+  if (Array.isArray(actual)) return actual.map(String).includes(String(expected));
   return String(actual ?? '') === String(expected);
 }
 
