@@ -35,36 +35,22 @@ function getCrolesProductor() {
 }
 
 /**
- * Regla de permiso para selección dinámica de productor:
- * 1. Si entra con origen = 'marketplace' o no es origen = 'backoffice', devuelve false.
- * 2. Si tiene un rol explícito de productor/corredor (CROLES_PRODUCTOR), devuelve false.
- * 3. En backoffice: si tiene productor específico asignado (distinto de 80080), solo rol interno puede elegir.
- * 4. En backoffice con productor genérico (80080) o vacío: devuelve true.
- * @param {Record<string, unknown>} meta
- * @returns {boolean}
+ * Misma regla que el selector del frontend: backoffice solo si el usuario es interno, no productor y
+ * con productor de sesión genérico (80080 o vacío); marketplace solo si el productor de la sesión es 80080.
+ * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
  */
 function puedeElegirProductor(meta) {
   const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
-  if (origen === 'marketplace' || origen !== 'backoffice') {
-    return false;
+  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
+
+  if (origen === 'backoffice') {
+    const productor = String(meta?.cproductor ?? '').trim();
+    if (productor !== '' && productor !== '80080') return false;
+    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
+    const crolesProductor = getCrolesProductor();
+    return Number.isFinite(crol) && !crolesProductor.includes(crol);
   }
-
-  const productor = String(meta?.cproductor ?? '').trim();
-  const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
-  const crolesProductor = getCrolesProductor();
-
-  if (Number.isFinite(crol) && crolesProductor.includes(crol)) {
-    return false;
-  }
-
-  if (productor !== '' && productor !== '80080') {
-    if (origen === 'backoffice') {
-      return Number.isFinite(crol) && !crolesProductor.includes(crol);
-    }
-    return false;
-  }
-
-  return true;
+  return false;
 }
 
 /**
@@ -85,8 +71,8 @@ function withNexusMetadata(state, nexusMetadata) {
   // decodeJwtMetadata solo como fallback en desarrollo local si NO hay nexusMetadata verificado
   const unverifiedTokenMeta = !hasVerifiedAuth
     ? (['nexus_token', 'nexusToken']
-        .map((k) => (typeof state[k] === 'string' ? decodeJwtMetadata(state[k]) : null))
-        .find(Boolean) || {})
+      .map((k) => (typeof state[k] === 'string' ? decodeJwtMetadata(state[k]) : null))
+      .find(Boolean) || {})
     : {};
 
   const baseMeta = hasVerifiedAuth ? tokenMeta : unverifiedTokenMeta;
