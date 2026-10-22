@@ -18,7 +18,7 @@ const { resolveEntityContext } = require('../services/canalClient');
 const { puedeElegirProductor, withNexusMetadata } = require('../lib/nexusMetadata');
 
 const router = express.Router();
-const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 20;
+const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 28;
 
 function patrimonialCanalMeta(req) {
   const q = req.query || {};
@@ -42,16 +42,20 @@ function patrimonialCanalMeta(req) {
   }
 
   // Si viene selección de productor en body o en state.metadataCanal
-  const rawProductor = b.cproductor ?? stateMeta.cproductor;
+  // GET /planes no tiene body: el frontend envia la seleccion por query (appendSsoCanalQuery).
+  const rawProductor = b.cproductor ?? stateMeta.cproductor ?? q.cproductor;
   const isSelected = Boolean(
     stateMeta.productorSeleccionado === true
     || (b.cproductor != null && String(b.cproductor).trim() !== '')
+    || (q.cproductor != null && String(q.cproductor).trim() !== '')
   );
 
   const canChoose = puedeElegirProductor(req.nexusMetadata || {});
 
   if (canChoose && isSelected && rawProductor != null && String(rawProductor).trim() !== '') {
     const prod = String(rawProductor).trim();
+    // No enumerable: no viaja al spread de meta hacia los clientes de Nest.
+    Object.defineProperty(meta, 'seleccionAplicada', { value: true, enumerable: false });
     meta.cproductor = prod;
     meta.centidad = String(b.centidad ?? stateMeta.centidad ?? q.centidad ?? 'P').trim();
     meta.citem = String(b.citem ?? stateMeta.citem ?? q.citem ?? prod).trim();
@@ -189,6 +193,9 @@ async function handleQuote(req, res) {
   const cproductor = meta.cproductor;
   const centidad = entity?.centidad || meta.centidad || (cproductor ? 'P' : undefined);
   const citem = entity?.citem || meta.citem || (cproductor ? String(cproductor) : undefined);
+  // El canal solo se envia a la cotizacion si hubo un productor elegido y autorizado; sin
+  // seleccion, el payload queda igual que antes (no depende de que Nest acepte estos campos).
+  const canalCotizacion = meta.seleccionAplicada ? { cproductor, centidad, citem } : {};
 
   try {
     const quote = await patrimonialClient.quoteGeneralRisks({
@@ -199,9 +206,7 @@ async function handleQuote(req, res) {
       ifrecuencia,
       pdescuento,
       precargo,
-      cproductor,
-      centidad,
-      citem,
+      ...canalCotizacion,
     });
 
     return res.json({
@@ -309,10 +314,13 @@ async function handleEmit(req, res) {
   const cuotas = state.cuotas != null ? Number(state.cuotas) : 1;
 
   const metaCanal = state.metadataCanal || {};
+  const seleccionAplicada = puedeElegirProductor(req.nexusMetadata || {})
+    && (rawState?.metadataCanal?.productorSeleccionado === true || rawState?.metadataCanal?.productorSeleccionado === 'true');
   const entity = resolveEntityContext(metaCanal);
   const cproductor = metaCanal.cproductor;
   const centidad = entity?.centidad || metaCanal.centidad || (cproductor ? 'P' : undefined);
   const citem = entity?.citem || metaCanal.citem || (cproductor ? String(cproductor) : undefined);
+  const canalCotizacion = seleccionAplicada ? { cproductor, centidad, citem } : {};
 
   try {
     // 1. Cotiza para autorizar prima y tasa
@@ -324,9 +332,7 @@ async function handleEmit(req, res) {
       ifrecuencia,
       pdescuento: 0,
       precargo: 0,
-      cproductor,
-      centidad,
-      citem,
+      ...canalCotizacion,
     });
 
     // 2. Construye el payload generalRisks
@@ -434,3 +440,5 @@ router.post('/generalRisks', handleEmit);
 module.exports = router;
 module.exports.handleEmit = handleEmit;
 module.exports.handleQuote = handleQuote;
+// Expuesto solo para pruebas.
+module.exports.patrimonialCanalMeta = patrimonialCanalMeta;

@@ -1,0 +1,281 @@
+{
+  "tarjeta_lote_manda_sobre_token": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "flujo": "tarjeta",
+          "ctarjeta": "T1",
+          "centidad": "C",
+          "citem": "55",
+          "ccanalalt": "9",
+          "cplan": "RCVTARJ",
+          "cproducto": "18",
+          "cmoneda": "USD",
+          "cramo": 99,
+          "cgestor": "G-X",
+          "productorSeleccionado": true
+        }
+      },
+      "nexusMetadata": {
+        "origen": "backoffice",
+        "cproductor": "1234",
+        "centidad": "P",
+        "citem": "1234",
+        "crol": 3,
+        "cgestor": "G-1"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "flujo": "tarjeta",
+        "ctarjeta": "T1",
+        "centidad": "C",
+        "citem": "55",
+        "ccanalalt": "9",
+        "cplan": "RCVTARJ",
+        "cproducto": "18",
+        "cmoneda": "USD",
+        "origen": "backoffice",
+        "crol": 3
+      }
+    }
+  },
+  "tarjeta_por_xcodigo_unico_sin_canal": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "cgestor": "TOP",
+        "metadataCanal": {
+          "xcodigo_unico": "ABC",
+          "cplan": "RCVTARJ"
+        }
+      },
+      "nexusMetadata": {
+        "origen": "backoffice",
+        "crol": 1,
+        "cproductor": "80080",
+        "cgestor": "G-2"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "xcodigo_unico": "ABC",
+        "cplan": "RCVTARJ",
+        "origen": "backoffice",
+        "crol": 1
+      }
+    }
+  },
+  "interno_elige_productor": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "productorSeleccionado": true,
+          "cproductor": "555",
+          "centidad": "P",
+          "citem": "555"
+        }
+      },
+      "nexusMetadata": {
+        "origen": "backoffice",
+        "crol": 1,
+        "cproductor": "80080",
+        "cgestor": "G-2"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "productorSeleccionado": true,
+        "cproductor": "555",
+        "centidad": "P",
+        "citem": "555",
+        "origen": "backoffice",
+        "crol": 1,
+        "cgestor": "G-2"
+      },
+      "cgestor": "G-2"
+    }
+  },
+  "marketplace_80080_elige_productor": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "productorSeleccionado": true,
+          "cproductor": "555",
+          "centidad": "P",
+          "citem": "555"
+        }
+      },
+      "nexusMetadata": {
+        "origen": "marketplace",
+        "cproductor": "80080",
+        "cgestor": "G-3"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "productorSeleccionado": true,
+        "cproductor": "555",
+        "centidad": "P",
+        "citem": "555",
+        "origen": "marketplace",
+        "cgestor": "G-3"
+      },
+      "cgestor": "G-3"
+    }
+  },
+  "productor_no_puede_imponer_otro": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "productorSeleccionado": true,
+          "cproductor": "999",
+          "centidad": "P",
+          "citem": "999"
+        }
+      },
+      "nexusMetadata": {
+        "origen": "backoffice",
+        "cproductor": "1234",
+        "centidad": "P",
+        "citem": "1234",
+        "crol": 3,
+        "cgestor": "G-1"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "productorSeleccionado": true,
+        "cproductor": "1234",
+        "centidad": "P",
+        "citem": "1234",
+        "origen": "backoffice",
+        "crol": 3,
+        "cgestor": "G-1"
+      },
+      "cgestor": "G-1"
+    }
+  },
+  "interno_sin_seleccion": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "cproductor": "777"
+        }
+      },
+      "nexusMetadata": {
+        "origen": "backoffice",
+        "crol": 1,
+        "cproductor": "80080",
+        "cgestor": "G-2"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "cproductor": "80080",
+        "origen": "backoffice",
+        "crol": 1,
+        "cgestor": "G-2"
+      },
+      "cgestor": "G-2"
+    }
+  },
+  "cliente_aporta_ccanalalt": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "ccanalalt_in": "12"
+        }
+      },
+      "nexusMetadata": {
+        "origen": "marketplace",
+        "cproductor": "80080"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "ccanalalt_in": "12",
+        "origen": "marketplace",
+        "cproductor": "80080"
+      }
+    }
+  },
+  "gestor_con_guion_preferido": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "cgestor": "80080-27-0",
+        "metadataCanal": {}
+      },
+      "nexusMetadata": {
+        "origen": "marketplace",
+        "cproductor": "80080",
+        "cgestor": "80080"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "cgestor": "80080-27-0",
+      "metadataCanal": {
+        "origen": "marketplace",
+        "cproductor": "80080",
+        "cgestor": "80080-27-0"
+      }
+    }
+  },
+  "sin_jwt_dev_local": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "metadataCanal": {
+          "cproductor": "321",
+          "citem": "321",
+          "centidad": "P"
+        }
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "metadataCanal": {
+        "cproductor": "321",
+        "citem": "321",
+        "centidad": "P"
+      }
+    }
+  },
+  "token_en_state": {
+    "input": {
+      "state": {
+        "vehicle": {},
+        "nexus_token": "x.eyJtZXRhZGF0YSI6eyJjcHJvZHVjdG9yIjoiNDQ0NCIsImNlbnRpZGFkIjoiUCIsImNpdGVtIjoiNDQ0NCJ9fQ.y",
+        "metadataCanal": {}
+      },
+      "nexusMetadata": {
+        "origen": "marketplace"
+      }
+    },
+    "expected": {
+      "vehicle": {},
+      "nexus_token": "x.eyJtZXRhZGF0YSI6eyJjcHJvZHVjdG9yIjoiNDQ0NCIsImNlbnRpZGFkIjoiUCIsImNpdGVtIjoiNDQ0NCJ9fQ.y",
+      "metadataCanal": {
+        "origen": "marketplace",
+        "centidad": "P",
+        "citem": "4444",
+        "cproductor": "4444"
+      }
+    }
+  }
+}

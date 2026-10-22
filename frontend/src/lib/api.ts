@@ -880,7 +880,8 @@ export const patrimonialApi = {
   }) => {
     const canal = readSsoCanalMeta();
     const cramo = resolveSsoCramo() ?? payload.cramo;
-    const effectiveProductor = payload.cproductor ?? canal.cproductor ?? canal.citem;
+    // citem puede ser un canal alterno (centidad C): solo cproductor identifica al productor.
+    const effectiveProductor = payload.cproductor ?? canal.cproductor;
     const effectiveCentidad = payload.centidad ?? canal.centidad ?? (effectiveProductor ? 'P' : undefined);
     const effectiveCitem = payload.citem ?? (effectiveProductor ? String(effectiveProductor) : canal.citem);
     return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', {

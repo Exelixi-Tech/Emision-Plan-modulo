@@ -28,13 +28,66 @@ const TARJETA_ACTOR_KEYS = ['centidad', 'citem', 'cproductor', 'ccanalalt', 'csc
  */
 const TARJETA_PRODUCT_KEYS = ['cplan', 'cproducto', 'cmoneda'];
 
+// Auxiliares compartidas con patrimonial.js (misma regla de permiso que el selector del frontend).
 const {
   decodeJwtMetadata,
   preferGestorCode,
-  CROLES_PRODUCTOR,
   puedeElegirProductor,
-  withNexusMetadata,
 } = require('../lib/nexusMetadata');
+
+/**
+ * Fusiona metadata SSO del JWT (nexusAuth) + tokens del state (RCV).
+ * Se mantiene aqui (no en lib/nexusMetadata) porque RCV tiene reglas propias: el flujo
+ * tarjeta emite con el canal del lote y nunca con el token ni con el selector de productor.
+ * Cualquier cambio debe pasar test/rcvWithNexusMetadata.test.js.
+ */
+function withNexusMetadata(state, nexusMetadata) {
+  if (!state || typeof state !== 'object') return state;
+  const actorKeys = ['cgestor', 'cgestor_in', 'centidad', 'citem', 'cproductor', 'ccanalalt_in', 'cscanalalt_in', 'ccanalalt', 'cscanalalt'];
+  const sources = [];
+  if (nexusMetadata && typeof nexusMetadata === 'object') sources.push(nexusMetadata);
+  if (state.metadataCanal && typeof state.metadataCanal === 'object') sources.push(state.metadataCanal);
+  sources.push(state);
+  for (const key of ['nexus_token', 'nexusToken']) {
+    if (typeof state[key] === 'string') sources.push(decodeJwtMetadata(state[key]));
+  }
+
+  const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Quien pudo elegir productor en el selector: se emite con ese productor, no con el del token.
+  const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor }) && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
+  for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
+    const vals = sources.map((src) => src?.[key]);
+    const val = (key === 'cgestor' || key === 'cgestor_in')
+      ? preferGestorCode(...vals)
+      : (vals.find((v) => v != null && String(v).trim() !== '') ?? '');
+    if (val) mergedMeta[key] = val;
+  }
+
+  // Flujo tarjeta: la emisión es por el canal de la tarjeta (centidad/citem/cproductor
+  // del lote). Un token de usuario o el selector de productor no deben reemplazarlo.
+  if (isRcvTarjetaFlow(state)) {
+    const card = state.metadataCanal || {};
+    for (const key of [...TARJETA_ACTOR_KEYS, ...TARJETA_PRODUCT_KEYS]) {
+      const v = card[key];
+      if (v != null && String(v).trim() !== '') mergedMeta[key] = v;
+      else delete mergedMeta[key];
+    }
+    // Tarjetas son RCV: el ramo lo resuelve el vehículo (18, o 28 binacional), nunca la sesión.
+    for (const key of ['cramo', 'cgestor', 'cgestor_in', 'ccanalalt_in', 'cscanalalt_in', 'productorSeleccionado']) {
+      delete mergedMeta[key];
+    }
+    const { cgestor: _ignored, ...rest } = state;
+    return { ...rest, metadataCanal: mergedMeta };
+  }
+
+  const gestor = mergedMeta.cgestor != null ? String(mergedMeta.cgestor).trim() : '';
+  return { ...state, metadataCanal: mergedMeta, ...(gestor ? { cgestor: gestor } : {}) };
+}
 
 /**
  * @openapi
@@ -270,3 +323,5 @@ function _send(res, err, stage) {
 }
 
 module.exports = router;
+// Expuesto solo para pruebas.
+module.exports.withNexusMetadata = withNexusMetadata;
