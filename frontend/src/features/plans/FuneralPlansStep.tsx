@@ -17,6 +17,7 @@ import {
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { AGE_OUT_OF_RANGE_MESSAGE, AGE_OUT_OF_RANGE_TITLE, isAgeOutOfRangeError } from '../../lib/personas-age';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { resolveTitularSource, syncTitularFromTomador } from '../../lib/funeral-sync';
 import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
@@ -417,10 +418,9 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
         if (activeSigRef.current !== quoteSig) return;
         if (!(Number(r.data.mprimaext) > 0)) {
           // Sin tarifa en Sis2000 para este plan/edad: no se puede cobrar ni emitir.
-          const message = 'Este plan no tiene tarifa para los asegurados indicados. Elige otro plan.';
           useWizardStore.getState().clearQuote();
-          useWizardStore.getState().setQuoteState('error', message);
-          toast.warning('Plan sin tarifa', message, 9000);
+          useWizardStore.getState().setQuoteState('error', AGE_OUT_OF_RANGE_MESSAGE);
+          toast.warning(AGE_OUT_OF_RANGE_TITLE, AGE_OUT_OF_RANGE_MESSAGE, 9000);
           return;
         }
         useWizardStore.getState().setQuote(
@@ -435,18 +435,15 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
       })
       .catch((err: unknown) => {
         if (activeSigRef.current !== quoteSig) return;
-        const ax = err as { response?: { data?: { message?: string } }; message?: string };
-        const message =
+        const ax = err as { response?: { data?: { message?: string; code?: string } }; message?: string };
+        const raw =
           ax.response?.data?.message?.trim()
           || ax.message
           || 'No pudimos obtener la tarifa.';
+        const ageIssue = isAgeOutOfRangeError(ax.response?.data?.code) || isAgeOutOfRangeError(raw);
+        const message = ageIssue ? AGE_OUT_OF_RANGE_MESSAGE : raw;
         useWizardStore.getState().setQuoteState('error', message);
-        const ageIssue = /edad/i.test(message);
-        toast.warning(
-          ageIssue ? 'Edad fuera de rango del plan' : 'Cotización no disponible',
-          message,
-          9000,
-        );
+        toast.warning(ageIssue ? AGE_OUT_OF_RANGE_TITLE : 'Cotización no disponible', message, 9000);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteSig]);
