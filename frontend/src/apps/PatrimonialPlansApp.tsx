@@ -5,11 +5,12 @@ import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { EmissionPlanShell } from './EmissionPlanShell';
-import { getEffectiveSsoMetadata, shouldShowProductorSelector, PRODUCTOR_LA_MUNDIAL } from '../lib/productor-selector';
+import { getEffectiveSsoMetadata, shouldShowProductorSelector } from '../lib/productor-selector';
+// import { PlansStep } from '../features/plans/PlansStep';
 
 /**
- * Paso 4 — Patrimonial (Responsabilidad Civil General / Riesgos Generales, ramo 28).
- * Flujo de selección de plan y cotización patrimonial.
+ * Paso 4 — Patrimonial (Riesgos Generales, ramo 20).
+ * Flujo de selección de plan y cotización con quote-generalRisks.
  */
 export default function PatrimonialPlansApp() {
   const {
@@ -26,7 +27,7 @@ export default function PatrimonialPlansApp() {
     if (shouldShowProductorSelector(meta)) {
       const snap = useWizardStore.getState();
       const currentProductor = snap.rcv?.cproductor ?? snap.metadataCanal?.cproductor;
-      if (!currentProductor || String(currentProductor).trim() === PRODUCTOR_LA_MUNDIAL) {
+      if (!currentProductor || String(currentProductor).trim() === '80080') {
         toast.warning(
           'Productor requerido',
           'Selecciona el productor al que será asociada la póliza antes de continuar.',

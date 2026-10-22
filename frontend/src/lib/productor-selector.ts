@@ -112,8 +112,7 @@ export function isTecnicoRole(meta: Record<string, unknown>): boolean {
 }
 
 /** Código de productor de La Mundial: en marketplace es el único caso en que se elige productor. */
-export const PRODUCTOR_LA_MUNDIAL = '80080';
-export const DEFAULT_PRODUCTOR = PRODUCTOR_LA_MUNDIAL;
+const PRODUCTOR_LA_MUNDIAL = '80080';
 
 /**
  * Selector de productor, según el origen de la sesión:
@@ -145,6 +144,6 @@ export function initialProductorId(meta: Record<string, unknown>, currentProduct
     return String(meta.ccorredor ?? meta.cproductor ?? meta.citem ?? '').trim();
   }
   const cand = currentProductor ?? meta.cproductor;
-  if (!cand || String(cand).trim() === PRODUCTOR_LA_MUNDIAL) return '';
+  if (!cand || String(cand).trim() === '80080') return '';
   return String(cand).trim();
 }
