@@ -63,6 +63,12 @@ const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
  * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
  */
 function puedeElegirProductor(meta) {
+  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
+  // 1- Si entra con origen = 'marketplace' o que no sea origen = 'backoffice', debe devolver falso
+  if (origen === 'marketplace' || origen !== 'backoffice') {
+    return false;
+  }
+
   const productor = String(meta?.cproductor ?? '').trim();
   const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
 
@@ -73,7 +79,6 @@ function puedeElegirProductor(meta) {
 
   // Si viene con un productor específico asignado (distinto de 80080):
   if (productor !== '' && productor !== '80080') {
-    const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
     // En backoffice solo usuarios internos (no productores) pueden elegir
     if (origen === 'backoffice') {
       return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
@@ -82,7 +87,6 @@ function puedeElegirProductor(meta) {
   }
 
   // Productor de sesión genérico (80080) o vacío:
-  // Marketplace, backoffice o sesiones sin origen explícito en el JWT pueden seleccionar productor
   return true;
 }
 
