@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
+import { PatrimonialPlansStep } from '../features/plans/PatrimonialPlansStep';
 import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { EmissionPlanShell } from './EmissionPlanShell';
 import { getEffectiveSsoMetadata, shouldShowProductorSelector } from '../lib/productor-selector';
-import { PlansStep } from '../features/plans/PlansStep';
+// import { PlansStep } from '../features/plans/PlansStep';
 
 /**
  * Paso 4 — Patrimonial (Riesgos Generales, ramo 20).
@@ -67,7 +68,7 @@ export default function PatrimonialPlansApp() {
       onContinuar={handleContinuar}
       continuarLabel={cotizador ? 'Ver cotización' : undefined}
     >
-      <PlansStep />
+      <PatrimonialPlansStep />
     </EmissionPlanShell>
   );
 }
