@@ -391,6 +391,14 @@ router.post('/emision', async (req, res) => {
   const { state: rawState, frecuencia } = req.body || {};
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
+  // Tarjeta de personas: sin aceptar mecanismos/términos y la declaración de salud no se emite.
+  if (isTarjetaFlow(state) && (funeral.aceptaTerminos !== true || funeral.diagnosticoEnfermedad === true)) {
+    return res.status(422).json({
+      success: false,
+      code: 'TARJETA_DECLARACIONES',
+      message: 'Para emitir debes aceptar los mecanismos electrónicos, los términos y la declaración de salud.',
+    });
+  }
   const cplan = state?.selectedPlan?.cplan;
   const cramo = resolvePersonasCramo({
     selectedPlan: state?.selectedPlan,
