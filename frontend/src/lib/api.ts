@@ -874,9 +874,24 @@ export const patrimonialApi = {
     ifrecuencia?: string;
     pdescuento?: number;
     precargo?: number;
+    cproductor?: string | number;
+    centidad?: string;
+    citem?: string | number;
+    productorSeleccionado?: boolean;
   }) => {
+    const canal = readSsoCanalMeta();
     const cramo = resolveSsoCramo() ?? payload.cramo;
-    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+    const effectiveProductor = payload.cproductor ?? canal.cproductor ?? canal.citem;
+    const effectiveCentidad = payload.centidad ?? canal.centidad ?? (effectiveProductor ? 'P' : undefined);
+    const effectiveCitem = payload.citem ?? (effectiveProductor ? String(effectiveProductor) : canal.citem);
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', {
+      centidad: effectiveCentidad,
+      citem: effectiveCitem,
+      cproductor: effectiveProductor ? String(effectiveProductor) : undefined,
+      productorSeleccionado: payload.productorSeleccionado ?? canal.productorSeleccionado,
+      ...payload,
+      cramo,
+    });
   },
 };
 
@@ -1102,7 +1117,7 @@ export async function validateFuneralEmission(payload: {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-//  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
+//  Patrimonial (Riesgos Generales, ramo 28) — planes, cotización y emisión
 // ──────────────────────────────────────────────────────────────────────
 
 export interface QuoteGeneralRisksDto {

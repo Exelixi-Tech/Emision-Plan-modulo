@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
-  Loader2, AlertTriangle, Building2, CalendarClock, UserCheck,
+  Loader2, AlertTriangle, Building2, CalendarClock,
 } from 'lucide-react';
 import type { Plan } from '../../types';
 import {
@@ -10,14 +10,13 @@ import {
   resolveSsoCramo,
   type PlanRcv,
   getFrecuenciasByPlan,
-  getBrokers,
   type CatalogItem,
 } from '../../lib/api';
-import { SearchSelect } from '../../components/ui/SearchSelect';
+import { ProductorSelector } from './ProductorSelector';
 import {
   getEffectiveSsoMetadata,
   shouldShowProductorSelector,
-  isProductorRole,
+  initialProductorId,
 } from '../../lib/productor-selector';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
@@ -62,58 +61,10 @@ export function PatrimonialPlansStep() {
     ...(metadataCanal || {}),
   };
   const showProductorSelector = shouldShowProductorSelector(effectiveMeta);
-  const isUserProductor = isProductorRole(effectiveMeta);
 
-  const [brokers, setBrokers] = useState<CatalogItem[]>([]);
-  const [brokersLoading, setBrokersLoading] = useState(false);
-
-  const initialProductorId = () => {
-    if (isUserProductor) {
-      return String(effectiveMeta.cproductor ?? effectiveMeta.citem ?? '').trim();
-    }
-    const current = rcv.cproductor ?? effectiveMeta.cproductor;
-    if (current && String(current).trim() !== '80080') {
-      return String(current).trim();
-    }
-    return '';
-  };
-  const [selectedProductorId, setSelectedProductorId] = useState<string>(initialProductorId);
-
-  useEffect(() => {
-    if (!showProductorSelector) return;
-    let cancelled = false;
-    setBrokersLoading(true);
-    getBrokers()
-      .then((items) => {
-        if (!cancelled) setBrokers(items);
-      })
-      .catch((err) => {
-        console.error('Error cargando productores:', err);
-      })
-      .finally(() => {
-        if (!cancelled) setBrokersLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [showProductorSelector]);
-
-  const handleSelectProductor = (val: string, lbl: string) => {
-    setSelectedProductorId(val);
-    const store = useWizardStore.getState();
-    store.setMetadataCanal({
-      ...(store.metadataCanal || {}),
-      cproductor: val,
-      centidad: 'P',
-      citem: val,
-      xproductor: lbl,
-      /** El servidor emite con este productor (no con el del token) si el rol es técnico. */
-      productorSeleccionado: true,
-    });
-    setRcv({
-      cproductor: val,
-      xproductor: lbl,
-    });
-    setSelectedPlan(null);
-  };
+  const [selectedProductorId, setSelectedProductorId] = useState<string>(() =>
+    initialProductorId(effectiveMeta, rcv.cproductor),
+  );
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -190,7 +141,7 @@ export function PatrimonialPlansStep() {
   // ── Cotización contra quote-generalRisks ────────────────────────────────────
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
-    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}`
+    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}|${selectedProductorId || ''}`
     : '';
 
   const activeSigRef = useRef('');
@@ -210,6 +161,7 @@ export function PatrimonialPlansStep() {
       ifrecuencia: activeFrecuencia,
       pdescuento: 0,
       precargo: 0,
+      cproductor: selectedProductorId || undefined,
     })
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;
@@ -258,39 +210,10 @@ export function PatrimonialPlansStep() {
       </div>
 
       {/* Selector de Productor (Backoffice Sis2000 - solo para roles no-productor) */}
-      {showProductorSelector && (
-        <div className="rounded-2xl border-2 border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-white to-violet-50/40 p-4 sm:p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <label className="text-[0.68rem] font-black text-indigo-950 uppercase tracking-widest inline-flex items-center gap-1.5">
-              <UserCheck size={14} className="text-indigo-600" />
-              Productor asociado a la póliza *
-            </label>
-            {selectedProductorId && (
-              <span className="text-[0.65rem] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full">
-                Cód: {selectedProductorId}
-              </span>
-            )}
-          </div>
-          <SearchSelect
-            options={brokers.map((b) => ({ value: String(b.code), label: `${b.code} - ${b.label}` }))}
-            value={selectedProductorId || undefined}
-            onChange={(val, lbl) => handleSelectProductor(val, lbl)}
-            placeholder="Seleccione el productor..."
-            loading={brokersLoading}
-            disabled={brokersLoading}
-            noOptionsText="No se encontraron productores"
-          />
-          {!selectedProductorId ? (
-            <p className="text-[0.72rem] font-semibold text-amber-700 mt-2">
-              Selecciona el productor para consultar y calcular los planes autorizados para la emisión.
-            </p>
-          ) : (
-            <p className="text-[0.72rem] font-medium text-slate-500 mt-1.5">
-              La póliza emitida quedará asociada a este productor en Sis2000.
-            </p>
-          )}
-        </div>
-      )}
+      <ProductorSelector
+        selectedProductorId={selectedProductorId}
+        onSelectProductor={(id) => setSelectedProductorId(id)}
+      />
 
       {/* Selectores */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
