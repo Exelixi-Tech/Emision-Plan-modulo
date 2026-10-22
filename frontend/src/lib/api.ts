@@ -874,9 +874,22 @@ export const patrimonialApi = {
     ifrecuencia?: string;
     pdescuento?: number;
     precargo?: number;
+    cproductor?: string | number;
+    centidad?: string;
+    citem?: string | number;
   }) => {
+    const canal = readSsoCanalMeta();
     const cramo = resolveSsoCramo() ?? payload.cramo;
-    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+    const effectiveProductor = payload.cproductor ?? canal.cproductor ?? canal.citem;
+    const effectiveCentidad = payload.centidad ?? canal.centidad ?? (effectiveProductor ? 'P' : undefined);
+    const effectiveCitem = payload.citem ?? (effectiveProductor ? String(effectiveProductor) : canal.citem);
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', {
+      ...payload,
+      cramo,
+      ...(effectiveProductor ? { cproductor: String(effectiveProductor) } : {}),
+      ...(effectiveCentidad ? { centidad: String(effectiveCentidad) } : {}),
+      ...(effectiveCitem ? { citem: String(effectiveCitem) } : {}),
+    });
   },
 };
 
