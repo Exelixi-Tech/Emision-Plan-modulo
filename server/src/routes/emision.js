@@ -28,54 +28,19 @@ const TARJETA_ACTOR_KEYS = ['centidad', 'citem', 'cproductor', 'ccanalalt', 'csc
  */
 const TARJETA_PRODUCT_KEYS = ['cplan', 'cproducto', 'cmoneda'];
 
-function decodeJwtMetadata(token) {
-  if (!token || typeof token !== 'string') return {};
-  try {
-    const part = token.replace(/^Bearer\s+/i, '').split('.')[1];
-    if (!part) return {};
-    const json = Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-    const payload = JSON.parse(json);
-    return payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
-  } catch {
-    return {};
-  }
-}
-
-function preferGestorCode(...vals) {
-  const codes = vals
-    .map((v) => (v != null ? String(v).trim() : ''))
-    .filter(Boolean);
-  if (!codes.length) return '';
-  return codes.find((c) => c.includes('-')) || codes[0];
-}
-
-/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
-const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
-  .split(',')
-  .map((v) => v.trim())
-  .filter((v) => v !== '')
-  .map(Number)
-  .filter((n) => Number.isInteger(n));
+// Auxiliares compartidas con patrimonial.js (misma regla de permiso que el selector del frontend).
+const {
+  decodeJwtMetadata,
+  preferGestorCode,
+  puedeElegirProductor,
+} = require('../lib/nexusMetadata');
 
 /**
- * Misma regla que el selector del frontend: backoffice solo si el usuario es interno, no productor y
- * con productor de sesión genérico (80080 o vacío); marketplace solo si el productor de la sesión es 80080.
- * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
+ * Fusiona metadata SSO del JWT (nexusAuth) + tokens del state (RCV).
+ * Se mantiene aqui (no en lib/nexusMetadata) porque RCV tiene reglas propias: el flujo
+ * tarjeta emite con el canal del lote y nunca con el token ni con el selector de productor.
+ * Cualquier cambio debe pasar test/rcvWithNexusMetadata.test.js.
  */
-function puedeElegirProductor(meta) {
-  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
-  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
-
-  if (origen === 'backoffice') {
-    const productor = String(meta?.cproductor ?? '').trim();
-    if (productor !== '' && productor !== '80080') return false;
-    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
-    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
-  }
-  return false;
-}
-
-/** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
   const actorKeys = ['cgestor', 'cgestor_in', 'centidad', 'citem', 'cproductor', 'ccanalalt_in', 'cscanalalt_in', 'ccanalalt', 'cscanalalt'];
@@ -358,3 +323,5 @@ function _send(res, err, stage) {
 }
 
 module.exports = router;
+// Expuesto solo para pruebas.
+module.exports.withNexusMetadata = withNexusMetadata;

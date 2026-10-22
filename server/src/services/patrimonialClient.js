@@ -10,7 +10,7 @@ const {
 } = require('./nestTokenService');
 const { resolveEntityContext } = require('./canalClient');
 
-const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PATRIMONIAL || '20', 10);
+const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PATRIMONIAL || '28', 10);
 const DEFAULT_TIMEOUT = 30_000;
 
 const PATH_PREFIX = '/api/v1/valrep/';
@@ -263,9 +263,20 @@ function aggregateQuoteData(rawData, ptasamonFallback = 1) {
 /**
  * Cotiza un plan de Riesgos Generales / Patrimonial.
  * POST /api/v1/partner/starter/patrimonial/quote (QuoteGeneralRisksDto)
- * @param {{ cramo?: number, cplan: string, ptasamon?: number, cuotas?: number, ifrecuencia?: string, pdescuento?: number, precargo?: number }} params
+ * @param {{ cramo?: number, cplan: string, ptasamon?: number, cuotas?: number, ifrecuencia?: string, pdescuento?: number, precargo?: number, cproductor?: string | number, centidad?: string, citem?: string | number }} params
  */
-async function quoteGeneralRisks({ cramo = DEFAULT_RAMO, cplan, ptasamon, cuotas = 1, ifrecuencia = 'A', pdescuento = 0, precargo = 0 }) {
+async function quoteGeneralRisks({
+  cramo = DEFAULT_RAMO,
+  cplan,
+  ptasamon,
+  cuotas = 1,
+  ifrecuencia = 'A',
+  pdescuento = 0,
+  precargo = 0,
+  cproductor,
+  centidad,
+  citem,
+}) {
   const base = getBaseUrl();
   const url = `${base}/api/v1/partner/starter/patrimonial/quote`;
   const payload = {
@@ -278,6 +289,16 @@ async function quoteGeneralRisks({ cramo = DEFAULT_RAMO, cplan, ptasamon, cuotas
   };
   if (ptasamon != null && Number(ptasamon) > 0) {
     payload.ptasamon = Number(ptasamon);
+  }
+  if (cproductor != null && String(cproductor).trim() !== '') {
+    const prodNum = parseInt(String(cproductor).replace(/\D/g, ''), 10);
+    payload.cproductor = prodNum || String(cproductor).trim();
+  }
+  if (centidad != null && String(centidad).trim() !== '') {
+    payload.centidad = String(centidad).trim();
+  }
+  if (citem != null && String(citem).trim() !== '') {
+    payload.citem = String(citem).trim();
   }
 
   const ts = new Date().toISOString();

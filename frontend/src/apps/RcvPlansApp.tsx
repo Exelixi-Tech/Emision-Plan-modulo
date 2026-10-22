@@ -37,19 +37,19 @@ export default function RcvPlansApp() {
   function handleContinuar() {
     if (cotizador) {
       const meta = getEffectiveSsoMetadata();
-    if (shouldShowProductorSelector(meta)) {
-      const snap = useWizardStore.getState();
-      const currentProductor = snap.rcv?.cproductor ?? snap.metadataCanal?.cproductor;
-      if (!currentProductor || String(currentProductor).trim() === '80080') {
-        toast.warning(
-          'Productor requerido',
-          'Selecciona el productor al que será asociada la póliza antes de continuar.',
-        );
-        return;
+      if (shouldShowProductorSelector(meta)) {
+        const snap = useWizardStore.getState();
+        const currentProductor = snap.rcv?.cproductor ?? snap.metadataCanal?.cproductor;
+        if (!currentProductor || String(currentProductor).trim() === '80080') {
+          toast.warning(
+            'Productor requerido',
+            'Selecciona el productor al que será asociada la póliza antes de continuar.',
+          );
+          return;
+        }
       }
-    }
 
-    if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
+      if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
       const usd = quote?.mprimaext ?? quote?.mprima;
       toast.success(
         'Cotización lista',
