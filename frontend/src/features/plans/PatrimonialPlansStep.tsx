@@ -190,7 +190,7 @@ export function PatrimonialPlansStep() {
   // ── Cotización contra quote-generalRisks ────────────────────────────────────
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
-    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}`
+    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}|${selectedProductorId || ''}`
     : '';
 
   const activeSigRef = useRef('');
@@ -204,12 +204,16 @@ export function PatrimonialPlansStep() {
     activeSigRef.current = quoteSig;
     snap.setQuoteState('loading');
 
+    const effectiveProd = selectedProductorId || undefined;
     patrimonialApi.cotizar({
       cplan: planCode,
       cramo: activeCramo,
       ifrecuencia: activeFrecuencia,
       pdescuento: 0,
       precargo: 0,
+      cproductor: effectiveProd,
+      centidad: effectiveProd ? 'P' : undefined,
+      citem: effectiveProd,
     })
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;

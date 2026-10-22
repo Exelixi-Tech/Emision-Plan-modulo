@@ -19,9 +19,59 @@ const { resolveEntityContext } = require('../services/canalClient');
 const router = express.Router();
 const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 28;
 
+function decodeJwtMetadata(token) {
+  if (!token || typeof token !== 'string') return {};
+  try {
+    const part = token.replace(/^Bearer\s+/i, '').split('.')[1];
+    if (!part) return {};
+    const json = Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const payload = JSON.parse(json);
+    return payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+  } catch {
+    return {};
+  }
+}
+
+function preferGestorCode(...vals) {
+  const codes = vals
+    .map((v) => (v != null ? String(v).trim() : ''))
+    .filter(Boolean);
+  if (!codes.length) return '';
+  return codes.find((c) => c.includes('-')) || codes[0];
+}
+
+/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
+const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter((v) => v !== '')
+  .map(Number)
+  .filter((n) => Number.isInteger(n));
+
+/**
+ * Misma regla que el selector del frontend: backoffice solo si el usuario es interno, no productor y
+ * con productor de sesión genérico (80080 o vacío); marketplace solo si el productor de la sesión es 80080.
+ * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
+ */
+function puedeElegirProductor(meta) {
+  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
+  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
+
+  if (origen === 'backoffice') {
+    const productor = String(meta?.cproductor ?? '').trim();
+    if (productor !== '' && productor !== '80080') return false;
+    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
+    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
+  }
+  return false;
+}
+
 function patrimonialCanalMeta(req) {
   const meta = { ...(req.nexusMetadata || {}) };
   const q = req.query || {};
+  const b = req.body || {};
+  const stateMeta = b.state?.metadataCanal || {};
+
   const keys = [
     'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
     'cusuario', 'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
@@ -31,9 +81,33 @@ function patrimonialCanalMeta(req) {
       meta[key] = String(q[key]).trim();
     }
   }
-  // El ramo del JWT SSO manda; la query solo cubre el caso sin metadata.
+
+  // Si viene selección de productor en body o en state.metadataCanal
+  const rawProductor = b.cproductor ?? stateMeta.cproductor;
+  const isSelected = Boolean(
+    stateMeta.productorSeleccionado === true
+    || (b.cproductor != null && String(b.cproductor).trim() !== '')
+  );
+
+  const canChoose = puedeElegirProductor({ ...meta, cproductor: req.nexusMetadata?.cproductor });
+  const allowSelection = !req.nexusMetadata?.cproductor || req.nexusMetadata?.cproductor === '80080' || canChoose;
+
+  if (allowSelection && isSelected && rawProductor != null && String(rawProductor).trim() !== '') {
+    const prod = String(rawProductor).trim();
+    meta.cproductor = prod;
+    meta.centidad = String(b.centidad ?? stateMeta.centidad ?? 'P').trim();
+    meta.citem = String(b.citem ?? stateMeta.citem ?? prod).trim();
+  } else {
+    if (b.centidad != null && String(b.centidad).trim() !== '') meta.centidad = String(b.centidad).trim();
+    if (b.citem != null && String(b.citem).trim() !== '') meta.citem = String(b.citem).trim();
+    if (b.cproductor != null && String(b.cproductor).trim() !== '' && !meta.cproductor) {
+      meta.cproductor = String(b.cproductor).trim();
+    }
+  }
+
+  // El ramo del JWT SSO manda; la query/body solo cubre el caso sin metadata.
   if (meta.cramo == null || String(meta.cramo).trim() === '') {
-    const cramo = parseInt(String(q.cramo ?? ''), 10);
+    const cramo = parseInt(String(b.cramo ?? stateMeta.cramo ?? q.cramo ?? ''), 10);
     if (Number.isFinite(cramo)) meta.cramo = cramo;
   } else {
     meta.cramo = Number(meta.cramo);
@@ -70,15 +144,37 @@ function resolveSubmissionRefs(state) {
   };
 }
 
+/** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state, respetando la selección del productor. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
-  if (!nexusMetadata || typeof nexusMetadata !== 'object' || !Object.keys(nexusMetadata).length) {
-    return state;
+  const actorKeys = ['cgestor', 'cgestor_in', 'centidad', 'citem', 'cproductor', 'ccanalalt_in', 'cscanalalt_in', 'ccanalalt', 'cscanalalt'];
+  const sources = [];
+  if (nexusMetadata && typeof nexusMetadata === 'object') sources.push(nexusMetadata);
+  if (state.metadataCanal && typeof state.metadataCanal === 'object') sources.push(state.metadataCanal);
+  sources.push(state);
+  for (const key of ['nexus_token', 'nexusToken']) {
+    if (typeof state[key] === 'string') sources.push(decodeJwtMetadata(state[key]));
   }
-  return {
-    ...state,
-    metadataCanal: { ...(state.metadataCanal || {}), ...nexusMetadata },
-  };
+
+  const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Si el usuario eligió productor en el selector, se emite con ese productor (no con el del token).
+  const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor })
+    && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
+  for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
+    const vals = sources.map((src) => src?.[key]);
+    const val = (key === 'cgestor' || key === 'cgestor_in')
+      ? preferGestorCode(...vals)
+      : (vals.find((v) => v != null && String(v).trim() !== '') ?? '');
+    if (val) mergedMeta[key] = val;
+  }
+
+  const gestor = mergedMeta.cgestor != null ? String(mergedMeta.cgestor).trim() : '';
+  return { ...state, metadataCanal: mergedMeta, ...(gestor ? { cgestor: gestor } : {}) };
 }
 
 // ── GET /planes ─────────────────────────────────────────────────────────────
@@ -115,8 +211,10 @@ async function handleQuote(req, res) {
     '',
   ).trim();
 
-  const ssoCramo = patrimonialCanalMeta(req).cramo;
-  const cramo = [body.cramo, body.state?.cramo, body.state?.metadataCanal?.cramo, ssoCramo, DEFAULT_RAMO]
+  const meta = patrimonialCanalMeta(req);
+  const entity = resolveEntityContext(meta);
+
+  const cramo = [body.cramo, body.state?.cramo, body.state?.metadataCanal?.cramo, meta.cramo, DEFAULT_RAMO]
     .map((v) => Number(v))
     .find((v) => Number.isFinite(v) && v > 0);
 
@@ -150,6 +248,10 @@ async function handleQuote(req, res) {
     });
   }
 
+  const cproductor = meta.cproductor;
+  const centidad = entity?.centidad || meta.centidad || (cproductor ? 'P' : undefined);
+  const citem = entity?.citem || meta.citem || (cproductor ? String(cproductor) : undefined);
+
   try {
     const quote = await patrimonialClient.quoteGeneralRisks({
       cramo,
@@ -159,6 +261,9 @@ async function handleQuote(req, res) {
       ifrecuencia,
       pdescuento,
       precargo,
+      cproductor,
+      centidad,
+      citem,
     });
 
     return res.json({
@@ -176,6 +281,9 @@ async function handleQuote(req, res) {
         cramo,
         cplan,
         ifrecuencia,
+        cproductor,
+        centidad,
+        citem,
       },
     });
   } catch (err) {
@@ -262,6 +370,12 @@ async function handleEmit(req, res) {
     : (state.ptasamon != null ? Number(state.ptasamon) : undefined);
   const cuotas = state.cuotas != null ? Number(state.cuotas) : 1;
 
+  const metaCanal = state.metadataCanal || {};
+  const entity = resolveEntityContext(metaCanal);
+  const cproductor = metaCanal.cproductor;
+  const centidad = entity?.centidad || metaCanal.centidad || (cproductor ? 'P' : undefined);
+  const citem = entity?.citem || metaCanal.citem || (cproductor ? String(cproductor) : undefined);
+
   try {
     // 1. Cotiza para autorizar prima y tasa
     const cotizacion = await patrimonialClient.quoteGeneralRisks({
@@ -272,6 +386,9 @@ async function handleEmit(req, res) {
       ifrecuencia,
       pdescuento: 0,
       precargo: 0,
+      cproductor,
+      centidad,
+      citem,
     });
 
     // 2. Construye el payload generalRisks
