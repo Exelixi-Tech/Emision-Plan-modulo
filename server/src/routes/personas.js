@@ -27,6 +27,13 @@ const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 
+/** Edad fuera del rango de la tarifa del plan: mismo mensaje para cotizar y emitir. */
+const AGE_OUT_OF_RANGE_MESSAGE =
+  'La edad indicada del titular no está permitida en el rango del plan. Elige otro plan.';
+function isAgeOutOfRange(msg) {
+  return /criterios de edad|edad fuera|fuera de rango|prima del recibo en 0|sin tarifa/i.test(String(msg || ''));
+}
+
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
 }
@@ -302,11 +309,14 @@ router.post('/cotizacion', async (req, res) => {
       .map((a) => `${a.xrif_asegurado || '?'} (${a.nedad_asegurado} años, parentesco ${a.cparen})`)
       .join('; ');
     console.error('[personas/cotizacion]', msg, edades);
-    const isAge = /criterios de edad/i.test(msg);
+    const isAge = isAgeOutOfRange(msg);
     res.status(isAge ? 422 : 502).json({
       success: false,
-      code: err.code || (isAge ? 'PERSONAS_AGE' : 'LAMUNDIAL_PERSON_ERROR'),
-      message: `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
+      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: isAge
+        ? AGE_OUT_OF_RANGE_MESSAGE
+        : `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
+      ...(isAge && edades ? { detail: `Edad calculada: ${edades}.` } : {}),
     });
   }
 });
@@ -591,10 +601,11 @@ router.post('/emision', async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     const httpStatus = err.httpStatus || 502;
     console.error('[personas/emision]', err.code || '', msg);
-    return res.status(httpStatus).json({
+    const isAge = isAgeOutOfRange(msg);
+    return res.status(isAge ? 422 : httpStatus).json({
       success: false,
-      code: err.code || 'LAMUNDIAL_PERSON_ERROR',
-      message: msg,
+      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: isAge ? AGE_OUT_OF_RANGE_MESSAGE : msg,
       ...(err.endpoint ? { endpoint: err.endpoint } : {}),
       stage: 'emit',
     });
