@@ -561,7 +561,9 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     // Declaraciones legales
     // dec_persona_politica: NOT NULL en La Mundial → 1 si PPE, 0 si no
     dec_persona_politica: (tomador.personaPoliticamenteExpuesta === true) ? '1' : '0',
-    dec_term_y_cod: '1',
+    // dec_term_y_cod → cterm_y_cod (Sis2000): aceptación real del Formulario (Términos y
+    // Condiciones + declaración de fe). Sin el dato (sesión vieja / API) se conserva '1'.
+    dec_term_y_cod: (tomador.aceptaTerminos === false || tomador.declaraVeracidad === false) ? '0' : '1',
     dec_diagnos_enferm: null,
     dec_descrip_enferm: null,
     expediente: Array.isArray(state.expediente)
