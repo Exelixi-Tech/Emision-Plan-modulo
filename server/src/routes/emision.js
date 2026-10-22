@@ -80,16 +80,27 @@ const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
  * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
  */
 function puedeElegirProductor(meta) {
-  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
-  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
+  const productor = String(meta?.cproductor ?? '').trim();
+  const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
 
-  if (origen === 'backoffice') {
-    const productor = String(meta?.cproductor ?? '').trim();
-    if (productor !== '' && productor !== '80080') return false;
-    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
-    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
+  // Si tiene un rol explícito de productor/corredor configurado, no puede elegir otro
+  if (Number.isFinite(crol) && CROLES_PRODUCTOR.includes(crol)) {
+    return false;
   }
-  return false;
+
+  // Si viene con un productor específico asignado (distinto de 80080):
+  if (productor !== '' && productor !== '80080') {
+    const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
+    // En backoffice solo usuarios internos (no productores) pueden elegir
+    if (origen === 'backoffice') {
+      return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
+    }
+    return false;
+  }
+
+  // Productor de sesión genérico (80080) o vacío:
+  // Marketplace, backoffice o sesiones sin origen explícito en el JWT pueden seleccionar productor
+  return true;
 }
 
 /** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
@@ -109,9 +120,19 @@ function withNexusMetadata(state, nexusMetadata) {
   const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor }) && state.metadataCanal?.productorSeleccionado === true;
   const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
-    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
-      mergedMeta[key] = state.metadataCanal[key];
-      continue;
+    if (usaSeleccion && seleccionKeys.has(key)) {
+      if (key === 'cproductor' && state.metadataCanal?.cproductor) {
+        mergedMeta.cproductor = String(state.metadataCanal.cproductor).trim();
+        continue;
+      }
+      if (key === 'centidad') {
+        mergedMeta.centidad = String(state.metadataCanal?.centidad ?? 'P').trim();
+        continue;
+      }
+      if (key === 'citem') {
+        mergedMeta.citem = String(state.metadataCanal?.citem ?? state.metadataCanal?.cproductor ?? '').trim();
+        continue;
+      }
     }
     const vals = sources.map((src) => src?.[key]);
     const val = (key === 'cgestor' || key === 'cgestor_in')
