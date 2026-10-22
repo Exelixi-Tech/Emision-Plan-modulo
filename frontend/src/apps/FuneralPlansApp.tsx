@@ -18,6 +18,10 @@ import { EmissionPlanShell } from './EmissionPlanShell';
 import { isFuneralInsuredComplete } from '../features/plans/FuneralInsuredsEditor';
 import { syncTitularFromTomador } from '../lib/funeral-sync';
 import { continueTarjetaToPagos, shouldUseTarjetaPublicApi } from '../lib/rcv-tarjeta-flow';
+import {
+  TarjetaPersonasDeclaraciones,
+  type TarjetaPersonasDeclaracionesResult,
+} from '../features/plans/TarjetaPersonasDeclaraciones';
 
 const FREC_LABELS: Record<string, string> = {
   M: 'Pago mensual',
@@ -136,6 +140,8 @@ export default function FuneralPlansApp() {
   ]);
 
   const [healthModalOpen, setHealthModalOpen] = useState(false);
+  // Tarjeta de personas: 3 declaraciones de La Mundial en lugar del cuestionario de salud.
+  const [declaracionesOpen, setDeclaracionesOpen] = useState(false);
   const [healthQuestions, setHealthQuestions] = useState<HealthQuestion[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [savingHealth, setSavingHealth] = useState(false);
@@ -195,7 +201,7 @@ export default function FuneralPlansApp() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlan?.cplan, selectedPlan?.cramo, metadataCanal?.cproducto, metadataCanal?.cramo]);
-  const hidePrice = Boolean(selectedPlan) && planHasQuestions !== false;
+  const hidePrice = !shouldUseTarjetaPublicApi() && Boolean(selectedPlan) && planHasQuestions !== false;
 
   const healthInsureds = (funeral.asegurados || [])
     .filter((a) => String(a.identificacion || '').trim())
@@ -262,12 +268,29 @@ export default function FuneralPlansApp() {
         },
         plan: selectedPlan.cplan,
       });
+      if (shouldUseTarjetaPublicApi()) {
+        setDeclaracionesOpen(true);
+        return;
+      }
       await openHealthModal();
     } catch (err) {
       toastPersonasBlocked(err);
     } finally {
       setValidatingEmit(false);
     }
+  }
+
+  /** Tarjeta: las declaraciones viajan a Sis2000 (dec_persona_politica, dec_term_y_cod, dec_diagnos_enferm, dec_descrip_enferm). */
+  function handleDeclaracionesTarjeta(r: TarjetaPersonasDeclaracionesResult) {
+    if (!r.aceptaMecanismos || !r.buenaSalud) return;
+    useWizardStore.getState().setTomador({ personaPoliticamenteExpuesta: r.personaPoliticamenteExpuesta });
+    setFuneral({
+      aceptaTerminos: r.aceptaMecanismos,
+      diagnosticoEnfermedad: !r.buenaSalud,
+      descripcionEnfermedad: r.detalleSalud,
+    });
+    setDeclaracionesOpen(false);
+    continueTarjetaToPagos();
   }
 
   function emptyAnswersByInsured() {
@@ -473,6 +496,12 @@ export default function FuneralPlansApp() {
           onConfirm={(byInsured) => handleHealthConfirm(byInsured)}
         />
       )}
+
+      <TarjetaPersonasDeclaraciones
+        open={declaracionesOpen}
+        onClose={() => setDeclaracionesOpen(false)}
+        onConfirm={handleDeclaracionesTarjeta}
+      />
 
       {pendingSubmission && (
         <FuneralSubmissionPending
