@@ -35,8 +35,7 @@ export default function RcvPlansApp() {
   }, [cotizador, goTo]);
 
   function handleContinuar() {
-    if (cotizador) {
-      const meta = getEffectiveSsoMetadata();
+    const meta = getEffectiveSsoMetadata();
     if (shouldShowProductorSelector(meta)) {
       const snap = useWizardStore.getState();
       const currentProductor = snap.rcv?.cproductor ?? snap.metadataCanal?.cproductor;
@@ -49,7 +48,8 @@ export default function RcvPlansApp() {
       }
     }
 
-    if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
+    if (cotizador) {
+      if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
       const usd = quote?.mprimaext ?? quote?.mprima;
       toast.success(
         'Cotización lista',
