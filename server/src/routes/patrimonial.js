@@ -15,78 +15,27 @@ const { recordFuneralEmissionFlexible } = require('../services/nexusFuneralSubmi
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 
 const { resolveEntityContext } = require('../services/canalClient');
+const { puedeElegirProductor, withNexusMetadata } = require('../lib/nexusMetadata');
 
 const router = express.Router();
 const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 28;
 
-function decodeJwtMetadata(token) {
-  if (!token || typeof token !== 'string') return {};
-  try {
-    const part = token.replace(/^Bearer\s+/i, '').split('.')[1];
-    if (!part) return {};
-    const json = Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-    const payload = JSON.parse(json);
-    return payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
-  } catch {
-    return {};
-  }
-}
-
-function preferGestorCode(...vals) {
-  const codes = vals
-    .map((v) => (v != null ? String(v).trim() : ''))
-    .filter(Boolean);
-  if (!codes.length) return '';
-  return codes.find((c) => c.includes('-')) || codes[0];
-}
-
-/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
-const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
-  .split(',')
-  .map((v) => v.trim())
-  .filter((v) => v !== '')
-  .map(Number)
-  .filter((n) => Number.isInteger(n));
-
-function puedeElegirProductor(meta) {
-  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
-  // 1- Si entra con origen = 'marketplace' o que no sea origen = 'backoffice', debe devolver falso
-  if (origen === 'marketplace' || origen !== 'backoffice') {
-    return false;
-  }
-
-  const productor = String(meta?.cproductor ?? '').trim();
-  const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
-
-  // Si tiene un rol explícito de productor/corredor configurado, no puede elegir otro
-  if (Number.isFinite(crol) && CROLES_PRODUCTOR.includes(crol)) {
-    return false;
-  }
-
-  // Si viene con un productor específico asignado (distinto de 80080):
-  if (productor !== '' && productor !== '80080') {
-    // En backoffice solo usuarios internos (no productores) pueden elegir
-    if (origen === 'backoffice') {
-      return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
-    }
-    return false;
-  }
-
-  // Productor de sesión genérico (80080) o vacío:
-  return true;
-}
-
 function patrimonialCanalMeta(req) {
-  const meta = { ...(req.nexusMetadata || {}) };
   const q = req.query || {};
   const b = req.body || {};
-  const stateMeta = b.state?.metadataCanal || {};
+  const stateMeta = b.metadataCanal || b.state?.metadataCanal || {};
+  const hasVerifiedAuth = Boolean(
+    req.nexusMetadata && typeof req.nexusMetadata === 'object' && Object.keys(req.nexusMetadata).length > 0
+  );
 
-  const keys = [
-    'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
+  const meta = { ...(req.nexusMetadata || {}) };
+
+  // Contexto general (no sensible de actor)
+  const generalKeys = [
+    'cgestor', 'cgestor_in', 'cproducto',
     'cusuario', 'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
   ];
-  for (const key of keys) {
+  for (const key of generalKeys) {
     if (q[key] != null && String(q[key]).trim() !== '') {
       meta[key] = String(q[key]).trim();
     }
@@ -99,19 +48,31 @@ function patrimonialCanalMeta(req) {
     || (b.cproductor != null && String(b.cproductor).trim() !== '')
   );
 
-  const canChoose = puedeElegirProductor({ ...meta, cproductor: req.nexusMetadata?.cproductor });
-  const allowSelection = !req.nexusMetadata?.cproductor || req.nexusMetadata?.cproductor === '80080' || canChoose;
+  const canChoose = puedeElegirProductor(req.nexusMetadata || {});
 
-  if (allowSelection && isSelected && rawProductor != null && String(rawProductor).trim() !== '') {
+  if (canChoose && isSelected && rawProductor != null && String(rawProductor).trim() !== '') {
     const prod = String(rawProductor).trim();
     meta.cproductor = prod;
-    meta.centidad = String(b.centidad ?? stateMeta.centidad ?? 'P').trim();
-    meta.citem = String(b.citem ?? stateMeta.citem ?? prod).trim();
+    meta.centidad = String(b.centidad ?? stateMeta.centidad ?? q.centidad ?? 'P').trim();
+    meta.citem = String(b.citem ?? stateMeta.citem ?? q.citem ?? prod).trim();
+  } else if (!hasVerifiedAuth) {
+    // Modo standalone local / sin autenticación JWT: fallback a query / body
+    const prod = b.cproductor ?? stateMeta.cproductor ?? q.cproductor;
+    if (prod != null && String(prod).trim() !== '') meta.cproductor = String(prod).trim();
+    const ent = b.centidad ?? stateMeta.centidad ?? q.centidad;
+    if (ent != null && String(ent).trim() !== '') meta.centidad = String(ent).trim();
+    const item = b.citem ?? stateMeta.citem ?? q.citem;
+    if (item != null && String(item).trim() !== '') meta.citem = String(item).trim();
   } else {
-    if (b.centidad != null && String(b.centidad).trim() !== '') meta.centidad = String(b.centidad).trim();
-    if (b.citem != null && String(b.citem).trim() !== '') meta.citem = String(b.citem).trim();
-    if (b.cproductor != null && String(b.cproductor).trim() !== '' && !meta.cproductor) {
-      meta.cproductor = String(b.cproductor).trim();
+    // Con JWT verificado y sin permiso de elección: cproductor, centidad y citem se blindan estrictamente con el JWT
+    if (req.nexusMetadata.cproductor) {
+      meta.cproductor = String(req.nexusMetadata.cproductor).trim();
+      meta.centidad = String(req.nexusMetadata.centidad || 'P').trim();
+      meta.citem = String(req.nexusMetadata.citem || req.nexusMetadata.cproductor).trim();
+    } else {
+      delete meta.cproductor;
+      delete meta.centidad;
+      delete meta.citem;
     }
   }
 
@@ -152,49 +113,6 @@ function resolveSubmissionRefs(state) {
       || '',
     ).trim(),
   };
-}
-
-/** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state, respetando la selección del productor. */
-function withNexusMetadata(state, nexusMetadata) {
-  if (!state || typeof state !== 'object') return state;
-  const actorKeys = ['cgestor', 'cgestor_in', 'centidad', 'citem', 'cproductor', 'ccanalalt_in', 'cscanalalt_in', 'ccanalalt', 'cscanalalt'];
-  const sources = [];
-  if (nexusMetadata && typeof nexusMetadata === 'object') sources.push(nexusMetadata);
-  if (state.metadataCanal && typeof state.metadataCanal === 'object') sources.push(state.metadataCanal);
-  sources.push(state);
-  for (const key of ['nexus_token', 'nexusToken']) {
-    if (typeof state[key] === 'string') sources.push(decodeJwtMetadata(state[key]));
-  }
-
-  const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
-  // Si el usuario eligió productor en el selector, se emite con ese productor (no con el del token).
-  const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor })
-    && state.metadataCanal?.productorSeleccionado === true;
-  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
-  for (const key of actorKeys) {
-    if (usaSeleccion && seleccionKeys.has(key)) {
-      if (key === 'cproductor' && state.metadataCanal?.cproductor) {
-        mergedMeta.cproductor = String(state.metadataCanal.cproductor).trim();
-        continue;
-      }
-      if (key === 'centidad') {
-        mergedMeta.centidad = String(state.metadataCanal?.centidad ?? 'P').trim();
-        continue;
-      }
-      if (key === 'citem') {
-        mergedMeta.citem = String(state.metadataCanal?.citem ?? state.metadataCanal?.cproductor ?? '').trim();
-        continue;
-      }
-    }
-    const vals = sources.map((src) => src?.[key]);
-    const val = (key === 'cgestor' || key === 'cgestor_in')
-      ? preferGestorCode(...vals)
-      : (vals.find((v) => v != null && String(v).trim() !== '') ?? '');
-    if (val) mergedMeta[key] = val;
-  }
-
-  const gestor = mergedMeta.cgestor != null ? String(mergedMeta.cgestor).trim() : '';
-  return { ...state, metadataCanal: mergedMeta, ...(gestor ? { cgestor: gestor } : {}) };
 }
 
 // ── GET /planes ─────────────────────────────────────────────────────────────
