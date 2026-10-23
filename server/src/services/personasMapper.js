@@ -371,17 +371,29 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
  * @returns {object|null}
  */
 function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
-  const proveedor = state?.selectedProveedor || (state?.proveedor ? {
-    cci_rif: state.proveedor.cci_rif,
-    cclave_num: state.proveedor.cclave_num,
-    itiposerv: state.proveedor.itiposerv,
-    cplan: state.proveedor.cplan_proveedor,
-    cramo: state.proveedor.cramo_proveedor,
-  } : null);
+  const proveedor =
+    state?.selectedProveedor ||
+    (state?.proveedor
+      ? {
+          cci_rif: state.proveedor.cci_rif,
+          cclave_num: state.proveedor.cclave_num,
+          itiposerv: state.proveedor.itiposerv,
+          cplan: state.proveedor.cplan_proveedor,
+          cramo: state.proveedor.cramo_proveedor,
+        }
+      : state?.cproveedor
+        ? {
+            cci_rif: state.cproveedor,
+            cclave_num: state.cclave_num,
+            itiposerv: state.itiposerv,
+            cplan: state.cplan_proveedor,
+            cramo: state.cramo_proveedor,
+          }
+        : null);
 
   if (!proveedor) return null;
 
-  const poliza = overrides.poliza || emitted?.cpoliza || emitted?.number;
+  const poliza = overrides.poliza || emitted?.cnpoliza || emitted?.cpoliza || emitted?.number;
   if (!poliza) return null;
 
   const now = new Date();

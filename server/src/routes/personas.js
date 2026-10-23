@@ -25,6 +25,7 @@ const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
+const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 
@@ -34,7 +35,6 @@ const AGE_OUT_OF_RANGE_MESSAGE =
 function isAgeOutOfRange(msg) {
   return /criterios de edad|edad fuera|fuera de rango|prima del recibo en 0|sin tarifa/i.test(String(msg || ''));
 }
-const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -519,7 +519,7 @@ router.post('/emision', async (req, res) => {
 
     // Registro de proveedor en póliza si vino en el estado
     let proveedorResult = null;
-    if (state?.proveedor) {
+    if (state?.proveedor || state?.selectedProveedor || state?.cproveedor) {
       const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
         state,
         emitted,

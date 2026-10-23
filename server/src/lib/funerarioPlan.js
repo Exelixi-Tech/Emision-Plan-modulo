@@ -35,6 +35,11 @@ function resolvePersonasCramo(opts = {}) {
   const fromProveedor = selectedProveedor?.cramo != null ? Number(selectedProveedor.cramo) : NaN;
   if (Number.isFinite(fromProveedor) && fromProveedor > 0) return fromProveedor;
 
+  if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
+    const b = parseInt(String(opts.bodyCramo), 10);
+    if (Number.isFinite(b) && b > 0) return b;
+  }
+
   const prod = String(
     opts.cproducto ?? meta.cproducto ?? process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57',
   ).trim();
@@ -43,11 +48,6 @@ function resolvePersonasCramo(opts = {}) {
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     const m = parseInt(String(meta.cramo), 10);
     if (Number.isFinite(m) && m > 0) return m;
-  }
-
-  if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
-    const b = parseInt(String(opts.bodyCramo), 10);
-    if (Number.isFinite(b) && b > 0) return b;
   }
 
   return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;

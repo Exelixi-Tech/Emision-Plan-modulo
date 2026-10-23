@@ -18,6 +18,8 @@ const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/exp
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { isRcvTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 
+const { handleEmit: handlePatrimonialEmit, handleQuote: handlePatrimonialQuote } = require('./patrimonial');
+
 const router = express.Router();
 
 /** Actor de la emisión en flujo tarjeta: siempre el de la tarjeta (lote/canal). */
@@ -27,6 +29,30 @@ const TARJETA_ACTOR_KEYS = ['centidad', 'citem', 'cproductor', 'ccanalalt', 'csc
  * producto (ej. funerario cramo 9) no debe cambiar el ramo/plan → "Error en cálculos".
  */
 const TARJETA_PRODUCT_KEYS = ['cplan', 'cproducto', 'cmoneda'];
+
+/**
+ * Patrimoniales (ramo 28, cproducto 89 = Responsabilidad Civil General) llegan por las
+ * mismas rutas /policies/*. El ramo 28 TAMBIEN lo usa RCV Binacional (maplanes), asi que
+ * NO se decide por cramo: se decide por cproducto (o por product explicito).
+ * Prioridad del cproducto: JWT SSO (servidor) > state.metadataCanal > plan > body.
+ */
+const PATRIMONIAL_CPRODUCTOS = new Set(
+  String(process.env.LAMUNDIAL_CPRODUCTO_PATRIMONIAL || '89')
+    .split(',').map((c) => c.trim()).filter(Boolean),
+);
+function isPatrimonialRequest(req) {
+  const { state } = req.body || {};
+  const product = String(state?.product ?? req.body?.product ?? '').trim().toLowerCase();
+  if (product === 'patrimoniales' || product === 'patrimonial') return true;
+  const cproducto = String(
+    req.nexusMetadata?.cproducto
+      ?? state?.metadataCanal?.cproducto
+      ?? state?.selectedPlan?.cproducto
+      ?? req.body?.cproducto
+      ?? '',
+  ).trim();
+  return PATRIMONIAL_CPRODUCTOS.has(cproducto);
+}
 
 // Auxiliares compartidas con patrimonial.js (misma regla de permiso que el selector del frontend).
 const {
@@ -177,6 +203,7 @@ function withNexusMetadata(state, nexusMetadata) {
  */
 router.post('/policies/quote', async (req, res) => {
   try {
+    if (isPatrimonialRequest(req)) return handlePatrimonialQuote(req, res);
     const { state, plan } = req.body || {};
     if (!state || !state.vehicle) {
       return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.vehicle requerido.' });
@@ -219,6 +246,7 @@ router.post('/policies/clasificar-diligencia', async (req, res) => {
 
 router.post('/policies/emit', async (req, res) => {
   try {
+    if (isPatrimonialRequest(req)) return handlePatrimonialEmit(req, res);
     const { state, plan, frecuencia, ndias } = req.body || {};
     if (!state || !state.vehicle || !state.tomador) {
       const { tomador, plan: legacyPlan, payment } = req.body || {};
