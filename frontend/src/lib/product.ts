@@ -32,7 +32,6 @@ export const PRODUCTS: Record<ProductId, ProductConfig> = {
   rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
   funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, cproducto: '57', hasVehicle: false },
   patrimoniales: { id: 'patrimoniales', label: 'Patrimoniales', fullLabel: 'Seguro Patrimonial', cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
-  'com-fam': { id: 'com-fam', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 51, cproducto: '51', hasVehicle: false },
   combinado_familiar: { id: 'combinado_familiar', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 51, cproducto: '51', hasVehicle: false },
   proveedor: { id: 'proveedor', label: 'Plan Proveedor', fullLabel: 'Planes con Proveedor', cramo: 51, hasVehicle: false },
   /** Vida Individual La Mundial — cproducto 76, ramo 1 */
@@ -49,7 +48,7 @@ export const RCV_RAMO_BINACIONAL = parseInt(
   10,
 );
 
-const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimoniales', 'com-fam', 'combinado_familiar', 'proveedor', 'vida', 'ap', 'ap79'];
+const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimoniales', 'combinado_familiar', 'proveedor', 'vida', 'ap', 'ap79'];
 const STORAGE_KEY = 'exelixi_product';
 
 export interface ProductDetectHints {
@@ -94,9 +93,9 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
     try { sessionStorage.setItem(STORAGE_KEY, 'ap'); } catch { /* ignore */ }
     return 'ap';
   }
-  if (label.includes('combinado') || label.includes('familiar') || label.includes('com-fam')) {
-    try { sessionStorage.setItem(STORAGE_KEY, 'com-fam'); } catch { /* ignore */ }
-    return 'com-fam';
+  if (label.includes('combinado') || label.includes('familiar')) {
+    try { sessionStorage.setItem(STORAGE_KEY, 'combinado_familiar'); } catch { /* ignore */ }
+    return 'combinado_familiar';
   }
   if (label.includes('proveedor')) {
     try { sessionStorage.setItem(STORAGE_KEY, 'proveedor'); } catch { /* ignore */ }
@@ -158,6 +157,6 @@ export function isRcv(): boolean {
 
 export function isCombinadoFamiliar(): boolean {
   const p = getProductId();
-  return p === 'com-fam' || p === 'combinado_familiar' || p === 'proveedor';
+  return p === 'combinado_familiar' || p === 'proveedor';
 }
 

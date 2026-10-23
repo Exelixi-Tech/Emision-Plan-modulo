@@ -19,7 +19,6 @@ export function getDefaultRequiredDocs(productId: string): DocType[] {
     productId === 'vida' ||
     productId === 'ap' ||
     productId === 'ap79' ||
-    productId === 'com-fam' ||
     productId === 'combinado_familiar' ||
     productId === 'proveedor'
   ) {
