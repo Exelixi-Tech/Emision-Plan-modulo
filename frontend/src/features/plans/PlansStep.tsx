@@ -4,8 +4,8 @@ import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
   Loader2, AlertTriangle, CalendarClock, UserCheck,
 } from 'lucide-react';
-import type { Plan } from '../../types';
-import { type PlanRcv, catalogoApi, quotePolicy, getFrecuenciasByPlan, getBrokers, type CatalogItem } from '../../lib/api';
+import type { Plan, RcvPlanData } from '../../types';
+import { type PlanRcv, catalogoApi, quotePolicy, getFrecuenciasByPlan, getBrokers, type CatalogItem, type VigenciaPlaca } from '../../lib/api';
 import { SearchSelect } from '../../components/ui/SearchSelect';
 import {
   getEffectiveSsoMetadata,
@@ -79,6 +79,16 @@ function resolveLockedTarjetaPlan(
   const norm = lockedCplan.toUpperCase();
   const fromApi = mapped.find((p) => (p.cplan ?? '').toUpperCase() === norm);
   return fromApi ?? buildLockedTarjetaPlan(lockedCplan, meta, categoryLabel);
+}
+
+function toVigenciaExt(v: VigenciaPlaca): NonNullable<RcvPlanData['vigenciaExt']> {
+  return {
+    cvigencia: v.cvigencia,
+    xvigencia: v.xvigencia,
+    imedida: v.imedida_tiempo,
+    ntiempo: v.ntiempo,
+    nvalor: v.nvalor,
+  };
 }
 
 export function PlansStep() {
@@ -166,6 +176,35 @@ export function PlansStep() {
   const [plansEmptyMessage, setPlansEmptyMessage] = useState<string | null>(null);
   const [apiFrecuencias, setApiFrecuencias] = useState<CatalogItem[]>([]);
   const [frecLoading, setFrecLoading] = useState(false);
+  // Placa extranjera: vigencia corta (mavigencias_PR) en lugar de frecuencia; Sis2000 prorratea la prima.
+  const isExtranjera = vehicle.tipoPlaca === 'extranjera' && !tarjetaFlow;
+  const [vigencias, setVigencias] = useState<VigenciaPlaca[]>([]);
+  const [vigLoading, setVigLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isExtranjera) return;
+    let cancelled = false;
+    setVigLoading(true);
+    catalogoApi.vigencias('E')
+      .then((res) => {
+        if (cancelled) return;
+        const items = (res.data?.data ?? []).filter((v) => Number(v.ntiempo) > 0);
+        setVigencias(items);
+        const actual = useWizardStore.getState().rcv?.vigenciaExt;
+        if (!actual || !items.some((v) => v.cvigencia === actual.cvigencia)) {
+          // Igual que SysIP: por defecto 1 mes.
+          const def = items.find((v) => v.imedida_tiempo === 'M' && Number(v.ntiempo) === 1) ?? items[0];
+          if (def) setRcv({ vigenciaExt: toVigenciaExt(def), frecuencia: 'A', ndias: null });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setVigencias([]);
+      })
+      .finally(() => {
+        if (!cancelled) setVigLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [isExtranjera, setRcv]);
   /** Fallback si xcober no viene en catálogo pero calculate-plan habilita CA/PT/PP */
   const [quoteCoverageOptions, setQuoteCoverageOptions] = useState<
     { value: string; text: string }[]
@@ -258,6 +297,12 @@ export function PlansStep() {
       setApiFrecuencias([]);
       return;
     }
+    // Placa extranjera: frecuencia anual fija; el plazo lo define la vigencia.
+    if (isExtranjera) {
+      setApiFrecuencias([]);
+      if (rcv.frecuencia !== 'A' || rcv.ndias != null) setRcv({ frecuencia: 'A', ndias: null });
+      return;
+    }
 
     let cancelled = false;
     setFrecLoading(true);
@@ -290,7 +335,7 @@ export function PlansStep() {
       });
 
     return () => { cancelled = true; };
-  }, [selectedPlan?.cplan, product.cramo, vehicle.tipoPlaca, setRcv, rcv.frecuencia, rcv.ndias]);
+  }, [selectedPlan?.cplan, product.cramo, vehicle.tipoPlaca, setRcv, rcv.frecuencia, rcv.ndias, isExtranjera]);
 
   // ── Cotización automática contra La Mundial ───────────────────────────────
   const hasVehicleData =
@@ -313,8 +358,10 @@ export function PlansStep() {
     vehicle.tipoCarnet,
   );
   const frecSig = includeFrecInQuote ? `${rcv.frecuencia ?? 'A'}|${rcv.ndias ?? ''}` : '';
-  const quoteSig = sig && planCode
-    ? `${sig}|${planCode}|${coberSig}${includeFrecInQuote ? `|${frecSig}` : ''}`
+  // Placa extranjera: la vigencia cambia la prima (prorrateo) → re-cotizar al cambiarla.
+  const vigSig = isExtranjera ? `|vig${rcv.vigenciaExt?.cvigencia ?? ''}` : '';
+  const quoteSig = sig && planCode && (!isExtranjera || rcv.vigenciaExt)
+    ? `${sig}|${planCode}|${coberSig}${includeFrecInQuote ? `|${frecSig}` : ''}${vigSig}`
     : '';
 
   // Ref para rastrear el sig activo y descartar respuestas obsoletas.
@@ -410,9 +457,9 @@ export function PlansStep() {
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote   = quoteState === 'ready' && Boolean(quote);
 
-  const frecuenciaLabel =
-    apiFrecuencias.find((f) => String(f.code) === rcv.frecuencia)?.label
-    ?? 'Anual';
+  const frecuenciaLabel = isExtranjera && rcv.vigenciaExt
+    ? `Vigencia ${rcv.vigenciaExt.xvigencia.trim()}`
+    : (apiFrecuencias.find((f) => String(f.code) === rcv.frecuencia)?.label ?? 'Anual');
   const quoteBasis = resolveRcvQuoteBasis(vehicle.tipoPlaca, rcv.frecuencia, vehicle.tipoCarnet);
   const freqAmounts = resolveFrecuenciaAmounts(hasRealQuote ? quote : null, rcv.frecuencia, {
     frecuenciaLabel,
@@ -426,7 +473,9 @@ export function PlansStep() {
   const displayVes = hasRealQuote
     ? (isShortPeriodQuote ? freqAmounts.installmentVes : freqAmounts.annualVes)
     : 0;
-  const priceSuffix = isShortPeriodQuote ? (freqAmounts.periodSuffix || '/ cuota') : '/ año';
+  const priceSuffix = isExtranjera && rcv.vigenciaExt
+    ? `/ ${rcv.vigenciaExt.xvigencia.trim().toLowerCase()}`
+    : (isShortPeriodQuote ? (freqAmounts.periodSuffix || '/ cuota') : '/ año');
   const vesSuffix = priceSuffix;
   const tarjetaCmoneda = tarjetaFlow ? getTarjetaPlanCmoneda(tarjetaMeta) : null;
   const tarjetaCurrencyKind: TarjetaPlanCurrencyKind | null = tarjetaFlow
@@ -564,7 +613,50 @@ export function PlansStep() {
           </div>
         </div>
 
+        {/* Placa extranjera: vigencia corta (prima prorrateada por Sis2000) */}
+        {isExtranjera && (
+        <div>
+          <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
+            <CalendarClock size={11} className="text-emerald-500" />
+            Vigencia de la póliza
+          </label>
+          <div className="relative group">
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
+              rcv.vigenciaExt
+                ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              {vigLoading ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={15} strokeWidth={2.5} />}
+            </div>
+            <select
+              value={rcv.vigenciaExt?.cvigencia != null ? String(rcv.vigenciaExt.cvigencia) : ''}
+              onChange={(e) => {
+                const item = vigencias.find((v) => String(v.cvigencia) === e.target.value);
+                if (item) setRcv({ vigenciaExt: toVigenciaExt(item), frecuencia: 'A', ndias: null });
+              }}
+              disabled={vigLoading || vigencias.length === 0}
+              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+            >
+              {vigLoading ? (
+                <option value="">Cargando...</option>
+              ) : vigencias.length === 0 ? (
+                <option value="">Sin vigencias disponibles</option>
+              ) : (
+                vigencias.map((v) => (
+                  <option key={v.cvigencia} value={String(v.cvigencia)}>{v.xvigencia.trim()}</option>
+                ))
+              )}
+            </select>
+            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          </div>
+          <p className="mt-1.5 text-[0.7rem] text-slate-500">
+            Vehículo extranjero: la prima se calcula según el tiempo de vigencia elegido.
+          </p>
+        </div>
+        )}
+
         {/* Frecuencia de pago */}
+        {!isExtranjera && (
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
             <CalendarClock size={11} className="text-emerald-500" />
@@ -606,6 +698,7 @@ export function PlansStep() {
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
+        )}
       </div>
 
       {selectedPlan ? (
