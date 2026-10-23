@@ -347,6 +347,12 @@ function buildQuoteRequest(state, overrides = {}) {
  * @param {{ plan?:string, frecuencia?:string, ndias?:number,
  *   internalPolicyId?:string, fechaEmision?:string, quoteMeta?:object }} [overrides]
  */
+/** País de la dirección (mapaises.cpais) o undefined si no viene / no es válido. */
+function resolveCpais(v) {
+  const n = parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const tomador = state.tomador || {};
   const v = state.vehicle || {};
@@ -483,6 +489,9 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     fnac_titular,
     estado_titular: stateCodeTitular,
     ciudad_titular: cityCodeTitular,
+    // Placa extranjera: país de la dirección (57 Colombia). Nacional/binacional no envían país.
+    pais_tomador: iplaca === 'E' ? resolveCpais(tomador.cpais) : undefined,
+    pais_titular: iplaca === 'E' ? resolveCpais(sameInsured ? tomador.cpais : titular.cpais) : undefined,
     direccion_titular: sameInsured ? cleanString(tomador.direccion) : cleanString(titular.direccion),
     cprofesion_titular: sameInsured ? parseOptionalCode(tomador.cprofesion) : parseOptionalCode(titular.cprofesion),
     cactividad_titular: sameInsured ? parseOptionalCode(tomador.cactividad) : parseOptionalCode(titular.cactividad),
@@ -628,6 +637,8 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     fnac_titular: p.fnac_titular,
     cestado_titular: p.estado_titular,
     cciudad_titular: p.ciudad_titular,
+    ...(p.pais_tomador != null ? { cpais_tomador: p.pais_tomador } : {}),
+    ...(p.pais_titular != null ? { cpais_titular: p.pais_titular } : {}),
     xdireccion_titular: p.direccion_titular,
     xtelefono_titular: p.telefono_titular || p.telefono_tomador,
     xcorreo_titular: p.correo_titular || p.correo_tomador,
