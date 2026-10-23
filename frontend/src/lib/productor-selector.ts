@@ -127,7 +127,6 @@ export function shouldShowProductorSelector(meta: Record<string, unknown>): bool
   if (isTarjetaRcvFlow()) {
     return false;
   }
-
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
   // Al elegir, el wizard guarda el productor elegido en cproductor: no debe ocultar el selector.
   const yaElegido = meta.productorSeleccionado === true;
