@@ -27,14 +27,29 @@ export function hydrateTarjetaMetadataCanal(): void {
   store.setMetadataCanal({ ...(store.metadataCanal || {}), ...stored });
 }
 
-export type TarjetaPlanCurrencyKind = 'usd' | 'ves';
+export type TarjetaPlanCurrencyKind = 'usd' | 'ves' | 'eur';
 
 export function resolveTarjetaPlanCurrency(cmoneda?: unknown): TarjetaPlanCurrencyKind {
   const code = String(cmoneda ?? '$').trim().toUpperCase();
   if (code === 'BS' || code === 'B' || code === 'BOLIVAR' || code === 'BOLÍVAR' || code === 'VES') {
     return 'ves';
   }
+  if (code === 'EUR' || code === 'EU' || code === '€' || code === 'EURO') return 'eur';
   return 'usd';
+}
+
+/** Símbolo de la moneda del plan (sin tarjeta = $). */
+export function tarjetaCurrencySymbol(kind?: TarjetaPlanCurrencyKind | null): string {
+  if (kind === 'eur') return '€';
+  if (kind === 'ves') return 'Bs';
+  return '$';
+}
+
+/** Código junto al monto: USD / EUR (Bs no lleva sufijo). */
+export function tarjetaCurrencyCode(kind?: TarjetaPlanCurrencyKind | null): string {
+  if (kind === 'eur') return 'EUR';
+  if (kind === 'ves') return '';
+  return 'USD';
 }
 
 export function getTarjetaPlanCmoneda(metadataCanal?: Record<string, unknown> | null): string {
@@ -45,6 +60,27 @@ export function getTarjetaPlanCmoneda(metadataCanal?: Record<string, unknown> | 
 
 export function tarjetaQuoteShowsVes(cmoneda?: unknown): boolean {
   return resolveTarjetaPlanCurrency(cmoneda) === 'ves';
+}
+
+/**
+ * Producto del flujo tarjeta, que define OCR según la tarjeta validada: RCV o personas
+ * (`funerario`: Vida, AP, Funerario, Viajero…). URL → metadata de la tarjeta → sesión.
+ */
+export function getTarjetaProductId(): 'rcv' | 'funerario' {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('product');
+    if (fromUrl === 'rcv' || fromUrl === 'funerario') return fromUrl;
+  } catch {
+    /* ignore */
+  }
+  const fromMeta = String(readTarjetaMetadataCanal()?.product ?? '').trim();
+  if (fromMeta === 'rcv' || fromMeta === 'funerario') return fromMeta;
+  try {
+    if (sessionStorage.getItem('exelixi_product') === 'funerario') return 'funerario';
+  } catch {
+    /* ignore */
+  }
+  return 'rcv';
 }
 
 export function isTarjetaRcvFlow(): boolean {
@@ -65,7 +101,7 @@ export function shouldUseTarjetaPublicApi(): boolean {
 export function markTarjetaPublicSession(): void {
   try {
     sessionStorage.setItem(TARJETA_SESSION_KEY, '1');
-    sessionStorage.setItem('exelixi_product', 'rcv');
+    sessionStorage.setItem('exelixi_product', getTarjetaProductId());
   } catch {
     /* ignore */
   }
@@ -76,7 +112,7 @@ export function withTarjetaFlowQuery(url: string): string {
   try {
     const u = new URL(url, window.location.origin);
     u.searchParams.set('flujo', 'tarjeta');
-    if (!u.searchParams.get('product')) u.searchParams.set('product', 'rcv');
+    if (!u.searchParams.get('product')) u.searchParams.set('product', getTarjetaProductId());
     return u.toString();
   } catch {
     return url;
@@ -101,14 +137,14 @@ function collectWizardSnapshot(): Record<string, unknown> {
   for (const [k, v] of Object.entries(s)) {
     if (typeof v !== 'function') out[k] = v;
   }
-  out.product = 'rcv';
+  out.product = getTarjetaProductId();
   return out;
 }
 
 export function getPagosContinueUrlForTarjeta(): string {
   const configured = import.meta.env.VITE_PAGOS_CONTINUE_BASE as string | undefined;
   const base = (configured?.replace(/\/$/, '') || '/pagos').replace(/\/$/, '');
-  const params = new URLSearchParams({ product: 'rcv', flujo: 'tarjeta', wizardStep: '5' });
+  const params = new URLSearchParams({ product: getTarjetaProductId(), flujo: 'tarjeta', wizardStep: '5' });
   return `${base}/?${params.toString()}`;
 }
 

@@ -24,13 +24,14 @@ const {
   createEmissionAutoViaNestApi: emitViaNestApi,
   validateEmissionAutoViaNestApi,
   generateConductorHabitualViaNestApi,
+  getAnexoArysPlanBasicoViaNestApi,
   sendPolicyEmailViaNestApi,
   getValrepFrecuencias,
   getBaseUrl: getNestApiUrl,
 } = require('./nestApiClient');
 const { resolveIngresoCajaAfterPayment } = require('./collectionAfterPayment');
 const { alignQuoteWithPaymentCapture } = require('./paymentQuoteAlign');
-const { activateTarjetaAfterEmit } = require('./tarjetaActivateAfterEmit');
+const { activateTarjetaAfterEmit, isRcvTarjetaFlow } = require('./tarjetaActivateAfterEmit');
 const {
   buildQuoteRequest,
   buildCalculatePlanCoberturasRequest,
@@ -522,8 +523,13 @@ async function quoteAndEmit(state, overrides = {}) {
     }
   }
 
-  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión)
-  await activateTarjetaAfterEmit(state, emission, metadata);
+  // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión).
+  // deferTarjetaActivate: la ruta activa después de archivar el expediente,
+  // para mandar en xfoto_factura el link final de la factura (no el de pendiente/).
+  const deferTarjetaActivate = overrides.deferTarjetaActivate === true;
+  if (!deferTarjetaActivate) {
+    await activateTarjetaAfterEmit(state, emission, metadata);
+  }
 
   // 5.5) Generar anexo de Conductor Habitual si existe (solo RCV)
   let url_conductor_habitual = undefined;
@@ -539,6 +545,16 @@ async function quoteAndEmit(state, overrides = {}) {
     if (['RCVBAS', 'RUSPAT'].includes(planCode)) {
       url_club_arys = resolveClubArysFallbackUrl(payload.iplaca);
       console.log(`[Policy] URL Club Arys (fallback plan ${planCode}): ${url_club_arys}`);
+    }
+  }
+  // Tarjeta (La Tarjetica): se entrega el anexo Arys Club Plan Básico de marketing,
+  // no el Club Arys estándar. Si nest-api falla se conserva el estándar.
+  if (isRcvTarjetaFlow(state)) {
+    try {
+      url_club_arys = mapConductorPdfPublicUrl(await getAnexoArysPlanBasicoViaNestApi());
+      console.log(`[Policy] Anexo Arys Plan Básico (tarjeta): ${url_club_arys}`);
+    } catch (err) {
+      console.warn('[Policy] No se obtuvo el anexo Arys Plan Básico; se usa Club Arys estándar:', err.message);
     }
   }
   if (url_club_arys) {
@@ -641,6 +657,13 @@ async function quoteAndEmit(state, overrides = {}) {
       ...quoteResult.metadata,
       ...metadata,
     },
+    ...(deferTarjetaActivate
+      ? {
+        /** Activa la tarjeta luego; escribe el resultado en `targetMetadata` (result.metadata). */
+        activateTarjeta: (opts = {}, targetMetadata = metadata) =>
+          activateTarjetaAfterEmit(state, emission, targetMetadata, opts),
+      }
+      : {}),
   };
 }
 

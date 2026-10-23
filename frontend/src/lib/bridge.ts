@@ -226,9 +226,9 @@ function makeBridge(): BridgeAPI {
     const isCatalogFlow = isExelixiCatalogFlow();
     const prod = sessionStorage.getItem('exelixi_product') || 'rcv';
     if (!isCatalogFlow) {
-      if (prod === 'funerario' || prod === 'patrimoniales') {
+      if (prod !== 'rcv') {
         delete out.vehicle;
-      } else if (prod === 'rcv') {
+      } else {
         delete out.funeral;
       }
     }
@@ -250,7 +250,8 @@ function makeBridge(): BridgeAPI {
     if (order !== 1) delete out.documents;
 
     const prodKey = String(out.product ?? prod);
-    const freq = prodKey === 'funerario'
+    const isPersonas = prodKey !== 'rcv' && prodKey !== 'patrimoniales';
+    const freq = isPersonas
       ? (out.funeral as { frecuencia?: string } | undefined)?.frecuencia
       : (out.rcv as { frecuencia?: string } | undefined)?.frecuencia;
     if (typeof out.fraccionado !== 'boolean') {
@@ -310,7 +311,7 @@ function makeBridge(): BridgeAPI {
         // Propaga el producto (rcv | funerario) entre módulos: getProductConfig()
         // lo lee desde sessionStorage, así no depende de que la URL lo arrastre.
         const sessionProduct = r.data.data.product;
-        if (sessionProduct === 'rcv' || sessionProduct === 'funerario' || sessionProduct === 'patrimoniales') {
+        if (sessionProduct && typeof sessionProduct === 'string') {
           try { sessionStorage.setItem('exelixi_product', sessionProduct); } catch { /* ignore */ }
         }
         if (r.data.data.exelixiCatalogFlow) {

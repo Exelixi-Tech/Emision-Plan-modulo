@@ -14,12 +14,21 @@
 const express = require('express');
 const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
-const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
+const { isRcvTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 
 const { handleEmit: handlePatrimonialEmit, handleQuote: handlePatrimonialQuote } = require('./patrimonial');
 
 const router = express.Router();
+
+/** Actor de la emisión en flujo tarjeta: siempre el de la tarjeta (lote/canal). */
+const TARJETA_ACTOR_KEYS = ['centidad', 'citem', 'cproductor', 'ccanalalt', 'cscanalalt'];
+/**
+ * Producto de la emisión en flujo tarjeta: el de la tarjeta. Un token de sesión de otro
+ * producto (ej. funerario cramo 9) no debe cambiar el ramo/plan → "Error en cálculos".
+ */
+const TARJETA_PRODUCT_KEYS = ['cplan', 'cproducto', 'cmoneda'];
 
 /**
  * Patrimoniales (ramo 28, cproducto 89 = Responsabilidad Civil General) llegan por las
@@ -45,54 +54,19 @@ function isPatrimonialRequest(req) {
   return PATRIMONIAL_CPRODUCTOS.has(cproducto);
 }
 
-function decodeJwtMetadata(token) {
-  if (!token || typeof token !== 'string') return {};
-  try {
-    const part = token.replace(/^Bearer\s+/i, '').split('.')[1];
-    if (!part) return {};
-    const json = Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-    const payload = JSON.parse(json);
-    return payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
-  } catch {
-    return {};
-  }
-}
-
-function preferGestorCode(...vals) {
-  const codes = vals
-    .map((v) => (v != null ? String(v).trim() : ''))
-    .filter(Boolean);
-  if (!codes.length) return '';
-  return codes.find((c) => c.includes('-')) || codes[0];
-}
-
-/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
-const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
-  .split(',')
-  .map((v) => v.trim())
-  .filter((v) => v !== '')
-  .map(Number)
-  .filter((n) => Number.isInteger(n));
+// Auxiliares compartidas con patrimonial.js (misma regla de permiso que el selector del frontend).
+const {
+  decodeJwtMetadata,
+  preferGestorCode,
+  puedeElegirProductor,
+} = require('../lib/nexusMetadata');
 
 /**
- * Misma regla que el selector del frontend: backoffice solo si el usuario es interno, no productor y
- * con productor de sesión genérico (80080 o vacío); marketplace solo si el productor de la sesión es 80080.
- * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
+ * Fusiona metadata SSO del JWT (nexusAuth) + tokens del state (RCV).
+ * Se mantiene aqui (no en lib/nexusMetadata) porque RCV tiene reglas propias: el flujo
+ * tarjeta emite con el canal del lote y nunca con el token ni con el selector de productor.
+ * Cualquier cambio debe pasar test/rcvWithNexusMetadata.test.js.
  */
-function puedeElegirProductor(meta) {
-  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
-  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
-
-  if (origen === 'backoffice') {
-    const productor = String(meta?.cproductor ?? '').trim();
-    if (productor !== '' && productor !== '80080') return false;
-    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
-    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
-  }
-  return false;
-}
-
-/** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
   const actorKeys = ['cgestor', 'cgestor_in', 'centidad', 'citem', 'cproductor', 'ccanalalt_in', 'cscanalalt_in', 'ccanalalt', 'cscanalalt'];
@@ -105,7 +79,7 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
-  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
+  // Quien pudo elegir productor en el selector: se emite con ese productor, no con el del token.
   const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor }) && state.metadataCanal?.productorSeleccionado === true;
   const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
@@ -118,6 +92,23 @@ function withNexusMetadata(state, nexusMetadata) {
       ? preferGestorCode(...vals)
       : (vals.find((v) => v != null && String(v).trim() !== '') ?? '');
     if (val) mergedMeta[key] = val;
+  }
+
+  // Flujo tarjeta: la emisión es por el canal de la tarjeta (centidad/citem/cproductor
+  // del lote). Un token de usuario o el selector de productor no deben reemplazarlo.
+  if (isRcvTarjetaFlow(state)) {
+    const card = state.metadataCanal || {};
+    for (const key of [...TARJETA_ACTOR_KEYS, ...TARJETA_PRODUCT_KEYS]) {
+      const v = card[key];
+      if (v != null && String(v).trim() !== '') mergedMeta[key] = v;
+      else delete mergedMeta[key];
+    }
+    // Tarjetas son RCV: el ramo lo resuelve el vehículo (18, o 28 binacional), nunca la sesión.
+    for (const key of ['cramo', 'cgestor', 'cgestor_in', 'ccanalalt_in', 'cscanalalt_in', 'productorSeleccionado']) {
+      delete mergedMeta[key];
+    }
+    const { cgestor: _ignored, ...rest } = state;
+    return { ...rest, metadataCanal: mergedMeta };
   }
 
   const gestor = mergedMeta.cgestor != null ? String(mergedMeta.cgestor).trim() : '';
@@ -285,13 +276,20 @@ router.post('/policies/emit', async (req, res) => {
       plan,
       frecuencia: frecuencia || state?.rcv?.frecuencia,
       ndias: ndias ?? state?.rcv?.ndias,
+      deferTarjetaActivate: true,
     });
-    await archiveExpedienteAfterEmit({
+    const expediente = await archiveExpedienteAfterEmit({
       state: mergedState,
       emission: result,
       empresaNombre: req.empresa?.nombre,
       authToken: req.nexusToken,
     });
+    // Tarjeta: activar en La Mundial con xfoto_factura = URL final de la factura del expediente.
+    if (typeof result.activateTarjeta === 'function') {
+      const facturaLink = pickFacturaLink(expediente);
+      await result.activateTarjeta(facturaLink ? { xfotoFactura: facturaLink } : {}, result.metadata);
+      delete result.activateTarjeta;
+    }
     try {
       await registerIssuedPolicy({
         empresaId: req.empresa?.id,
@@ -319,6 +317,7 @@ router.post('/policies/emit', async (req, res) => {
         emittedAt: result.emittedAt,
         quote: result.quote,
         metadata: result.metadata,
+        expediente,
       },
     });
   } catch (err) {
@@ -352,3 +351,5 @@ function _send(res, err, stage) {
 }
 
 module.exports = router;
+// Expuesto solo para pruebas.
+module.exports.withNexusMetadata = withNexusMetadata;

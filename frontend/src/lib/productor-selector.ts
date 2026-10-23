@@ -1,5 +1,6 @@
 import { decodeNexusTokenMetadata } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
+import { isTarjetaRcvFlow } from './rcv-tarjeta-flow';
 
 const CANDIDATE_TOKEN_KEYS = [
   'nexus_access_token_emision',
@@ -122,6 +123,10 @@ const PRODUCTOR_LA_MUNDIAL = '80080';
  * - Cualquier otro origen: no se muestra.
  */
 export function shouldShowProductorSelector(meta: Record<string, unknown>): boolean {
+  // Flujo tarjeta: el productor/canal viene fijo en la tarjeta (lote), aunque haya token de usuario.
+  if (isTarjetaRcvFlow()) {
+    return false;
+  }
   const origen = String(meta.origen ?? meta.source ?? '').trim().toLowerCase();
   // Al elegir, el wizard guarda el productor elegido en cproductor: no debe ocultar el selector.
   const yaElegido = meta.productorSeleccionado === true;

@@ -22,6 +22,7 @@ import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDep
 import { resolveTitularSource, syncTitularFromTomador } from '../../lib/funeral-sync';
 import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
+import { shouldUseTarjetaPublicApi } from '../../lib/rcv-tarjeta-flow';
 
 function emptyTitular(): FuneralPerson {
   return {
@@ -277,7 +278,21 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
     personasApi.planes(effectiveCramo)
       .then((res) => {
         if (cancelled) return;
-        const mapped = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, effectiveLabel));
+        const all = (res.data.planes ?? []).map((p) => apiPlanToWizardPlan(p, effectiveLabel));
+        // Tarjeta: el plan lo define la tarjeta (ramo + código), igual que en RCV.
+        const tarjetaPlan = shouldUseTarjetaPublicApi() ? String(meta?.cplan ?? '').trim() : '';
+        const tarjetaRamo = Number(meta?.cramo);
+        const mapped = tarjetaPlan
+          ? all.filter(
+              (p) =>
+                String(p.cplan ?? '').trim() === tarjetaPlan
+                && (!Number.isFinite(tarjetaRamo) || p.cramo == null || Number(p.cramo) === tarjetaRamo),
+            )
+          : all;
+        if (tarjetaPlan && mapped.length === 0) {
+          console.warn(`[planes] el plan ${tarjetaPlan} (ramo ${meta?.cramo}) de la tarjeta no está en los planes del canal`);
+          setPlansError(true);
+        }
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
         const keep = current
@@ -287,7 +302,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                 || (planBaseKey(p) === planBaseKey(current) && (current.ndias == null || p.ndias === current.ndias)),
             ) ?? null
           : null;
-        setSelectedPlan(keep);
+        setSelectedPlan(keep ?? (tarjetaPlan && mapped.length === 1 ? mapped[0] : null));
       })
       .catch(() => {
         if (cancelled) return;

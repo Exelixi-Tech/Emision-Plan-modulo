@@ -5,9 +5,10 @@ import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { EmissionPlanShell } from './EmissionPlanShell';
+import { getEffectiveSsoMetadata, shouldShowProductorSelector } from '../lib/productor-selector';
 
 /**
- * Paso 4 — Patrimonial (Riesgos Generales, ramo 20).
+ * Paso 4 — Patrimonial (Riesgos Generales, ramo 28).
  * Flujo de selección de plan y cotización con quote-generalRisks.
  */
 export default function PatrimonialPlansApp() {
@@ -21,6 +22,19 @@ export default function PatrimonialPlansApp() {
   }, [cotizador, goTo]);
 
   function handleContinuar() {
+    const meta = getEffectiveSsoMetadata();
+    if (shouldShowProductorSelector(meta)) {
+      const snap = useWizardStore.getState();
+      const currentProductor = snap.rcv?.cproductor ?? snap.metadataCanal?.cproductor;
+      if (!currentProductor || String(currentProductor).trim() === '80080') {
+        toast.warning(
+          'Productor requerido',
+          'Selecciona el productor al que será asociada la póliza antes de continuar.',
+        );
+        return;
+      }
+    }
+
     if (cotizador) {
       if (!validatePlanReady(category, selectedPlan, quoteState, quote)) return;
       const usd = quote?.mprimaext ?? quote?.mprima;

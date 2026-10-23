@@ -23,6 +23,8 @@ import {
   readTarjetaMetadataCanal,
   resolveTarjetaPlanCurrency,
   shouldUseTarjetaPublicApi,
+  tarjetaCurrencyCode,
+  tarjetaCurrencySymbol,
   tarjetaQuoteShowsVes,
   type TarjetaPlanCurrencyKind,
 } from '../../lib/rcv-tarjeta-flow';
@@ -81,7 +83,17 @@ function resolveLockedTarjetaPlan(
   return fromApi ?? buildLockedTarjetaPlan(lockedCplan, meta, categoryLabel);
 }
 
-export function PlansStep() {
+interface PlansStepProps {
+  /**
+   * Flujo tarjeta: el plan viene de la tarjeta, así que el paso no se muestra.
+   * Cotiza en segundo plano y llama onAutoReady; si la cotización falla, muestra la vista normal.
+   */
+  autoContinue?: boolean;
+  onAutoReady?: () => void;
+  onAutoFallback?: () => void;
+}
+
+export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }: PlansStepProps = {}) {
   const {
     setCategory, selectedPlan, setSelectedPlan,
     vehicle, quote, quoteState, rcv, setRcv,
@@ -434,8 +446,130 @@ export function PlansStep() {
     : null;
   const tarjetaVesPrimary = tarjetaFlow && tarjetaQuoteShowsVes(tarjetaCmoneda);
   const cardDisplayPrice = tarjetaVesPrimary ? displayVes : displayPrice;
-  const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary;
-  const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary;
+  // Plan en otra moneda (EUR/TCR): mostrar equivalente en Bs y la tasa de esa moneda.
+  const tarjetaForeign = tarjetaCurrencyKind === 'eur';
+  const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
+  const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
+
+  // Declaraciones previas a la emisión por tarjeta (mismas de la pasarela La Mundial).
+  const [usoDelivery, setUsoDelivery] = useState<'si' | 'no' | null>(null);
+  const [aceptaMecanismos, setAceptaMecanismos] = useState(false);
+  const declaracionesOk = usoDelivery === 'no' && aceptaMecanismos;
+
+  const autoActive = autoContinue && Boolean(lockedCplan);
+  const autoFailed = autoActive && quoteState === 'error';
+  const autoReady =
+    autoActive
+    && declaracionesOk
+    && !plansLoading
+    && !frecLoading
+    && selectedPlan?.cplan?.toUpperCase() === lockedCplan.toUpperCase()
+    && hasRealQuote
+    && useWizardStore.getState().quoteVehicleSignature === quoteSig;
+  const autoReadyFired = useRef(false);
+
+  useEffect(() => {
+    if (!autoReady || autoReadyFired.current) return;
+    autoReadyFired.current = true;
+    onAutoReady?.();
+  }, [autoReady, onAutoReady]);
+
+  useEffect(() => {
+    if (autoFailed) onAutoFallback?.();
+  }, [autoFailed, onAutoFallback]);
+
+  if (autoActive && !autoFailed) {
+    const terminosUrl = (import.meta.env.VITE_TARJETA_TERMINOS_URL as string | undefined)?.trim();
+    return (
+      <div className="animate-fade-in space-y-4">
+        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5">
+          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-1">Pregunta 1 de 2</p>
+          <p className="text-sm font-bold text-slate-900 mb-3">
+            ¿Realiza usted traslados o delivery de algún aplicativo?
+          </p>
+          <div role="radiogroup" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {([
+              { value: 'no', label: 'No' },
+              { value: 'si', label: 'Sí, realizo traslados o delivery' },
+            ] as const).map((op) => (
+              <label
+                key={op.value}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-sm font-bold cursor-pointer transition-all ${
+                  usoDelivery === op.value
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="tarjeta-uso-delivery"
+                  value={op.value}
+                  checked={usoDelivery === op.value}
+                  onChange={() => {
+                    setUsoDelivery(op.value);
+                    if (op.value === 'si') setAceptaMecanismos(false);
+                  }}
+                  className="h-4 w-4 accent-indigo-600"
+                />
+                {op.label}
+              </label>
+            ))}
+          </div>
+          {usoDelivery === 'si' && (
+            <div className="mt-3 flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <p>
+                  Debe dirigirse a la sucursal de La Mundial de Seguros más cercana o comunicarse al
+                  {' '}<strong>0500-5526256</strong> (y seleccionar la opción 1), ya que debe ajustar la
+                  prima o gestionar devolución de su pago debido a que la tarifa para taxi es diferente.
+                </p>
+                <p className="mt-2 text-xs text-amber-800">Si marcó esta opción por error, seleccione «No» para continuar.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={`rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5 transition-opacity ${usoDelivery === 'no' ? '' : 'opacity-50'}`}>
+          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2">Pregunta 2 de 2 · Declaración de mecanismos electrónicos</p>
+          <label className={`flex gap-3 items-start ${usoDelivery === 'no' ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+            <input
+              type="checkbox"
+              checked={aceptaMecanismos}
+              disabled={usoDelivery !== 'no'}
+              onChange={(e) => setAceptaMecanismos(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-indigo-600"
+            />
+            <span className="text-sm text-slate-700 leading-relaxed">
+              Declaro que acepto todos los mecanismos electrónicos dispuestos por La Mundial de
+              Seguros C.A., para la contratación de la presente póliza.
+              {terminosUrl && (
+                <>
+                  {' '}
+                  <a
+                    href={terminosUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold text-indigo-600 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Ver términos y condiciones
+                  </a>
+                </>
+              )}
+            </span>
+          </label>
+        </div>
+
+        {declaracionesOk && (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 size={16} className="animate-spin text-indigo-500" />
+            Preparando la emisión de tu póliza…
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -694,6 +828,8 @@ function PlanDetailCard({
   onSelectCobertura?: (code: string | null) => void;
 }) {
   const vesPrimary = currencyKind === 'ves';
+  const currencySymbol = tarjetaCurrencySymbol(currencyKind);
+  const tasaLabel = currencyKind === 'eur' ? 'Tasa EUR' : 'Tasa de cambio';
   return (
     <article className="relative rounded-2xl border-2 border-indigo-500/40 bg-gradient-to-br from-indigo-50/90 via-violet-50/40 to-white p-4 sm:p-6 shadow-[0_24px_48px_-12px_rgba(15,26,90,0.22)] animate-spring-in overflow-hidden">
       <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-fuchsia-500/12 blur-3xl pointer-events-none" />
@@ -742,7 +878,7 @@ function PlanDetailCard({
             <div className="text-left sm:text-right">
               <div className="flex items-end gap-1 sm:justify-end">
                 {!vesPrimary && (
-                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
+                  <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">{currencySymbol}</span>
                 )}
                 {vesPrimary && (
                   <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">Bs</span>
@@ -772,7 +908,7 @@ function PlanDetailCard({
               )}
               {showTasa && hasRealQuote && ptasa && ptasa > 0 && (
                 <p className="text-[0.6rem] text-slate-500 mt-0.5 tabular-nums">
-                  Tasa de cambio: {formatQuoteTasa(ptasa)}
+                  {tasaLabel}: {formatQuoteTasa(ptasa)}
                 </p>
               )}
             </div>
@@ -940,6 +1076,9 @@ function PrimaCard({
 
   const fmt = formatQuoteVes;
   const isShortPeriodQuote = quoteBasis === 'per-installment';
+  const currencySymbol = tarjetaCurrencySymbol(currencyKind);
+  const currencyCode = tarjetaCurrencyCode(currencyKind);
+  const money = (n: number) => (currencyKind === 'eur' ? `€${formatQuoteUsd(n)}` : formatQuoteUsdMoney(n));
 
   return (
     <div className="w-full relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-violet-950 p-5 sm:p-6 shadow-[0_22px_42px_-14px_rgba(9,17,51,0.65)] ring-1 ring-white/15">
@@ -962,7 +1101,7 @@ function PrimaCard({
 
           <div className="flex items-baseline gap-1 mb-1">
             {!vesPrimary && (
-              <span className="text-lg font-display font-black text-white/60 leading-none pb-1">$</span>
+              <span className="text-lg font-display font-black text-white/60 leading-none pb-1">{currencySymbol}</span>
             )}
             {vesPrimary && (
               <span className="text-lg font-display font-black text-white/60 leading-none pb-1">Bs</span>
@@ -973,7 +1112,7 @@ function PrimaCard({
                 : formatQuoteUsd(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
             </span>
             <span className="text-sm text-white/70 font-semibold pb-1 ml-1">
-              {vesPrimary ? '' : 'USD '}{isShortPeriodQuote ? freqAmounts.periodSuffix : '/ año'}
+              {currencyCode ? `${currencyCode} ` : ''}{isShortPeriodQuote ? freqAmounts.periodSuffix : '/ año'}
             </span>
           </div>
 
@@ -991,7 +1130,7 @@ function PrimaCard({
                 <div className="flex items-center justify-between">
                   <span className="text-white/75">1er recibo ({frecuenciaLabel})</span>
                   <span className="font-bold text-white tabular-nums">
-                    {formatQuoteUsdMoney(freqAmounts.installmentUsd)}
+                    {money(freqAmounts.installmentUsd)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1009,13 +1148,13 @@ function PrimaCard({
               <div className="flex items-center justify-between">
                 <span className="text-white/75">{isShortPeriodQuote ? `Pago ${frecuenciaLabel.toLowerCase()}` : 'Pago único anual'}</span>
                 <span className="font-bold text-white tabular-nums">
-                  {formatQuoteUsdMoney(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
+                  {money(isShortPeriodQuote ? freqAmounts.installmentUsd : freqAmounts.annualUsd)}
                 </span>
               </div>
             )}
             {showTasa && quote.ptasa > 0 && (
               <div className="flex items-center justify-between pt-2 border-t border-white/15">
-                <span className="text-white/65">Tasa de cambio</span>
+                <span className="text-white/65">{currencyKind === 'eur' ? 'Tasa EUR' : 'Tasa de cambio'}</span>
                 <span className="text-white/90 tabular-nums font-semibold">{formatQuoteTasa(quote.ptasa)}</span>
               </div>
             )}
@@ -1036,9 +1175,9 @@ function PrimaCard({
               {quote.coberturas.map((c) => {
                 const sumaLabel =
                   c.sumaAsegurada != null && c.sumaAsegurada > 0
-                    ? `$${c.sumaAsegurada.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    ? `${currencySymbol}${c.sumaAsegurada.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
                     : '—';
-                const primaLabel = formatQuoteUsdMoney(c.prima);
+                const primaLabel = money(c.prima);
 
                 return (
                   <div

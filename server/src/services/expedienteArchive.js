@@ -12,6 +12,7 @@ const DOC_KEYS = [
   'certificado',
   'rif',
   'pasaporte',
+  'factura',
 ];
 
 function onlyDigits(v) {
@@ -72,9 +73,17 @@ function filesFromDocuments(documents) {
   return out;
 }
 
+/** nfactura de la tarjeta (metadata del canal o del wizard). */
+function resolveNfactura(state) {
+  const raw = state?.metadataCanal?.nfactura ?? state?.tarjeta?.nfactura;
+  const s = String(raw ?? '').trim();
+  return s || undefined;
+}
+
 /**
  * Llama a OCR para mover los documentos a {empresa}/{cedula}/{nomenclatura}/.
- * Nunca lanza: solo loguea.
+ * OCR escribe documentos.json con los links de archivos y de la emisión.
+ * Nunca lanza: solo loguea. Devuelve los links o null.
  *
  * @param {{
  *   state: object,
@@ -92,7 +101,7 @@ async function archiveExpedienteAfterEmit(args) {
 
   if (!cedula) {
     console.warn('[expediente] emit sin cédula de titular — no se archiva');
-    return;
+    return null;
   }
   if (files.length === 0) {
     console.warn(`[expediente] emit ${nomenclatura} sin archivos en wizard — se intenta pendiente`);
@@ -115,14 +124,26 @@ async function archiveExpedienteAfterEmit(args) {
         fanopol: args.emission?.fanopol,
         fmespol: args.emission?.fmespol,
         files,
+        nfactura: resolveNfactura(args.state),
+        emisionLinks: {
+          poliza: args.emission?.urlpoliza,
+          conductor_habitual: args.emission?.url_conductor_habitual,
+          club_arys: args.emission?.url_club_arys,
+          ingreso_caja: args.emission?.url_ingreso_caja,
+        },
       },
       { headers, timeout: 15000, validateStatus: () => true },
     );
     if (res.status >= 200 && res.status < 300 && res.data?.success) {
       console.log(
-        `[expediente] archivado ${empresaNombre || '?'} / ${cedula} / ${nomenclatura} files=${(res.data.saved || []).length}`,
+        `[expediente] archivado ${empresaNombre || '?'} / ${cedula} / ${nomenclatura} files=${(res.data.saved || []).length}`
+        + (res.data.documentosUrl ? ` json=${res.data.documentosUrl}` : ''),
       );
-      return;
+      return {
+        nomenclatura: res.data.nomenclatura || nomenclatura,
+        archivos: res.data.archivos || {},
+        documentosUrl: res.data.documentosUrl || null,
+      };
     }
     console.warn(
       `[expediente] OCR commit ${res.status}:`,
@@ -131,9 +152,25 @@ async function archiveExpedienteAfterEmit(args) {
   } catch (err) {
     console.warn('[expediente] no se pudo archivar:', err.message || err);
   }
+  return null;
+}
+
+/**
+ * URL absoluta de la factura archivada (factura.pdf / factura.webp…), o undefined.
+ * Solo http(s): una ruta relativa no le sirve a La Mundial (xfoto_factura).
+ * @param {{ archivos?: Record<string, string> } | null | undefined} expediente
+ * @returns {string|undefined}
+ */
+function pickFacturaLink(expediente) {
+  const archivos = expediente?.archivos || {};
+  for (const [name, url] of Object.entries(archivos)) {
+    if (/^factura(\.|-)/i.test(name) && /^https?:\/\//i.test(String(url))) return String(url);
+  }
+  return undefined;
 }
 
 module.exports = {
+  pickFacturaLink,
   resolveTitularCedula,
   buildNomenclatura,
   filesFromDocuments,

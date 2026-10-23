@@ -15,6 +15,7 @@ const personasMapper = require('../services/personasMapper');
 const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
+const { activateTarjetaAfterEmit, isRcvTarjetaFlow: isTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
@@ -24,6 +25,7 @@ const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
+const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 
@@ -389,6 +391,14 @@ router.post('/emision', async (req, res) => {
   const { state: rawState, frecuencia } = req.body || {};
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
+  // Tarjeta de personas: sin aceptar mecanismos/términos y la declaración de salud no se emite.
+  if (isTarjetaFlow(state) && (funeral.aceptaTerminos !== true || funeral.diagnosticoEnfermedad === true)) {
+    return res.status(422).json({
+      success: false,
+      code: 'TARJETA_DECLARACIONES',
+      message: 'Para emitir debes aceptar los mecanismos electrónicos, los términos y la declaración de salud.',
+    });
+  }
   const cplan = state?.selectedPlan?.cplan;
   const cramo = resolvePersonasCramo({
     selectedPlan: state?.selectedPlan,
@@ -507,6 +517,33 @@ router.post('/emision', async (req, res) => {
 
     const emitted = await personasClient.createEmissionPerson(payload);
 
+    // Registro de proveedor en póliza si vino en el estado
+    let proveedorResult = null;
+    if (state?.proveedor || state?.selectedProveedor || state?.cproveedor) {
+      const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
+        state,
+        emitted,
+        {
+          plan: cplan,
+          ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
+        },
+      );
+      if (proveedorPayload && proveedorPayload.cci_rif) {
+        try {
+          proveedorResult = await registerPolicyProveedorViaNestApi(proveedorPayload);
+          console.log(
+            `[personas/emision] Proveedor registrado en póliza ${emitted.cnpoliza}:`,
+            proveedorResult,
+          );
+        } catch (provErr) {
+          console.warn(
+            '[personas/emision] Error al registrar proveedor en póliza:',
+            provErr?.message || provErr,
+          );
+        }
+      }
+    }
+
     await archiveExpedienteAfterEmit({
       state,
       emission: emitted,
@@ -525,6 +562,20 @@ router.post('/emision', async (req, res) => {
       console.log(`[personas/emision] URL ingreso caja: ${url_ingreso_caja}`);
     }
 
+    // Flujo tarjeta: activa la tarjeta en La Mundial (fail-open, igual que RCV).
+    // casegurado = titular si nest-api no lo devuelve.
+    if (isTarjetaFlow(state)) {
+      await activateTarjetaAfterEmit(
+        state,
+        {
+          ...emitted,
+          casegurado: emitted.casegurado
+            ?? (Number(String(validatePayload.rif_titular ?? '').replace(/\D/g, '')) || undefined),
+        },
+        emitMetadata,
+      );
+    }
+
     const emissionRecord = {
       cnpoliza: emitted.cnpoliza,
       cnrecibo: emitted.cnrecibo,
@@ -536,6 +587,7 @@ router.post('/emision', async (req, res) => {
         mprimaext: cotizacion.mprimaext,
         ptasa: cotizacion.ptasa,
       },
+      ...(proveedorResult ? { proveedor: proveedorResult } : {}),
       /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
       ...(premiumAdjust ? { premiumAdjust } : {}),
     };
@@ -594,6 +646,7 @@ router.post('/emision', async (req, res) => {
           mprimaext: cotizacion.mprimaext,
           ptasa: cotizacion.ptasa,
         },
+        ...(proveedorResult ? { proveedor: proveedorResult } : {}),
         metadata: emitMetadata,
       },
     });
