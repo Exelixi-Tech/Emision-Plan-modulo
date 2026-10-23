@@ -12,7 +12,7 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'vida' | 'ap' | 'ap79';
+export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'combinado_familiar' | 'proveedor' | 'vida' | 'ap' | 'ap79';
 
 export interface PatrimonialesData {
   datosBien: string;
@@ -151,6 +151,17 @@ export interface Plan {
   maxAsegurados?: number;
   /** Días de vigencia (Viajero / maplanes_frec.ndias). */
   ndias?: number | null;
+}
+
+export interface ProveedorItem {
+  xproveedor?: string;
+  xcliente?: string;
+  cci_rif: number | string;
+  cplan?: string;
+  cramo?: number;
+  cclave_num?: number;
+  itiposerv?: string;
+  [key: string]: any;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
@@ -357,6 +368,14 @@ export interface WizardState {
   diligencia: import('../lib/diligencia').DiligenciaState | null;
   /** Reglas de visibilidad del canal (SysIP / nest-api canal/visibility). */
   canalVisibility: CanalVisibility | null;
+  /** Proveedor de servicio seleccionado (cproveedor: cci_rif). */
+  cproveedor?: number | string;
+  xproveedor?: string;
+  cplan_proveedor?: string;
+  cramo_proveedor?: number;
+  cclave_num?: number;
+  itiposerv?: string;
+  selectedProveedor?: ProveedorItem | null;
   /** Solicitud de personas ya enviada a mesa técnica en esta sesión (bloquea recotizar/responder). */
   funeralSubmission: FuneralSubmissionLock | null;
 }

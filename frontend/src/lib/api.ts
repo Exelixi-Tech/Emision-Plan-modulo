@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import type { CanalVisibility } from './canal-visibility';
-import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
+import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine, ProveedorItem } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
@@ -604,13 +604,13 @@ export async function verifyMobilePayment(
       baCode?: string | null;
       baMessage?: string | null;
     }>;
-    const data   = axErr.response?.data;
+    const data = axErr.response?.data;
     const status = axErr.response?.status;
     throw new MobilePaymentVerifyError({
-      message   : data?.message ?? axErr.message ?? 'Error verificando el pago.',
-      code      : data?.code    ?? 'MERITOP_ERROR',
-      baCode    : data?.baCode,
-      baMessage : data?.baMessage,
+      message: data?.message ?? axErr.message ?? 'Error verificando el pago.',
+      code: data?.code ?? 'MERITOP_ERROR',
+      baCode: data?.baCode,
+      baMessage: data?.baMessage,
       httpStatus: status,
     });
   }
@@ -619,48 +619,48 @@ export async function verifyMobilePayment(
 // ── SyPago — Débito OTP ───────────────────────────────────────────────────
 
 export interface SypagoOtpRequestPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  amount         : number;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  amount: number;
 }
 
 export interface SypagoOtpConfirmPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  debtorName     : string;
-  amount         : number;
-  otp            : string;
-  concept?       : string;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  debtorName: string;
+  amount: number;
+  otp: string;
+  concept?: string;
 }
 
 export interface SypagoOtpConfirmResponse {
-  success          : boolean;
-  transaction_id   : string;
-  operation_secret : string;
-  mock?            : boolean;
+  success: boolean;
+  transaction_id: string;
+  operation_secret: string;
+  mock?: boolean;
 }
 
 export interface SypagoTransactionStatus {
-  success        : boolean;
-  transaction_id : string;
-  status         : string;
-  mock?          : boolean;
-  [key: string]  : unknown;
+  success: boolean;
+  transaction_id: string;
+  status: string;
+  mock?: boolean;
+  [key: string]: unknown;
 }
 
 export class SypagoError extends Error {
-  code       : string;
+  code: string;
   sypagoCode?: string | null;
   httpStatus?: number;
 
   constructor(payload: { message: string; code: string; sypagoCode?: string | null; httpStatus?: number }) {
     super(payload.message);
-    this.name       = 'SypagoError';
-    this.code       = payload.code;
+    this.name = 'SypagoError';
+    this.code = payload.code;
     this.sypagoCode = payload.sypagoCode;
     this.httpStatus = payload.httpStatus;
   }
@@ -668,11 +668,11 @@ export class SypagoError extends Error {
 
 function _throwSypago(err: unknown): never {
   const axErr = err as AxiosError<{ code?: string; message?: string; sypagoCode?: string | null }>;
-  const data   = axErr.response?.data;
+  const data = axErr.response?.data;
   const status = axErr.response?.status;
   throw new SypagoError({
-    message   : data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
-    code      : data?.code    ?? 'SYPAGO_ERROR',
+    message: data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
+    code: data?.code ?? 'SYPAGO_ERROR',
     sypagoCode: data?.sypagoCode ?? null,
     httpStatus: status,
   });
@@ -714,8 +714,8 @@ export async function sypagoGetStatus(transactionId: string): Promise<SypagoTran
 
 // ── Catálogo INMA ──────────────────────────────────────────────────────────
 
-export interface InmaMarca   { cmarca: string; xmarca: string; }
-export interface InmaModelo  { cmodelo: string; xmodelo: string; }
+export interface InmaMarca { cmarca: string; xmarca: string; }
+export interface InmaModelo { cmodelo: string; xmodelo: string; }
 export interface InmaVersion {
   cversion: string;
   xversion: string;
@@ -739,10 +739,10 @@ export interface ResolverResult {
 }
 
 export interface PlanRcv {
-  cplan:   string;
-  xplan?:  string;
+  cplan: string;
+  xplan?: string;
   xplan_c?: string;
-  cramo?:  number;
+  cramo?: number;
   cmoneda?: string;
   cproducto?: string;
   coberturasAdicionales?: { value: string; text: string }[];
@@ -1004,6 +1004,7 @@ export interface SubmitFuneralReviewPayload {
   healthAnswers: Record<string, unknown>;
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
+  cproveedor?: number | string;
   /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
   directCheckout?: boolean;
   /** Solicitud ya enviada a mesa en esta sesión: el servidor no deja crear otra. */
@@ -1100,6 +1101,99 @@ export async function validateFuneralEmission(payload: {
     throw err;
   }
 }
+
+export type { ProveedorItem };
+
+export interface RegisterPolicyProveedorDto {
+  cpoliza?: number | string;
+  fanopol?: number;
+  fmespol?: number;
+  cramo?: number;
+  ccerti?: number;
+  cplan?: string;
+  u_version?: string;
+  fdesde?: string | Date;
+  fhasta?: string | Date;
+  cci_rif?: number | string;
+  cclave_num?: number;
+  itiposerv?: string;
+  mcosto?: number;
+  mcostoext?: number;
+  cmoneda?: string;
+  ptasamon?: number;
+  fingreso?: string | Date;
+  cusuario?: number;
+  [key: string]: any;
+}
+
+/**
+ * Consulta proveedores de servicio para un plan vía /valrep/proveedores (o /v1/partner/starter/proveedores/list).
+ */
+export async function getProveedores(params: {
+  cplan: string;
+  cramo?: number | string;
+  centidad?: string;
+  citem?: string;
+  cci_rif?: string | number;
+  cclave_num?: number;
+}): Promise<ProveedorItem[]> {
+  const qs = new URLSearchParams({
+    cplan: params.cplan,
+    cramo: String(params.cramo ?? 28),
+  });
+  if (params.centidad) qs.set('centidad', params.centidad);
+  if (params.citem) qs.set('citem', params.citem);
+  if (params.cci_rif) qs.set('cci_rif', String(params.cci_rif));
+  if (params.cclave_num != null) qs.set('cclave_num', String(params.cclave_num));
+
+  const response = await api.get<{
+    ok?: boolean;
+    items?: ProveedorItem[];
+    data?: ProveedorItem[] | { items?: ProveedorItem[] };
+  }>(`/valrep/proveedores?${qs.toString()}`);
+
+  const resData = response.data;
+  let list: ProveedorItem[] = [];
+  if (resData?.items && Array.isArray(resData.items)) {
+    list = resData.items;
+  } else if (Array.isArray(resData?.data)) {
+    list = resData.data;
+  } else if (
+    typeof resData?.data === 'object' &&
+    resData.data !== null &&
+    'items' in resData.data &&
+    Array.isArray((resData.data as { items?: ProveedorItem[] }).items)
+  ) {
+    list = (resData.data as { items?: ProveedorItem[] }).items!;
+  }
+
+  return list.map((item) => ({
+    ...item,
+    xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
+    xcliente: String(item.xcliente || item.xproveedor || '').trim(),
+    cplan: item.cplan || params.cplan,
+    cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
+    itiposerv: item.itiposerv || 'S',
+  }));
+}
+
+/**
+ * Registra un proveedor asociado a una póliza en dbo.adproveedor vía
+ * POST /valrep/proveedores/register-policy (proxy backend).
+ */
+export async function registerPolicyProveedor(
+  payload: RegisterPolicyProveedorDto,
+): Promise<{ status?: boolean; ok?: boolean; message?: string; data?: any }> {
+  const response = await api.post<{
+    ok?: boolean;
+    status?: boolean;
+    message?: string;
+    data?: any;
+  }>('/valrep/proveedores/register-policy', payload);
+  return response.data;
+}
+
+
 
 // ──────────────────────────────────────────────────────────────────────
 //  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión

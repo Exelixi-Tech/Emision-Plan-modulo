@@ -22,7 +22,7 @@ function isPersonasCplan(cplan) {
 
 /**
  * Ramo Sis2000 para cotizar/emitir (producto 57 → 45; si no, plan o metadata SSO).
- * @param {{ selectedPlan?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
+ * @param {{ selectedPlan?: { cramo?: number }, selectedProveedor?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
  * @returns {number}
  */
 function resolvePersonasCramo(opts = {}) {
@@ -31,20 +31,28 @@ function resolvePersonasCramo(opts = {}) {
   const fromPlan = selectedPlan?.cramo != null ? Number(selectedPlan.cramo) : NaN;
   if (Number.isFinite(fromPlan) && fromPlan > 0) return fromPlan;
 
-  const prod = String(
-    opts.cproducto ?? meta.cproducto ?? process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57',
-  ).trim();
-  if (prod === '57') return 45;
-
-  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
-    const m = parseInt(String(meta.cramo), 10);
-    if (Number.isFinite(m) && m > 0) return m;
-  }
+  const selectedProveedor = opts.selectedProveedor;
+  const fromProveedor = selectedProveedor?.cramo != null ? Number(selectedProveedor.cramo) : NaN;
+  if (Number.isFinite(fromProveedor) && fromProveedor > 0) return fromProveedor;
 
   if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
     const b = parseInt(String(opts.bodyCramo), 10);
     if (Number.isFinite(b) && b > 0) return b;
   }
+
+  const explicitProd = String(opts.cproducto ?? meta.cproducto ?? '').trim();
+  if (explicitProd === '57') return 45;
+
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    const m = parseInt(String(meta.cramo), 10);
+    if (Number.isFinite(m) && m > 0) {
+      if (m === 9) return 45;
+      return m;
+    }
+  }
+
+  const prod = explicitProd || String(process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57').trim();
+  if (prod === '57') return 45;
 
   return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 }
