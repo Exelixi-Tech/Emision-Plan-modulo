@@ -485,6 +485,18 @@ async function getRecargosRcv(cramo = 18) {
   return data?.recargos ?? data?.data?.recargos ?? [];
 }
 
+/** Vigencias por tipo de placa (mavigencias_PR). E = extranjera: 15 días a 12 meses con % de prima anual. */
+async function getValrepVigencias(iplaca = 'E') {
+  const { data } = await axios.get(
+    `${getBaseUrl()}/api/v1/valrep/vigencias?iplaca=${encodeURIComponent(iplaca)}`,
+    await axiosOpts({ validateStatus: () => true }),
+  );
+  if (data?.status === false || data?.success === false) {
+    throw new Error(data?.message || 'No se pudieron cargar las vigencias');
+  }
+  return data?.data?.vigencias ?? data?.vigencias ?? [];
+}
+
 // ── Valrep (estados, ciudades, listas, frecuencias) ─────────────────────────
 
 function isGeoCatalogPlaceholder(label) {
@@ -829,6 +841,7 @@ module.exports = {
   getInmaVersiones,
   getCategoriasUso,
   getRecargosRcv,
+  getValrepVigencias,
   getValrepStates,
   getValrepCities,
   getValrepList,

@@ -249,6 +249,31 @@ function resolveIplaca(v) {
   return 'N';
 }
 
+/**
+ * Placa extranjera: vigencia corta elegida de mavigencias_PR (rcv.vigenciaExt).
+ * D = días; M = meses como DATEADD(MONTH) de SQL (31-ene + 1 mes = 28-feb).
+ * Las mismas fechas van a la cotización (sp_calculo_auto_nexus) y a la emisión
+ * (spCalculoAuto en el recibo), así la prima prorrateada coincide.
+ * null si no es placa extranjera o no hay vigencia elegida (→ vigencia anual de siempre).
+ */
+function resolveVigenciaExtranjera(state, fdesdeYmd) {
+  if (resolveIplaca(state?.vehicle) !== 'E') return null;
+  const vig = state?.rcv?.vigenciaExt;
+  const n = Number(vig?.ntiempo);
+  const medida = String(vig?.imedida ?? '').trim().toUpperCase();
+  if (!vig || !Number.isFinite(n) || n <= 0 || (medida !== 'D' && medida !== 'M')) return null;
+  const fdesde = fdesdeYmd || todayYmd();
+  const [y, m, d] = fdesde.split('-').map(Number);
+  let fin;
+  if (medida === 'D') {
+    fin = new Date(Date.UTC(y, m - 1, d + n));
+  } else {
+    const ultimoDia = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate();
+    fin = new Date(Date.UTC(y, m - 1 + n, Math.min(d, ultimoDia)));
+  }
+  return { fdesde, fhasta: fin.toISOString().slice(0, 10) };
+}
+
 /** Ramo RCV nacional=18; binacional=28 en maplanes (LAMUNDIAL_RAMO_BINACIONAL). */
 function resolveRcvCramo(v, metadata = {}) {
   if (resolveIplaca(v) === 'B') {
@@ -329,6 +354,8 @@ function buildQuoteRequest(state, overrides = {}) {
       ifrecuencia: periodQuote ? resolveRcvFrecuencia(state, overrides) : 'A',
       ndias: periodQuote ? resolveRcvNdias(state, overrides) : null,
       sumaAsegurada: sumaAsegurada ?? undefined,
+      // Placa extranjera: fin de vigencia corta → sp_calculo_auto_nexus prorratea.
+      fhasta: resolveVigenciaExtranjera(state, todayYmd())?.fhasta,
     },
     metadata: {
       vehicleLabel: codes.label,
@@ -409,9 +436,10 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const fecha_emision = overrides.fechaEmision || todayYmd();
   const iplaca = resolveIplaca(v);
   const vigencia =
-    (frecuencia === 'D' || iplaca === 'B') && ndias != null
+    resolveVigenciaExtranjera(state, fecha_emision)
+    || ((frecuencia === 'D' || iplaca === 'B') && ndias != null
       ? resolveVigencia(fecha_emision, ndias)
-      : resolveVigenciaAnual(fecha_emision);
+      : resolveVigenciaAnual(fecha_emision));
   const msumaaseg = resolveMsumaaseg(state, quoteMeta);
   const internalId = overrides.internalPolicyId || genInternalPolicyId();
   const rcv = state.rcv || {};
@@ -746,7 +774,8 @@ function buildCalculatePlanCoberturasRequest(state, overrides = {}, quoteMeta = 
   const ndiasQuote = periodQuote
     ? (payload.ndias ?? resolveRcvNdias(state, overrides))
     : null;
-  const { fdesde, fhasta } = resolveVigencia(todayYmd(), ndiasQuote);
+  const { fdesde, fhasta } =
+    resolveVigenciaExtranjera(state, todayYmd()) || resolveVigencia(todayYmd(), ndiasQuote);
   const rcv = state.rcv || {};
   const selected = resolveSelectedCoberturas(rcv, overrides);
   const coberAdicional = resolvePrimaryCoberAdicional(selected);
@@ -798,6 +827,7 @@ module.exports = {
   resolvePrimaryCoberAdicional,
   resolveTasasForCober,
   resolveIplaca,
+  resolveVigenciaExtranjera,
   // Helpers expuestos para tests:
   _internal: {
     onlyDigits,

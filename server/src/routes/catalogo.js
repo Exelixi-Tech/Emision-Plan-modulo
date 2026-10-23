@@ -11,6 +11,7 @@ const {
   getInmaVersiones,
   getCategoriasUso,
   getRecargosRcv,
+  getValrepVigencias,
 } = require('../services/nestApiClient');
 const {
   fetchPlanesV2,
@@ -340,6 +341,18 @@ router.get('/planes', async (req, res) => {
       message: `No se pudieron obtener los planes vía nest-api: ${err.message}`,
       code: err.code || 'PLANES_API_ERROR',
     });
+  }
+});
+
+/** Vigencias de placa extranjera (mavigencias_PR): 15 días a 12 meses con % de la prima anual. */
+router.get('/vigencias', async (req, res) => {
+  const iplaca = String(req.query.iplaca ?? 'E').trim().toUpperCase().charAt(0) || 'E';
+  try {
+    const vigencias = await getValrepVigencias(iplaca);
+    res.json({ success: true, data: vigencias });
+  } catch (err) {
+    console.error('[catalogo/vigencias]', err.message);
+    res.status(502).json({ success: false, message: err.message });
   }
 });
 

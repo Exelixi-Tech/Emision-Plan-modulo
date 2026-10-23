@@ -274,6 +274,7 @@ async function quote(state, overrides = {}) {
       cramo: payload.cramo || parseInt(process.env.LAMUNDIAL_RAMO || '18', 10),
       ifrecuencia: payload.ifrecuencia,
       ndias: payload.ndias,
+      fhasta: payload.fhasta,
       sumaAsegurada: payload.sumaAsegurada,
       cusuario,
     });

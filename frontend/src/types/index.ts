@@ -189,6 +189,18 @@ export interface FuneralPerson {
 export interface RcvPlanData {
   frecuencia: string;
   ndias?: number | null;
+  /**
+   * Placa extranjera: vigencia corta elegida (mavigencias_PR). El servidor calcula fdesde/fhasta
+   * y Sis2000 prorratea la prima anual (nvalor = % de la prima anual).
+   */
+  vigenciaExt?: {
+    cvigencia: number;
+    xvigencia: string;
+    /** D = días, M = meses */
+    imedida: string;
+    ntiempo: number;
+    nvalor: number;
+  } | null;
   /** Cobertura opcional activa para emisión (RC = solo RCV). */
   coberAdicional?: string;
   /** Sync con coberAdicional; máximo una opción (CA, PT o PP). */
