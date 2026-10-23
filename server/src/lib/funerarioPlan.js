@@ -39,20 +39,20 @@ function resolvePersonasCramo(opts = {}) {
     const b = parseInt(String(opts.bodyCramo), 10);
     if (Number.isFinite(b) && b > 0) return b;
   }
-  const prod = String(
-    opts.cproducto ?? meta.cproducto ?? process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57',
-  ).trim();
-  if (prod === '57') return 45;
+
+  const explicitProd = String(opts.cproducto ?? meta.cproducto ?? '').trim();
+  if (explicitProd === '57') return 45;
 
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     const m = parseInt(String(meta.cramo), 10);
-    if (Number.isFinite(m) && m > 0) return m;
+    if (Number.isFinite(m) && m > 0) {
+      if (m === 9) return 45;
+      return m;
+    }
   }
 
-  if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
-    const b = parseInt(String(opts.bodyCramo), 10);
-    if (Number.isFinite(b) && b > 0) return b;
-  }
+  const prod = explicitProd || String(process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57').trim();
+  if (prod === '57') return 45;
 
   return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 }

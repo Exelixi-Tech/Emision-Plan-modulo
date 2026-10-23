@@ -752,7 +752,7 @@ async function getValrepProveedores(params = {}) {
       cclave_num: p.cclave_num != null && !Number.isNaN(Number(p.cclave_num)) ? Number(p.cclave_num) : null,
       cplan: p.cplan != null ? String(p.cplan).trim() : (params.cplan ? String(params.cplan).trim() : null),
       cramo: p.cramo != null && !Number.isNaN(Number(p.cramo)) ? Number(p.cramo) : (params.cramo ? Number(params.cramo) : null),
-      itiposerv: p.itiposerv != null ? String(p.itiposerv).trim() : 'S',
+      itiposerv: p.itiposerv != null ? String(p.itiposerv).trim() : '',
     };
   });
 

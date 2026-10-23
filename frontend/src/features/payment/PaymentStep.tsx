@@ -140,8 +140,8 @@ export function PaymentStep() {
 
     const faltantes = ([
       ['RIF del proveedor', cciRifClean > 0],
-      ['clave del proveedor', claveNum > 0],
-      ['tipo de servicio', Boolean(tipoServ)],
+      // ['clave del proveedor', claveNum > 0],
+      // ['tipo de servicio', Boolean(tipoServ)],
       ['plan', Boolean(plan)],
       ['ramo', ramo > 0],
       ['usuario (cusuario)', usuario > 0],

@@ -514,7 +514,10 @@ router.post('/emision', async (req, res) => {
       const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
         state,
         emitted,
-        { plan: cplan },
+        {
+          plan: cplan,
+          ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
+        },
       );
       if (proveedorPayload && proveedorPayload.cci_rif) {
         try {
