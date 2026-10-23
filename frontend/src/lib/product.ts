@@ -32,9 +32,10 @@ export const PRODUCTS: Record<ProductId, ProductConfig> = {
   rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
   funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, cproducto: '57', hasVehicle: false },
   patrimoniales: { id: 'patrimoniales', label: 'Patrimoniales', fullLabel: 'Seguro Patrimonial', cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
+  'com-fam': { id: 'com-fam', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 51, cproducto: '51', hasVehicle: false },
+  combinado_familiar: { id: 'combinado_familiar', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 51, cproducto: '51', hasVehicle: false },
+  proveedor: { id: 'proveedor', label: 'Plan Proveedor', fullLabel: 'Planes con Proveedor', cramo: 51, hasVehicle: false },
   /** Vida Individual La Mundial — cproducto 76, ramo 1 */
-  combinado_familiar: { id: 'combinado_familiar', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 28, hasVehicle: false },
-  proveedor: { id: 'proveedor', label: 'Plan Proveedor', fullLabel: 'Planes con Proveedor', cramo: 28, hasVehicle: false },
   vida: { id: 'vida', label: 'Vida', fullLabel: 'Seguro de Vida', cramo: 1, cproducto: '76', hasVehicle: false },
   /** Accidentes Personales cproducto 78, ramo 5 */
   ap: { id: 'ap', label: 'AP', fullLabel: 'Accidentes Personales', cramo: 5, cproducto: '78', hasVehicle: false },

@@ -37,10 +37,16 @@ export default function ProveedorPlansApp() {
       6000,
     );
 
+    const snap = useWizardStore.getState();
     if (typeof window !== 'undefined' && window.__bridgeAdvance) {
       void window.__bridgeAdvance({
         cproveedor: String(cproveedor),
         xproveedor,
+        cplan_proveedor: snap.cplan_proveedor,
+        cramo_proveedor: snap.cramo_proveedor,
+        cclave_num: snap.cclave_num,
+        itiposerv: snap.itiposerv,
+        selectedProveedor: snap.selectedProveedor,
         selectedPlan,
       });
     } else {
