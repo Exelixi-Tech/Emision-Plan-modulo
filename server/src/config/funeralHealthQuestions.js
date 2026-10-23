@@ -165,15 +165,30 @@ function getQuestionsForPlan(cplan) {
 }
 
 /**
- * Resuelve preguntas: parametrizador Nexus (si hay) → fallback catálogo local.
- * @param {string} cplan
- * @param {{ empresaId?: number }} [opts]
- * @returns {Promise<HealthQuestion[]>}
- */
-/**
  * Resuelve preguntas por plan + canal (metadata JWT).
  * El parametrizador guarda en healthQuestionsByCanal[canal]; legacy usa healthQuestions.
  */
+function parsePositiveCramo(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Ramo del cuestionario: el del plan elegido (vida, AP o funerario).
+ * El ramo del SSO solo se usa si el plan no trae ramo.
+ */
+function resolveHealthCramo(opts, meta) {
+  const fromPlan = parsePositiveCramo(opts.selectedPlan?.cramo);
+  if (fromPlan) return fromPlan;
+  const fromRequest = parsePositiveCramo(opts.cramo);
+  if (fromRequest) return fromRequest;
+  const fromFlow = parsePositiveCramo(meta?.cramo);
+  if (fromFlow) return fromFlow;
+  const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  if (prod === '57') return 45;
+  return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
+}
+
 async function resolveQuestionsForPlan(cplan, opts = {}) {
   const { resolveCanalKey, pickHealthQuestionsForCanal } = require('../lib/canalKey');
   // Como RCV: la config es por empresa del JWT; canal opcional; fallback default.
@@ -186,12 +201,34 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     ...(opts.canal ? { canal: opts.canal } : {}),
   };
   const canalKey = resolveCanalKey(meta);
+  const {
+    catalogForConsultedRamo,
+    catalogForProducto,
+    questionsStoredForRamo,
+    scoringRulesStoredForRamo,
+  } = require('./healthQuestionsByRamo');
+  const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
+  // Preguntas solo por producto del SSO (76 vida, 78/79 AP, 57 funerario). Otro producto
+  // (4 en 1, salud, combinado…) no hereda el cuestionario por el ramo de su plan.
+  // Sin producto en el SSO se usa el ramo, como antes.
+  const byProducto = catalogForProducto(prod);
+  const cramo = byProducto ? byProducto.cramo : resolveHealthCramo(opts, meta);
+  const consulted = byProducto || (prod ? null : catalogForConsultedRamo(cramo));
+  const ramoDirecto =
+    consulted && (consulted.kind === 'ap' || consulted.kind === 'vida' || consulted.kind === 'salud');
+  const funerarioDeEsteProducto =
+    consulted?.kind === 'funerario' && (!prod || Boolean(byProducto));
 
-  let catalog = CATALOG;
-  let source = 'catalog';
+  let catalog = funerarioDeEsteProducto ? consulted.questions : (ramoDirecto ? consulted.questions : []);
+  let source = funerarioDeEsteProducto
+    ? 'ramo-funerario'
+    : (ramoDirecto ? `ramo-${consulted.kind}` : 'sin-cuestionario');
   let empresaId = primaryEmpresa;
   let resolvedCanal = canalKey;
   let scoringRulesRaw = null;
+  /** Reglas del semáforo propias del ramo (tienen prioridad sobre las generales). */
+  let ramoRulesRaw = null;
+  let foundStoredRamo = false;
   try {
     const {
       fetchProductConfig,
@@ -208,6 +245,21 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
       if (cfg?.healthScoringRules && !scoringRulesRaw) {
         scoringRulesRaw = cfg.healthScoringRules;
       }
+      if (!ramoRulesRaw) ramoRulesRaw = scoringRulesStoredForRamo(cfg, cramo);
+      if (ramoDirecto) {
+        const stored = questionsStoredForRamo(cfg, cramo);
+        if (stored) {
+          catalog = stored;
+          source = stored.length ? 'nexus-ramo' : 'nexus-ramo-empty';
+          empresaId = eid;
+          foundStoredRamo = true;
+          if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
+          break;
+        }
+        continue;
+      }
+      // La config por canal es la de funerario: otro producto no la hereda.
+      if (!funerarioDeEsteProducto) continue;
       const hit = pickHealthQuestionsForCanal(cfg, canalKey);
       if (!hit) continue;
       const defaultList =
@@ -221,7 +273,10 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
             : [];
       hit.questions = applyDisabledFromDefault(hit.questions, defaultList);
       // Prioridad: match exacto de canal en la empresa del JWT
-      if (hit.source === 'nexus-canal' && eid === primaryEmpresa) {
+      if (
+        eid === primaryEmpresa &&
+        (hit.source === 'nexus-canal' || hit.source === 'nexus-empty')
+      ) {
         picked = hit;
         empresaId = eid;
         if (cfg?.healthScoringRules) scoringRulesRaw = cfg.healthScoringRules;
@@ -238,7 +293,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
         empresaId = eid;
       }
     }
-    if (picked) {
+    if (picked && !foundStoredRamo) {
       catalog = picked.questions;
       source = picked.source;
       resolvedCanal = picked.resolvedCanal;
@@ -246,6 +301,10 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[funeralHealthQuestions] Nexus fallback: ${msg}`);
+  }
+  if (ramoDirecto && !foundStoredRamo && consulted) {
+    catalog = consulted.questions;
+    source = `ramo-${consulted.kind}`;
   }
   const filtered = filterQuestionsForPlan(filterEnabledQuestions(catalog), cplan);
   const questions = stripOrphanShowIf(filtered);
@@ -258,7 +317,7 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     .map((q) => q.id)
     .filter(Boolean);
   console.log(
-    `[funeralHealthQuestions] cplan=${cplan} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
+    `[funeralHealthQuestions] cplan=${cplan} cramo=${cramo} canal=${canalKey}→${resolvedCanal} empresa=${empresaId} source=${source} catalog=${catalog.length} matched=${questions.length} off=${disabledCount}` +
       (strippedShowIf.length ? ` strippedShowIf=${strippedShowIf.join(',')}` : ''),
   );
   const { DEFAULT_SCORING_RULES } = require('../lib/funeralScoringRules');
@@ -272,8 +331,22 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     triedEmpresas: candidates,
     canal: canalKey,
     resolvedCanal,
-    scoringRules: scoringRulesRaw ?? DEFAULT_SCORING_RULES,
+    scoringRules: mergeReviewerEmails(ramoRulesRaw, scoringRulesRaw) ?? DEFAULT_SCORING_RULES,
   };
+}
+
+/**
+ * El semáforo por ramo reemplaza al general, pero los correos de mesa técnica
+ * se configuran una sola vez en las reglas generales (panel "Alertas").
+ * Si el ramo no trae `reviewerEmails`, hereda los generales.
+ */
+function mergeReviewerEmails(ramoRules, generalRules) {
+  if (!ramoRules || typeof ramoRules !== 'object') return generalRules ?? null;
+  const own = Array.isArray(ramoRules.reviewerEmails) ? ramoRules.reviewerEmails : [];
+  if (own.length > 0) return ramoRules;
+  const general =
+    generalRules && Array.isArray(generalRules.reviewerEmails) ? generalRules.reviewerEmails : [];
+  return general.length > 0 ? { ...ramoRules, reviewerEmails: general } : ramoRules;
 }
 
 /** Etiqueta legible para mostrar en logs/admin */

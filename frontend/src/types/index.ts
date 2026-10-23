@@ -12,7 +12,15 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario' | 'com-fam' | 'combinado_familiar' | 'proveedor' | 'patrimoniales';
+export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'com-fam' | 'combinado_familiar' | 'proveedor' | 'vida' | 'ap' | 'ap79';
+
+export interface PatrimonialesData {
+  datosBien: string;
+  tipo: string;
+  descripcion: string;
+}
+
+export type BienData = PatrimonialesData;
 
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -169,6 +177,8 @@ export interface FuneralPerson {
   /** Código de parentesco La Mundial (1=Titular, 2=Cónyuge, 3=Hijo(a)…). */
   parentesco: string;
   pporcen?: number;
+  /** Menor de edad sin cédula: se usa la cédula del titular + correlativo (provisional). */
+  sinCedula?: boolean;
   telefono?: string;
   email?: string;
   estadoCivil?: string;
@@ -216,6 +226,9 @@ export interface FuneralData {
   healthAnswersByInsured?: Record<string, Record<string, unknown>>;
   /** true cuando el cuestionario fue completado y guardado en BD. */
   healthQuestionnaireDone?: boolean;
+  /** Viajero: fechas del viaje (YYYY-MM-DD); definen días, plan y vigencia de la póliza. */
+  viajeFdesde?: string;
+  viajeFhasta?: string;
 }
 
 /** Datos del bien asegurado (producto patrimoniales). */
@@ -266,13 +279,13 @@ export interface VehicleData {
 export interface PolicyCoverageLine {
   ccobertura?: number | string;
   name: string;
+  xcobertura?: string;
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
-  /** Alias Sis2000 / quote patrimonial. */
-  xcobertura?: string;
-  msuma?: number;
-  msumamax?: number;
+  msuma?: number | null;
+  msumamax?: number | null;
+  msumamin?: number | null;
 }
 
 export interface PolicyQuote {
@@ -363,4 +376,16 @@ export interface WizardState {
   cclave_num?: number;
   itiposerv?: string;
   selectedProveedor?: ProveedorItem | null;
+  /** Solicitud de personas ya enviada a mesa técnica en esta sesión (bloquea recotizar/responder). */
+  funeralSubmission: FuneralSubmissionLock | null;
+}
+
+export interface FuneralSubmissionLock {
+  id: string;
+  sessionId: string;
+  cplan: string;
+  verdict: string;
+  scoreTotal: number;
+  message?: string;
+  createdAt: string;
 }

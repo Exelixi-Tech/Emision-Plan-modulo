@@ -14,6 +14,7 @@ import type {
   IssuedPolicy,
   PolicyQuote,
   QuoteState,
+  FuneralSubmissionLock,
 } from '../types';
 import { getProductId } from '../lib/product';
 import { isFrecuenciaFraccionada } from '../lib/frecuencia';
@@ -124,6 +125,7 @@ interface WizardActions {
   setCanalVisibility: (data: CanalVisibility | null) => void;
   setCproveedor: (cproveedor?: number | string, xproveedor?: string, extra?: Partial<import('../types').ProveedorItem>) => void;
   setSelectedProveedor: (proveedor?: import('../types').ProveedorItem | null) => void;
+  setFuneralSubmission: (data: FuneralSubmissionLock | null) => void;
   reset: () => void;
 }
 
@@ -174,6 +176,7 @@ const initialState: WizardState = {
   metadataCanal: null,
   diligencia: buildDiligenciaState({ itipoDiligencia: 'S', clasificadoEn: 'emision' }),
   canalVisibility: null,
+  funeralSubmission: null,
 };
 
 export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
@@ -300,6 +303,8 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
 
   setMetadataCanal: (data) => set({ metadataCanal: data }),
 
+  setFuneralSubmission: (data) => set({ funeralSubmission: data }),
+
   setDiligencia: (data) =>
     set((s) => {
       if (data === null) {
@@ -329,14 +334,14 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
       selectedProveedor: cproveedor
         ? {
-            cci_rif: cproveedor,
-            xproveedor: xproveedor ?? '',
-            xcliente: xproveedor ?? '',
-            cplan: extra?.cplan ?? s.cplan_proveedor,
-            cramo: extra?.cramo ?? s.cramo_proveedor,
-            cclave_num: extra?.cclave_num ?? s.cclave_num,
-            itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
-          }
+          cci_rif: cproveedor,
+          xproveedor: xproveedor ?? '',
+          xcliente: xproveedor ?? '',
+          cplan: extra?.cplan ?? s.cplan_proveedor,
+          cramo: extra?.cramo ?? s.cramo_proveedor,
+          cclave_num: extra?.cclave_num ?? s.cclave_num,
+          itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
+        }
         : null,
     })),
 

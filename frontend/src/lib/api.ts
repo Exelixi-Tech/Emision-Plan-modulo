@@ -100,8 +100,8 @@ const FUNERAL_CANAL_QUERY_KEYS = [
   'cscanalalt_in',
 ] as const;
 
-/** Canal SSO del wizard funerario (JWT + sid + snapshot), sin pisar RCV. */
-function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
+/** Canal SSO del wizard funerario/vida/AP (JWT + sid + snapshot), sin pisar RCV. */
+function appendFuneralCanalQuery(qs: URLSearchParams, cproductoOverride?: string): boolean {
   const token = getNexusToken(NEXUS_TOKEN_KEY);
   const tokenMeta = token ? decodeNexusTokenMetadata(token) : null;
   const storeMeta = (useWizardStore.getState().metadataCanal as Record<string, unknown> | null) ?? {};
@@ -133,8 +133,14 @@ function appendFuneralCanalQuery(qs: URLSearchParams): boolean {
   if (meta.cramo != null && String(meta.cramo).trim() !== '') {
     qs.set('cramo', String(meta.cramo).trim());
   }
-  if (!qs.get('cproducto')) qs.set('cproducto', '57');
-  if (qs.get('cproducto') === '57') qs.set('cramo', '45');
+  // El producto del SSO manda. El argumento solo cubre si el token no trae cproducto.
+  const fromSso = qs.get('cproducto');
+  const effectiveCproducto = (fromSso && fromSso.trim() !== '')
+    ? fromSso.trim()
+    : (cproductoOverride || '57');
+  qs.set('cproducto', effectiveCproducto);
+  // Para funerario (57) el SP usa ramo 45 internamente
+  if (effectiveCproducto === '57') qs.set('cramo', '45');
   if (qs.get('cproductor') === '80080') qs.delete('cproductor');
 
   return Boolean(
@@ -155,6 +161,42 @@ function readSsoCanalMeta(): Record<string, unknown> {
     ...(tokenMeta || {}),
     ...storeMeta,
   };
+}
+
+/**
+ * Ramo del cuestionario: el del flujo SSO, si no el del plan o el del producto.
+ */
+export function resolveQuestionnaireCramo(planCramo?: number, productCramo?: number): number {
+  const sso = resolveSsoCramo();
+  if (sso != null) return sso;
+  const plan = Number(planCramo);
+  if (Number.isFinite(plan) && plan > 0) return plan;
+  const product = Number(productCramo);
+  if (Number.isFinite(product) && product > 0) return product;
+  return 9;
+}
+
+/**
+ * Ramo para cotizar: funerario (57 o sin producto) usa el del SSO como hoy;
+ * otro producto usa el ramo del plan elegido (el SSO trae el ramo del producto, ej. vida 47,
+ * pero el plan está tarifado en su ramo técnico, ej. 1). Igual que SysIP.
+ */
+export function resolveQuoteCramo(planCramo: number | undefined, fallback: number): number {
+  const plan = Number(planCramo);
+  const planOk = Number.isFinite(plan) && plan > 0;
+  // El ramo del plan manda (SysIP cotiza con item.cramo), también en Funerario 57.
+  if (planOk) return plan;
+  return resolveSsoCramo() ?? (planOk ? plan : fallback);
+}
+
+/** cproducto enviado por el SSO (vacío si el canal no lo declara). */
+export function resolveSsoCproducto(): string {
+  return String(readSsoCanalMeta().cproducto ?? '').trim();
+}
+
+/** Nombre del producto que envía el portal en el SSO (`xproducto`). Vacío si no viene. */
+export function resolveSsoXproducto(): string {
+  return String(readSsoCanalMeta().xproducto ?? '').trim();
 }
 
 /** Ramo enviado por el SSO. `null` si el canal no lo declara. */
@@ -562,13 +604,13 @@ export async function verifyMobilePayment(
       baCode?: string | null;
       baMessage?: string | null;
     }>;
-    const data   = axErr.response?.data;
+    const data = axErr.response?.data;
     const status = axErr.response?.status;
     throw new MobilePaymentVerifyError({
-      message   : data?.message ?? axErr.message ?? 'Error verificando el pago.',
-      code      : data?.code    ?? 'MERITOP_ERROR',
-      baCode    : data?.baCode,
-      baMessage : data?.baMessage,
+      message: data?.message ?? axErr.message ?? 'Error verificando el pago.',
+      code: data?.code ?? 'MERITOP_ERROR',
+      baCode: data?.baCode,
+      baMessage: data?.baMessage,
       httpStatus: status,
     });
   }
@@ -577,48 +619,48 @@ export async function verifyMobilePayment(
 // ── SyPago — Débito OTP ───────────────────────────────────────────────────
 
 export interface SypagoOtpRequestPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  amount         : number;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  amount: number;
 }
 
 export interface SypagoOtpConfirmPayload {
-  documentType   : string;
-  documentNumber : string;
-  debtorBankCode : string;
-  debtorPhone    : string;
-  debtorName     : string;
-  amount         : number;
-  otp            : string;
-  concept?       : string;
+  documentType: string;
+  documentNumber: string;
+  debtorBankCode: string;
+  debtorPhone: string;
+  debtorName: string;
+  amount: number;
+  otp: string;
+  concept?: string;
 }
 
 export interface SypagoOtpConfirmResponse {
-  success          : boolean;
-  transaction_id   : string;
-  operation_secret : string;
-  mock?            : boolean;
+  success: boolean;
+  transaction_id: string;
+  operation_secret: string;
+  mock?: boolean;
 }
 
 export interface SypagoTransactionStatus {
-  success        : boolean;
-  transaction_id : string;
-  status         : string;
-  mock?          : boolean;
-  [key: string]  : unknown;
+  success: boolean;
+  transaction_id: string;
+  status: string;
+  mock?: boolean;
+  [key: string]: unknown;
 }
 
 export class SypagoError extends Error {
-  code       : string;
+  code: string;
   sypagoCode?: string | null;
   httpStatus?: number;
 
   constructor(payload: { message: string; code: string; sypagoCode?: string | null; httpStatus?: number }) {
     super(payload.message);
-    this.name       = 'SypagoError';
-    this.code       = payload.code;
+    this.name = 'SypagoError';
+    this.code = payload.code;
     this.sypagoCode = payload.sypagoCode;
     this.httpStatus = payload.httpStatus;
   }
@@ -626,11 +668,11 @@ export class SypagoError extends Error {
 
 function _throwSypago(err: unknown): never {
   const axErr = err as AxiosError<{ code?: string; message?: string; sypagoCode?: string | null }>;
-  const data   = axErr.response?.data;
+  const data = axErr.response?.data;
   const status = axErr.response?.status;
   throw new SypagoError({
-    message   : data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
-    code      : data?.code    ?? 'SYPAGO_ERROR',
+    message: data?.message ?? (axErr as Error).message ?? 'Error con SyPago.',
+    code: data?.code ?? 'SYPAGO_ERROR',
     sypagoCode: data?.sypagoCode ?? null,
     httpStatus: status,
   });
@@ -672,8 +714,8 @@ export async function sypagoGetStatus(transactionId: string): Promise<SypagoTran
 
 // ── Catálogo INMA ──────────────────────────────────────────────────────────
 
-export interface InmaMarca   { cmarca: string; xmarca: string; }
-export interface InmaModelo  { cmodelo: string; xmodelo: string; }
+export interface InmaMarca { cmarca: string; xmarca: string; }
+export interface InmaModelo { cmodelo: string; xmodelo: string; }
 export interface InmaVersion {
   cversion: string;
   xversion: string;
@@ -697,10 +739,10 @@ export interface ResolverResult {
 }
 
 export interface PlanRcv {
-  cplan:   string;
-  xplan?:  string;
+  cplan: string;
+  xplan?: string;
   xplan_c?: string;
-  cramo?:  number;
+  cramo?: number;
   cmoneda?: string;
   cproducto?: string;
   coberturasAdicionales?: { value: string; text: string }[];
@@ -800,10 +842,12 @@ export interface CotizacionPerPayload {
   cramo?: number;
   /** Viajero prorrata: días del plan elegido. */
   ndias?: number;
+  fdesde?: string;
+  fhasta?: string;
 }
 
 export const personasApi = {
-  /** Planes funerarios del canal SSO (productor/entidad/gestor), igual criterio que RCV. */
+  /** Planes del cproducto que trae el SSO. El ramo del token se conserva salvo producto 57. */
   planes: (cramo = 9) => {
     const qs = new URLSearchParams();
     qs.set('cramo', String(cramo));
@@ -913,9 +957,12 @@ export interface HealthQuestion {
   blockReason?: string;
 }
 
-export async function fetchFuneralHealthQuestions(cplan: string): Promise<HealthQuestion[]> {
+export async function fetchFuneralHealthQuestions(cplan: string, cramo?: number, cproducto?: string): Promise<HealthQuestion[]> {
+  const qs = new URLSearchParams({ cplan });
+  if (cramo != null && Number.isFinite(cramo) && cramo > 0) qs.set('cramo', String(cramo));
+  if (cproducto) qs.set('cproducto', cproducto);
   const { data } = await api.get<{ success: boolean; questions: HealthQuestion[] }>(
-    `/funeral/health-questions?cplan=${encodeURIComponent(cplan)}`,
+    `/funeral/health-questions?${qs.toString()}`,
   );
   return data?.questions ?? [];
 }
@@ -924,6 +971,7 @@ export interface SaveHealthAnswersPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomadorRif?: string;
   planName?: string;
   answers: Record<string, unknown>;
@@ -943,6 +991,7 @@ export interface SubmitFuneralReviewPayload {
   sessionId: string;
   cplan: string;
   cramo?: number;
+  cproducto?: string;
   tomador: Record<string, unknown>;
   asegurado?: Record<string, unknown>;
   sameInsured?: boolean;
@@ -956,6 +1005,25 @@ export interface SubmitFuneralReviewPayload {
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
   cproveedor?: number | string;
+  /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
+  directCheckout?: boolean;
+  /** Solicitud ya enviada a mesa en esta sesión: el servidor no deja crear otra. */
+  priorSubmission?: { id: string; sessionId: string; verdict: string } | null;
+}
+
+/** Recargo/descuento del cuestionario aplicado a la prima (servidor). */
+export interface PremiumAdjust {
+  base: { mprima: number; mprimaext: number };
+  quote: { mprima: number; mprimaext: number; ptasa: number };
+  porAsegurado: {
+    key: string;
+    label: string;
+    recargoPct: number;
+    descuentoPct: number;
+    netoPct: number;
+    primaBaseExt: number;
+    primaAjustadaExt: number;
+  }[];
 }
 
 export async function submitFuneralPolicyReview(
@@ -963,21 +1031,38 @@ export async function submitFuneralPolicyReview(
 ): Promise<{
   submission: FuneralSubmissionResult;
   scoring: { total: number; verdict?: string; verdictMessage?: string };
+  quote?: PolicyQuote | null;
+  premiumAdjust?: PremiumAdjust | null;
+  /** Semáforo verde o plan sin preguntas: sigue al pago en la misma sesión (sin correo). */
+  directPay?: boolean;
+  /** Datos de cobro obligatorio para Pagos (mismo formato que el link del correo). */
+  checkoutPatch?: Record<string, unknown>;
 }> {
   try {
     const { data } = await api.post<{
       success: boolean;
       submission: FuneralSubmissionResult;
       scoring: { total: number; verdict?: string; verdictMessage?: string };
+      quote?: PolicyQuote | null;
+      premiumAdjust?: PremiumAdjust | null;
+      directPay?: boolean;
+      checkoutPatch?: Record<string, unknown>;
     }>('/funeral/submissions', payload);
-    return { submission: data.submission, scoring: data.scoring };
+    return {
+      submission: data.submission,
+      scoring: data.scoring,
+      quote: data.quote,
+      premiumAdjust: data.premiumAdjust,
+      directPay: data.directPay === true && Boolean(data.checkoutPatch),
+      checkoutPatch: data.checkoutPatch,
+    };
   } catch (err) {
     const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
     const data = axErr.response?.data;
     if (data && (data.code || data.message)) {
       throw new PolicyEmitError({
         code: data.code ?? 'SUBMISSION_ERROR',
-        message: data.message ?? 'No se pudo registrar la solicitud funeraria.',
+        message: data.message ?? 'No se pudo registrar la solicitud.',
         httpStatus: axErr.response?.status,
         stage: 'validate',
       });
@@ -1008,7 +1093,7 @@ export async function validateFuneralEmission(payload: {
     if (data && (data.code || data.message)) {
       throw new PolicyEmitError({
         code: data.code ?? 'PERSONAS_VALIDATION_ERROR',
-        message: data.message ?? 'No se pudo validar la emisión funeraria.',
+        message: data.message ?? 'No se pudo validar la emisión.',
         httpStatus: axErr.response?.status,
         stage: data.stage ?? 'validate',
       });
@@ -1109,4 +1194,140 @@ export async function registerPolicyProveedor(
 }
 
 
+
+// ──────────────────────────────────────────────────────────────────────
+//  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
+// ──────────────────────────────────────────────────────────────────────
+
+export interface QuoteGeneralRisksDto {
+  cramo: number;
+  cplan: string;
+  ptasamon?: number;
+  cuotas?: number;
+  ifrecuencia?: string;
+  pdescuento?: number;
+  precargo?: number;
+}
+
+export type CotizacionPatrimonialPayload = Partial<QuoteGeneralRisksDto> & {
+  cplan: string;
+};
+
+export interface QuoteGeneralRisksResponse extends QuotePolicyResponse {
+  status: boolean;
+  data: Array<{
+    ccobertura: number | string;
+    xcobertura: string;
+    msuma: number;
+    mprima: number;
+    mprimaext: number;
+  }>;
+  recordset?: unknown[];
+}
+
+export interface CreateEmissionGeneralRiskDto {
+  keys: {
+    cnpoliza_rel: string | null;
+    cplan: string;
+    cramo: number;
+  };
+  tomador: {
+    tipo_tomador: string;
+    rif_tomador: number;
+    nombre_tomador: string;
+    apellido_tomador: string;
+    sexo_tomador: string;
+    estado_civil_tomador: string;
+    fnac_tomador: string;
+    telefono_tomador: string;
+    correo_tomador: string;
+    estado_tomador: string;
+    ciudad_tomador: string;
+    direccion_tomador: string;
+  };
+  asegurado: {
+    tipo_asegurado: string;
+    rif_asegurado: number;
+    nombre_asegurado: string;
+    apellido_asegurado: string;
+    sexo_asegurado: string;
+    estado_civil_asegurado: string;
+    fnac_asegurado: string;
+    telefono_asegurado: string;
+    correo_asegurado: string;
+    estado_asegurado: string;
+    ciudad_asegurado: string;
+    direccion_asegurado: string;
+  };
+  bien_asegurado: {
+    xdescrip1: string;
+    xdescrip2: string;
+    xdescrip3: string;
+    xdescrip4: string;
+  };
+  suma_asegurada: number;
+  prima: number;
+  ptasamon: number;
+  femision: string;
+  fdesde: string;
+  fhasta: string;
+  dec_persona_politica: number;
+  dec_term_y_cod: number;
+  cproductor: number;
+  ifrecuencia: string;
+  ctipocanal: string | null;
+  ccanalalt: string | null;
+  cscanalalt: string | null;
+  xfuente: string;
+}
+
+export interface EmissionGeneralRiskResponse extends EmitPolicyResponse {
+  status: boolean;
+  message: string;
+  cnpoliza: string;
+  urlpoliza: string;
+  lapso: number;
+  mes: string;
+  cnrecibo: string;
+  ncuota: number;
+}
+
+export interface SubmitPatrimonialReviewPayload {
+  sessionId: string;
+  cplan: string;
+  cramo?: number;
+  tomador: Record<string, unknown>;
+  asegurado?: Record<string, unknown>;
+  sameInsured?: boolean;
+  patrimoniales?: Record<string, unknown>;
+  selectedPlan: Record<string, unknown>;
+  quote?: Record<string, unknown> | null;
+  quoteState?: string;
+  documents?: Record<string, unknown>;
+  metadataCanal?: Record<string, unknown> | null;
+}
+
+export async function submitPatrimonialPolicyReview(
+  payload: SubmitPatrimonialReviewPayload,
+): Promise<{ submission: FuneralSubmissionResult }> {
+  try {
+    const { data } = await api.post<{
+      success: boolean;
+      submission: FuneralSubmissionResult;
+    }>('/patrimonial/submissions', payload);
+    return { submission: data.submission };
+  } catch (err) {
+    const axErr = err as AxiosError<{ success?: boolean; code?: string; message?: string }>;
+    const data = axErr.response?.data;
+    if (data && (data.code || data.message)) {
+      throw new PolicyEmitError({
+        code: data.code ?? 'SUBMISSION_ERROR',
+        message: data.message ?? 'No se pudo registrar la solicitud patrimonial.',
+        httpStatus: axErr.response?.status,
+        stage: 'submission',
+      });
+    }
+    throw err;
+  }
+}
 

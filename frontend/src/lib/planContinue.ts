@@ -1,6 +1,7 @@
 import type { PolicyQuote, QuoteState, VehicleData } from '../types';
 import type { Plan } from '../types';
 import { toast } from '../store/toastStore';
+import { useWizardStore } from '../store/wizardStore';
 import {
   DOC_LABELS,
   validateDocumentsForDiligencia,
@@ -29,6 +30,14 @@ export function validatePlanReady(
   if (quoteState === 'loading') {
     toast.warning('Cotización en proceso', 'Por favor espera mientras calculamos la prima...', 3000);
     return false;
+  }
+  if (!quote && quoteState === 'error') {
+    // Motivo real de la cotización (p. ej. edad fuera del rango del plan), no un aviso genérico.
+    const reason = useWizardStore.getState().quoteError?.trim();
+    if (reason) {
+      toast.warning('No se puede continuar con este plan', reason, 6000);
+      return false;
+    }
   }
   if (!quote && quoteState !== 'ready') {
     toast.warning(
