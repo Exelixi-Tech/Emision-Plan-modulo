@@ -407,6 +407,7 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
             mprimaext: r.mprimaext,
             ptasa: r.ptasa,
             coberturas: r.coberturas,
+            primaCuotaInicial: r.primaCuotaInicial,
             vehicleLabel: meta?.vehicleLabel,
             vehicleFallback: meta?.vehicleFallback,
           },
