@@ -1,13 +1,21 @@
 /**
  * Activa tarjeta RCV en La Mundial tras emisión exitosa (solo flujo ?flujo=tarjeta).
+ * Autopago retail: la "tarjeta" es el enlace de la venta en caja; se quema en nest-api.
  * Fail-open: un error en activate no revierte la póliza emitida.
  */
 const { activateTarjetaCard } = require('./tarjetaCardsClient');
+const { markAutopagoEmitidaViaNestApi } = require('./nestApiClient');
 
 function isRcvTarjetaFlow(state) {
   const meta = state?.metadataCanal || {};
   return String(meta.flujo || '').toLowerCase() === 'tarjeta'
     || Boolean(meta.xcodigo_unico || meta.ctarjeta);
+}
+
+/** Token del enlace de autopago (OCR lo deja en metadataCanal.autopago_token). */
+function autopagoToken(state) {
+  const t = String(state?.metadataCanal?.autopago_token || '').trim();
+  return /^[A-Za-z0-9_-]{16,80}$/.test(t) ? t : '';
 }
 
 function normalizeCodigo(raw) {
@@ -117,8 +125,20 @@ async function activateTarjetaAfterEmit(state, emission, metadata = {}, opts = {
   }
 
   try {
-    const result = await activateTarjetaCard(payload);
+    const token = autopagoToken(state);
+    const result = token
+      ? await markAutopagoEmitidaViaNestApi(token, {
+          cnpoliza: payload.cnpoliza,
+          cpoliza: payload.cpoliza,
+          fanopol: payload.fanopol,
+          fmespol: payload.fmespol,
+          casegurado: payload.casegurado,
+          femision: payload.factivacion,
+          nfactura: payload.nfactura,
+        })
+      : await activateTarjetaCard(payload);
     metadata.tarjetaActivate = result;
+    if (token) metadata.autopagoEmitida = true;
     return result;
   } catch (err) {
     metadata.tarjetaActivateError = err.message;

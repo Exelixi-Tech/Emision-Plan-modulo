@@ -815,8 +815,36 @@ async function sendPolicyEmailViaNestApi(payload) {
   throw err;
 }
 
+/**
+ * Autopago retail (Farmatodo): marca el ítem de la venta como emitido y deja el enlace inactivo.
+ * POST /api/v1/autopago/emisiones/:token/emitida (solo identidad, sin scope).
+ */
+async function markAutopagoEmitidaViaNestApi(token, payload) {
+  const url = `${getBaseUrl()}/api/v1/autopago/emisiones/${encodeURIComponent(token)}/emitida`;
+  const response = trackResponse(await axios.post(url, payload, {
+    headers: await buildAuthHeaders(),
+    timeout: getTimeout(),
+    validateStatus: () => true,
+  }));
+
+  if (response.status >= 200 && response.status < 300) {
+    return response.data?.data ?? response.data;
+  }
+
+  const err = new Error(
+    response.data?.message
+      || response.data?.error
+      || `HTTP ${response.status} marcando emisión de autopago`,
+  );
+  err.code = 'NEST_API_AUTOPAGO_ERROR';
+  err.httpStatus = response.status;
+  err.raw = response.data;
+  throw err;
+}
+
 module.exports = {
   getCotizacionViaNestApi,
+  markAutopagoEmitidaViaNestApi,
   calculatePlanCoberturasViaNestApi,
   mapMountToCoberturas,
   computeCoverageTotalUsd,
