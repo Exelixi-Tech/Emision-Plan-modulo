@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, ShieldCheck, X } from 'lucide-react';
+import { getTarjetaTerminosUrl } from '../../lib/tarjeta-terminos';
 
 /**
  * Declaraciones de la emisión de personas por tarjeta (definición La Mundial, 22-oct-2026).
@@ -36,7 +37,7 @@ export function TarjetaPersonasDeclaraciones({ open, saving = false, onClose, on
 
   if (!open) return null;
 
-  const terminosUrl = (import.meta.env.VITE_TARJETA_TERMINOS_URL as string | undefined)?.trim();
+  const terminosUrl = getTarjetaTerminosUrl();
   // Para emitir: responder la pregunta 1 (Sí o No, queda registrada) y aceptar las dos declaraciones.
   const listo = pep !== '' && aceptaMecanismos && buenaSalud;
 

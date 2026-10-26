@@ -18,6 +18,7 @@ import { vehicleSignature, formatQuoteUsd, formatQuoteUsdMoney, formatQuoteVes, 
 import { resolveFrecuenciaAmounts, resolveRcvQuoteBasis, rcvQuoteIncludesFrecuenciaSig } from '../../lib/frecuencia';
 import { toast } from '../../store/toastStore';
 import { filterRcvOnlyCoberturas, isQaDeploy } from '../../lib/deploy-env';
+import { getTarjetaTerminosUrl } from '../../lib/tarjeta-terminos';
 import {
   getTarjetaPlanCmoneda,
   readTarjetaMetadataCanal,
@@ -528,7 +529,7 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   }, [autoFailed, onAutoFallback]);
 
   if (autoActive && !autoFailed) {
-    const terminosUrl = (import.meta.env.VITE_TARJETA_TERMINOS_URL as string | undefined)?.trim();
+    const terminosUrl = getTarjetaTerminosUrl();
     return (
       <div className="animate-fade-in space-y-4">
         <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5">
