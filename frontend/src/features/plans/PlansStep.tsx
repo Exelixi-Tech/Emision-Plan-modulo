@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
@@ -112,10 +112,13 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   } = useWizardStore();
 
   const tarjetaFlow = shouldUseTarjetaPublicApi();
-  const tarjetaMeta =
-    metadataCanal?.cplan
-      ? metadataCanal
-      : (tarjetaFlow ? readTarjetaMetadataCanal() : null);
+  // Memo: leer sessionStorage en cada render creaba un objeto nuevo y el efecto de planes
+  // se disparaba en bucle (una consulta por segundo) cuando el store no traía cplan.
+  const storedTarjetaMeta = useMemo(
+    () => (tarjetaFlow ? readTarjetaMetadataCanal() : null),
+    [tarjetaFlow],
+  );
+  const tarjetaMeta = metadataCanal?.cplan ? metadataCanal : storedTarjetaMeta;
   const lockedCplan =
     tarjetaFlow && tarjetaMeta?.cplan
       ? String(tarjetaMeta.cplan).trim()
