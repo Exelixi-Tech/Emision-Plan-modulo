@@ -22,9 +22,9 @@ function isPersonasCplan(cplan) {
 
 /**
  * Ramo Sis2000 para cotizar/emitir (producto 57 → 45; si no, plan o metadata SSO).
- * El ramo del proveedor (selectedProveedor.cramo) solo aplica a Combinado Familiar, que es el unico
- * flujo que envia proveedor; el resto de productos de personas resuelve igual que antes.
- * @param {{ selectedPlan?: { cramo?: number }, selectedProveedor?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
+ * Combinado Familiar: opts.selectedProveedor.cramo (solo llega con proveedor) va despues del plan;
+ * el resto de productos de personas resuelve igual que antes.
+ * @param {{ selectedPlan?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
  * @returns {number}
  */
 function resolvePersonasCramo(opts = {}) {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSessionTokenDelegation } from './hooks/useSessionTokenDelegation';
-import { getProductId, isCombinadoFamiliar, isFunerarioLike, isPatrimoniales } from './lib/product';
+import { isFunerarioLike, isPatrimoniales } from './lib/product';
+import { getProductId, isCombinadoFamiliar } from './lib/product';
 import { isExelixiCatalogFlow } from './lib/exelixi-catalog';
 import { resolveSsoCproducto } from './lib/api';
 import RcvPlansApp from './apps/RcvPlansApp';
@@ -13,9 +14,14 @@ import { DevFlowSwitcher } from './components/DevFlowSwitcher';
 type FlowType = 'proveedor' | 'funerario' | 'rcv' | 'exelixi';
 
 const PROVEEDOR_PRODUCTS = new Set(['proveedor', 'combinado_familiar']);
-/** cproducto Sis2000 que abren Plan Proveedor (Combinado Familiar = 51). */
+/**
+ * cproducto Sis2000 que abren Plan Proveedor (Combinado Familiar = 51).
+ * Interruptor del flujo: VACIO por defecto => desactivado y todo sigue igual que antes (Combinado
+ * se emite por el flujo de personas). En QA se activa con VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR=51 en
+ * frontend/.env.production.local (no versionado) y se recompila; produccion, cuando se apruebe.
+ */
 const PROVEEDOR_CPRODUCTOS = new Set(
-  String(import.meta.env.VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR || '51')
+  String(import.meta.env.VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
@@ -23,6 +29,8 @@ const PROVEEDOR_CPRODUCTOS = new Set(
 
 /** Plan Proveedor / Combinado Familiar: cproducto SSO 51, producto proveedor/combinado familiar o `?flow=proveedor`. */
 function isProveedorFlow(): boolean {
+  // Desactivado (variable vacia): ni el cproducto, ni el producto, ni ?flow= abren el flujo nuevo.
+  if (PROVEEDOR_CPRODUCTOS.size === 0) return false;
   if (PROVEEDOR_CPRODUCTOS.has(resolveSsoCproducto())) return true;
   if (PROVEEDOR_PRODUCTS.has(getProductId())) return true;
   if (isCombinadoFamiliar()) return true;
@@ -52,7 +60,8 @@ function DevApp() {
 }
 
 /**
- * Enrutador por producto — RCV, funerario/vida/AP, patrimoniales, plan proveedor/combinado familiar y catálogo Exélixi en apps aisladas.
+ * Enrutador por producto — RCV, funerario/vida/AP, patrimoniales y catálogo Exélixi en apps aisladas.
+ * Plan proveedor / Combinado Familiar: solo si VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR esta activa.
  * El flujo La Mundial no importa lógica del catálogo Exélixi.
  * Productos personas (wizard FuneralPlansApp): funerario (57), vida (76), ap (78), ap79 (79).
  */

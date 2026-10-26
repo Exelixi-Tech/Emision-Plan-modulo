@@ -25,6 +25,7 @@ import {
 } from './nexus-token-client';
 import { canNavigateToStep, getDefaultRequiredDocs } from './wizard-navigation';
 import { getProductConfig } from './product';
+import { COMBINADO_PROVEEDOR_ACTIVO } from './product';
 import { BUILDER_PRODUCT_STORAGE_KEY, isExelixiCatalogFlow, ensureExelixiFlowQueryParam } from './exelixi-catalog';
 import { ensureCotizadorFlowQueryParam, isCotizadorFlow } from './cotizador-flow';
 import { applyWizardStepFromUrl, defaultStepForModule, stepToModuleOrder } from './wizard-step';
@@ -226,12 +227,15 @@ function makeBridge(): BridgeAPI {
     const isCatalogFlow = isExelixiCatalogFlow();
     const prod = sessionStorage.getItem('exelixi_product') || 'rcv';
     if (!isCatalogFlow) {
-      // Igual que antes para el resto; Combinado Familiar/Proveedor se comportan como funerario.
-      if (prod === 'funerario' || prod === 'patrimoniales' || prod === 'combinado_familiar' || prod === 'proveedor') {
+      if (prod === 'funerario' || prod === 'patrimoniales') {
         delete out.vehicle;
       } else if (prod === 'rcv') {
         delete out.funeral;
       }
+    }
+    // Combinado Familiar / Proveedor: igual que funerario (sin vehiculo).
+    if (COMBINADO_PROVEEDOR_ACTIVO && !isCatalogFlow && (prod === 'combinado_familiar' || prod === 'proveedor')) {
+      delete out.vehicle;
     }
     out.product = prod;
     out.exelixiCatalogFlow = isCatalogFlow;
@@ -251,10 +255,13 @@ function makeBridge(): BridgeAPI {
     if (order !== 1) delete out.documents;
 
     const prodKey = String(out.product ?? prod);
-    const usaFrecuenciaFuneral = prodKey === 'funerario' || prodKey === 'combinado_familiar' || prodKey === 'proveedor';
-    const freq = usaFrecuenciaFuneral
+    const freq = prodKey === 'funerario'
       ? (out.funeral as { frecuencia?: string } | undefined)?.frecuencia
       : (out.rcv as { frecuencia?: string } | undefined)?.frecuencia;
+    // Combinado Familiar / Proveedor: la frecuencia es la de personas (funeral), como funerario.
+    if (COMBINADO_PROVEEDOR_ACTIVO && typeof out.fraccionado !== 'boolean' && (prodKey === 'combinado_familiar' || prodKey === 'proveedor')) {
+      out.fraccionado = isFrecuenciaFraccionada((out.funeral as { frecuencia?: string } | undefined)?.frecuencia);
+    }
     if (typeof out.fraccionado !== 'boolean') {
       out.fraccionado = isFrecuenciaFraccionada(freq);
     }
@@ -312,10 +319,10 @@ function makeBridge(): BridgeAPI {
         // Propaga el producto (rcv | funerario) entre módulos: getProductConfig()
         // lo lee desde sessionStorage, así no depende de que la URL lo arrastre.
         const sessionProduct = r.data.data.product;
-        if (
-          sessionProduct === 'rcv' || sessionProduct === 'funerario' || sessionProduct === 'patrimoniales'
-          || sessionProduct === 'combinado_familiar' || sessionProduct === 'proveedor'
-        ) {
+        if (sessionProduct === 'rcv' || sessionProduct === 'funerario' || sessionProduct === 'patrimoniales') {
+          try { sessionStorage.setItem('exelixi_product', sessionProduct); } catch { /* ignore */ }
+        }
+        if (COMBINADO_PROVEEDOR_ACTIVO && (sessionProduct === 'combinado_familiar' || sessionProduct === 'proveedor')) {
           try { sessionStorage.setItem('exelixi_product', sessionProduct); } catch { /* ignore */ }
         }
         if (r.data.data.exelixiCatalogFlow) {
