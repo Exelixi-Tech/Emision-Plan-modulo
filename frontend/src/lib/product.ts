@@ -29,17 +29,17 @@ export const PATRIMONIAL_RAMO_DEFAULT = parseInt(
 );
 
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
-  rcv: { id: 'rcv', label: 'RCV', fullLabel: 'Suscripción RCV', cramo: 18, hasVehicle: true },
-  funerario: { id: 'funerario', label: 'Funerario', fullLabel: 'Seguro Funerario', cramo: 9, cproducto: '57', hasVehicle: false },
-  patrimoniales: { id: 'patrimoniales', label: 'Patrimoniales', fullLabel: 'Seguro Patrimonial', cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
+  rcv:          { id: 'rcv',          label: 'RCV',          fullLabel: 'Suscripción RCV',               cramo: 18, hasVehicle: true  },
+  funerario:    { id: 'funerario',    label: 'Funerario',    fullLabel: 'Seguro Funerario',              cramo: 9,  cproducto: '57', hasVehicle: false },
+  patrimoniales:{ id: 'patrimoniales',label: 'Patrimoniales',fullLabel: 'Seguro Patrimonial',           cramo: PATRIMONIAL_RAMO_DEFAULT, hasVehicle: false },
   combinado_familiar: { id: 'combinado_familiar', label: 'Combinado Familiar', fullLabel: 'Seguro Combinado Familiar', cramo: 51, cproducto: '51', hasVehicle: false },
   proveedor: { id: 'proveedor', label: 'Plan Proveedor', fullLabel: 'Planes con Proveedor', cramo: 51, hasVehicle: false },
   /** Vida Individual La Mundial — cproducto 76, ramo 1 */
-  vida: { id: 'vida', label: 'Vida', fullLabel: 'Seguro de Vida', cramo: 1, cproducto: '76', hasVehicle: false },
+  vida:         { id: 'vida',         label: 'Vida',         fullLabel: 'Seguro de Vida',                cramo: 1,  cproducto: '76', hasVehicle: false },
   /** Accidentes Personales cproducto 78, ramo 5 */
-  ap: { id: 'ap', label: 'AP', fullLabel: 'Accidentes Personales', cramo: 5, cproducto: '78', hasVehicle: false },
+  ap:           { id: 'ap',           label: 'AP',           fullLabel: 'Accidentes Personales',         cramo: 5,  cproducto: '78', hasVehicle: false },
   /** Accidentes Personales cproducto 79, ramo 5 */
-  ap79: { id: 'ap79', label: 'AP79', fullLabel: 'Accidentes Personales (79)', cramo: 5, cproducto: '79', hasVehicle: false },
+  ap79:         { id: 'ap79',         label: 'AP79',         fullLabel: 'Accidentes Personales (79)',    cramo: 5,  cproducto: '79', hasVehicle: false },
 };
 
 /** Ramo externo maplanes para BINAC* (confirmado: cramo 28; también existe fila duplicada en 18). */
@@ -48,7 +48,13 @@ export const RCV_RAMO_BINACIONAL = parseInt(
   10,
 );
 
-const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimoniales', 'combinado_familiar', 'proveedor', 'vida', 'ap', 'ap79'];
+const VALID_PRODUCTS: ProductId[] = ['rcv', 'funerario', 'patrimoniales', 'vida', 'ap', 'ap79'];
+/**
+ * Interruptor de Combinado Familiar / Plan Proveedor: VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR (vacia por defecto).
+ * Apagado, nada de este producto se activa y el comportamiento es el de antes.
+ */
+export const COMBINADO_PROVEEDOR_ACTIVO = String(import.meta.env.VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR || '').trim() !== '';
+if (COMBINADO_PROVEEDOR_ACTIVO) VALID_PRODUCTS.push('combinado_familiar', 'proveedor');
 const STORAGE_KEY = 'exelixi_product';
 
 export interface ProductDetectHints {
@@ -95,11 +101,11 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
   }
   // Solo el nombre exacto: 'familiar' o 'combinado' sueltos tambien aparecen en Salud Familiar,
   // Funerario Familiar o Combinado Personas.
-  if (/combinado[\s_-]*familiar/.test(label)) {
+  if (COMBINADO_PROVEEDOR_ACTIVO && /combinado[\s_-]*familiar/.test(label)) {
     try { sessionStorage.setItem(STORAGE_KEY, 'combinado_familiar'); } catch { /* ignore */ }
     return 'combinado_familiar';
   }
-  if (label.includes('proveedor')) {
+  if (COMBINADO_PROVEEDOR_ACTIVO && label.includes('proveedor')) {
     try { sessionStorage.setItem(STORAGE_KEY, 'proveedor'); } catch { /* ignore */ }
     return 'proveedor';
   }

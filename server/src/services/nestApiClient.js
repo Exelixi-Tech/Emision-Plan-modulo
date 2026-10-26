@@ -674,29 +674,6 @@ async function getValrepFrecuencias(cplan, cramo) {
 }
 
 /**
- * Productores / Brokers desde Sis2000 (POST /api/v1/valrep/brokers)
- * @returns {Promise<Array<{ code: number, label: string }>>}
- */
-async function getValrepBrokers() {
-  const response = await axios.post(
-    `${getBaseUrl()}/api/v1/valrep/brokers`,
-    null,
-    await axiosOpts({ validateStatus: () => true }),
-  );
-  if (response.status >= 400 || response.data?.status === false) {
-    throw new Error(response.data?.message || `HTTP ${response.status} valrep/brokers`);
-  }
-  const raw = response.data?.data?.broker ?? response.data?.broker ?? [];
-  return raw
-    .map((b) => ({
-      code: Number(b.cproductor),
-      label: String(b.xproductor ?? '').trim(),
-    }))
-    .filter((it) => it.code > 0 && it.label !== '')
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-/**
  * Consulta proveedores de servicio vía POST /api/v1/partner/starter/proveedores/list.
  * @param {{ cplan?: string|number, cramo?: string|number, centidad?: string, citem?: string|number, cci_rif?: string|number, cclave_num?: number }} [params]
  * @returns {Promise<Array<{ xproveedor: string, xcliente?: string, cci_rif: string|number, cclave_num?: number|null, cplan?: string|null, cramo?: number|null, itiposerv?: string }>>}

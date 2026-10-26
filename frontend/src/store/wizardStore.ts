@@ -164,9 +164,10 @@ const initialState: WizardState = {
   cramo_proveedor: undefined,
   cclave_num: undefined,
   itiposerv: undefined,
-  selectedProveedor: null,
-  // 'mobile' (Pago Móvil vía Banco Activo) es el método activo por defecto.
-  // 'transfer' está oculto en la UI por ahora; se mantendrá el tipo para compat.
+  // undefined (no null): no viaja por el bridge (JSON lo omite) en productos sin proveedor.
+  selectedProveedor: undefined,
+  // 'mobile' (Pago MÃ³vil vÃ­a Banco Activo) es el mÃ©todo activo por defecto.
+  // 'transfer' estÃ¡ oculto en la UI por ahora; se mantendrÃ¡ el tipo para compat.
   paymentMethod: 'mobile',
   policy: null,
   quote: null,
