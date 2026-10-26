@@ -22,7 +22,9 @@ function isPersonasCplan(cplan) {
 
 /**
  * Ramo Sis2000 para cotizar/emitir (producto 57 → 45; si no, plan o metadata SSO).
- * @param {{ selectedPlan?: { cramo?: number }, selectedProveedor?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
+ * Combinado Familiar: opts.selectedProveedor.cramo (solo llega con proveedor) va despues del plan;
+ * el resto de productos de personas resuelve igual que antes.
+ * @param {{ selectedPlan?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
  * @returns {number}
  */
 function resolvePersonasCramo(opts = {}) {
@@ -31,8 +33,7 @@ function resolvePersonasCramo(opts = {}) {
   const fromPlan = selectedPlan?.cramo != null ? Number(selectedPlan.cramo) : NaN;
   if (Number.isFinite(fromPlan) && fromPlan > 0) return fromPlan;
 
-  const selectedProveedor = opts.selectedProveedor;
-  const fromProveedor = selectedProveedor?.cramo != null ? Number(selectedProveedor.cramo) : NaN;
+  const fromProveedor = opts.selectedProveedor?.cramo != null ? Number(opts.selectedProveedor.cramo) : NaN;
   if (Number.isFinite(fromProveedor) && fromProveedor > 0) return fromProveedor;
 
   const prod = String(
