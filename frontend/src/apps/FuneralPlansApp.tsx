@@ -288,6 +288,8 @@ export default function FuneralPlansApp() {
       aceptaTerminos: r.aceptaMecanismos,
       diagnosticoEnfermedad: !r.buenaSalud,
       descripcionEnfermedad: r.detalleSalud,
+      // En tarjeta las declaraciones sustituyen al cuestionario; Pagos exige esta marca para emitir.
+      healthQuestionnaireDone: true,
     });
     setDeclaracionesOpen(false);
     continueTarjetaToPagos();
