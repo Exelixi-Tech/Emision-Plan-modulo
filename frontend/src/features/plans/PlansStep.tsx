@@ -18,7 +18,6 @@ import { vehicleSignature, formatQuoteUsd, formatQuoteUsdMoney, formatQuoteVes, 
 import { resolveFrecuenciaAmounts, resolveRcvQuoteBasis, rcvQuoteIncludesFrecuenciaSig } from '../../lib/frecuencia';
 import { toast } from '../../store/toastStore';
 import { filterRcvOnlyCoberturas, isQaDeploy } from '../../lib/deploy-env';
-import { getTarjetaTerminosUrl } from '../../lib/tarjeta-terminos';
 import {
   getTarjetaPlanCmoneda,
   readTarjetaMetadataCanal,
@@ -504,10 +503,10 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
   const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary || tarjetaForeign;
 
-  // Declaraciones previas a la emisión por tarjeta (mismas de la pasarela La Mundial).
+  // Pregunta previa a la emisión por tarjeta. La declaración legal y los Términos y Condiciones
+  // ya se aceptaron en Formulario (de ahí sale cterm_y_cod): aquí solo queda el uso para delivery.
   const [usoDelivery, setUsoDelivery] = useState<'si' | 'no' | null>(null);
-  const [aceptaMecanismos, setAceptaMecanismos] = useState(false);
-  const declaracionesOk = usoDelivery === 'no' && aceptaMecanismos;
+  const declaracionesOk = usoDelivery === 'no';
 
   const autoActive = autoContinue && Boolean(lockedCplan);
   const autoFailed = autoActive && quoteState === 'error';
@@ -532,11 +531,10 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   }, [autoFailed, onAutoFallback]);
 
   if (autoActive && !autoFailed) {
-    const terminosUrl = getTarjetaTerminosUrl();
     return (
       <div className="animate-fade-in space-y-4">
         <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5">
-          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-1">Pregunta 1 de 2</p>
+          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-1">Uso del vehículo</p>
           <p className="text-sm font-bold text-slate-900 mb-3">
             ¿Realiza usted traslados o delivery de algún aplicativo?
           </p>
@@ -558,10 +556,7 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
                   name="tarjeta-uso-delivery"
                   value={op.value}
                   checked={usoDelivery === op.value}
-                  onChange={() => {
-                    setUsoDelivery(op.value);
-                    if (op.value === 'si') setAceptaMecanismos(false);
-                  }}
+                  onChange={() => setUsoDelivery(op.value)}
                   className="h-4 w-4 accent-indigo-600"
                 />
                 {op.label}
@@ -581,37 +576,6 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
               </div>
             </div>
           )}
-        </div>
-
-        <div className={`rounded-2xl border-2 border-slate-200 bg-white p-4 sm:p-5 transition-opacity ${usoDelivery === 'no' ? '' : 'opacity-50'}`}>
-          <p className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2">Pregunta 2 de 2 · Declaración de mecanismos electrónicos</p>
-          <label className={`flex gap-3 items-start ${usoDelivery === 'no' ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
-            <input
-              type="checkbox"
-              checked={aceptaMecanismos}
-              disabled={usoDelivery !== 'no'}
-              onChange={(e) => setAceptaMecanismos(e.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-indigo-600"
-            />
-            <span className="text-sm text-slate-700 leading-relaxed">
-              Declaro que acepto todos los mecanismos electrónicos dispuestos por La Mundial de
-              Seguros C.A., para la contratación de la presente póliza.
-              {terminosUrl && (
-                <>
-                  {' '}
-                  <a
-                    href={terminosUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-bold text-indigo-600 underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Ver términos y condiciones
-                  </a>
-                </>
-              )}
-            </span>
-          </label>
         </div>
 
         {declaracionesOk && (

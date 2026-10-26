@@ -12,7 +12,12 @@ import { useWizardStore } from '../store/wizardStore';
 import { getProductConfig } from '../lib/product';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { toast } from '../store/toastStore';
-import { tarjetaYaPagada } from '../lib/rcv-tarjeta-flow';
+import {
+  isTarjetaLocalStep,
+  isTarjetaRcvFlow,
+  navigateTarjetaToStep,
+  tarjetaYaPagada,
+} from '../lib/rcv-tarjeta-flow';
 import { StepGlyph, StepKicker, StepperFxStyles, StepperProgress, STEPPER_TONE_EMERALD } from './StepperFx';
 
 type StepItem = { n: number; label: string; Icon: typeof Car; displayStep?: number };
@@ -113,6 +118,10 @@ export function TopStepper() {
       const fn = window.__bridgeNavigateStep ?? window.__bridge?.navigateToStep;
       if (fn) {
         await fn(target);
+      } else if (isTarjetaRcvFlow() && !isTarjetaLocalStep(target)) {
+        // Tarjeta (sin bridge): el paso vive en otro módulo; ir allá con el estado guardado.
+        navigateTarjetaToStep(target);
+        return;
       } else {
         useWizardStore.getState().goTo(target);
       }

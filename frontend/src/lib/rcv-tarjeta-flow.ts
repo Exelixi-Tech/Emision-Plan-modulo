@@ -148,6 +148,35 @@ export function getPagosContinueUrlForTarjeta(): string {
   return `${base}/?${params.toString()}`;
 }
 
+/** Módulo dueño de cada paso del flujo tarjeta (sin bridge): 1 OCR · 2-3 Formulario · 4 Emisión · 5 Pagos. */
+function tarjetaStepModulePath(step: number): string {
+  if (step <= 1) return '/ocr';
+  if (step <= 3) return '/formulario';
+  if (step === 4) return '/emision';
+  return '/pagos';
+}
+
+/** Este módulo (Emisión) solo pinta el paso 4. */
+export function isTarjetaLocalStep(step: number): boolean {
+  return step === 4;
+}
+
+/**
+ * Paso a paso en flujo tarjeta (sin bridge): ir a un paso de otro módulo guardando el estado.
+ * `volver=1` indica al módulo destino que hidrate desde el handoff y no desde el OCR.
+ */
+export function navigateTarjetaToStep(step: number): void {
+  persistFlowHandoff(collectWizardSnapshot());
+  markTarjetaPublicSession();
+  const params = new URLSearchParams({
+    product: getTarjetaProductId(),
+    flujo: 'tarjeta',
+    wizardStep: String(step),
+    volver: '1',
+  });
+  window.location.href = `${tarjetaStepModulePath(step)}/?${params.toString()}`;
+}
+
 /** Emisión → Pagos sin bridge ni nexus_token. */
 export function continueTarjetaToPagos(): void {
   persistFlowHandoff(collectWizardSnapshot());

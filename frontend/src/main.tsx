@@ -6,6 +6,8 @@ import './lib/bridge'
 import { NexusGuard } from './nexus/NexusGuard'
 import { applyExelixiBranding } from './lib/exelixi-branding'
 import { hydrateTarjetaHandoff, hydrateTarjetaMetadataCanal, isTarjetaRcvFlow, markTarjetaPublicSession } from './lib/rcv-tarjeta-flow'
+import { applyWizardStepFromUrl } from './lib/wizard-step'
+import { useWizardStore } from './store/wizardStore'
 
 import { EmisionConfigPanel } from './config/EmisionConfigPanel'
 import { EmisionRevisionPanel } from './config/EmisionRevisionPanel'
@@ -17,6 +19,8 @@ if (isTarjetaRcvFlow()) {
   markTarjetaPublicSession();
   hydrateTarjetaHandoff();
   hydrateTarjetaMetadataCanal();
+  // Sin bridge: el paso a paso toma el paso del módulo desde ?wizardStep (Emisión = 4).
+  applyWizardStepFromUrl(useWizardStore.getState().goTo);
 }
 
 // /config y /revision: index.html redirige a ?view= para que los assets no 404en con base relativa.
