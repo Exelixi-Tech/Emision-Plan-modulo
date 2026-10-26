@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSessionTokenDelegation } from './hooks/useSessionTokenDelegation';
-import { getProductId, isFunerarioLike, isPatrimoniales } from './lib/product';
+import { getProductId, isCombinadoFamiliar, isFunerarioLike, isPatrimoniales } from './lib/product';
 import { isExelixiCatalogFlow } from './lib/exelixi-catalog';
 import { resolveSsoCproducto } from './lib/api';
 import RcvPlansApp from './apps/RcvPlansApp';
@@ -12,7 +12,7 @@ import { DevFlowSwitcher } from './components/DevFlowSwitcher';
 
 type FlowType = 'proveedor' | 'funerario' | 'rcv' | 'exelixi';
 
-const PROVEEDOR_PRODUCTS = new Set(['proveedor', 'com-fam', 'combinado_familiar']);
+const PROVEEDOR_PRODUCTS = new Set(['proveedor', 'combinado_familiar']);
 /** cproducto Sis2000 que abren Plan Proveedor (Combinado Familiar = 51). */
 const PROVEEDOR_CPRODUCTOS = new Set(
   String(import.meta.env.VITE_LAMUNDIAL_PRODUCTOS_PROVEEDOR || '51')
@@ -21,13 +21,14 @@ const PROVEEDOR_CPRODUCTOS = new Set(
     .filter(Boolean),
 );
 
-/** Plan Proveedor: cproducto SSO 51, producto proveedor/combinado familiar o `?flow=proveedor`. */
+/** Plan Proveedor / Combinado Familiar: cproducto SSO 51, producto proveedor/combinado familiar o `?flow=proveedor`. */
 function isProveedorFlow(): boolean {
   if (PROVEEDOR_CPRODUCTOS.has(resolveSsoCproducto())) return true;
   if (PROVEEDOR_PRODUCTS.has(getProductId())) return true;
+  if (isCombinadoFamiliar()) return true;
   try {
     const flow = (new URLSearchParams(window.location.search).get('flow') || '').toLowerCase();
-    return flow === 'proveedor' || flow === 'plan-proveedor' || flow === 'proveedores';
+    return flow === 'proveedor' || flow === 'plan-proveedor' || flow === 'proveedores' || flow === 'combinado_familiar';
   } catch {
     return false;
   }
@@ -51,7 +52,7 @@ function DevApp() {
 }
 
 /**
- * Enrutador por producto — RCV, funerario/vida/AP, patrimoniales, plan proveedor y catálogo Exélixi en apps aisladas.
+ * Enrutador por producto — RCV, funerario/vida/AP, patrimoniales, plan proveedor/combinado familiar y catálogo Exélixi en apps aisladas.
  * El flujo La Mundial no importa lógica del catálogo Exélixi.
  * Productos personas (wizard FuneralPlansApp): funerario (57), vida (76), ap (78), ap79 (79).
  */

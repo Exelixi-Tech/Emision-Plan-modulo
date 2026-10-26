@@ -334,14 +334,14 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
       selectedProveedor: cproveedor
         ? {
-            cci_rif: cproveedor,
-            xproveedor: xproveedor ?? '',
-            xcliente: xproveedor ?? '',
-            cplan: extra?.cplan ?? s.cplan_proveedor,
-            cramo: extra?.cramo ?? s.cramo_proveedor,
-            cclave_num: extra?.cclave_num ?? s.cclave_num,
-            itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
-          }
+          cci_rif: cproveedor,
+          xproveedor: xproveedor ?? '',
+          xcliente: xproveedor ?? '',
+          cplan: extra?.cplan ?? s.cplan_proveedor,
+          cramo: extra?.cramo ?? s.cramo_proveedor,
+          cclave_num: extra?.cclave_num ?? s.cclave_num,
+          itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
+        }
         : null,
     })),
 

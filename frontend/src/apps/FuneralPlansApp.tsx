@@ -294,7 +294,6 @@ export default function FuneralPlansApp() {
     setDeclaracionesOpen(false);
     continueTarjetaToPagos();
   }
-
   function emptyAnswersByInsured() {
     const people = healthInsureds.length
       ? healthInsureds

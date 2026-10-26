@@ -1275,11 +1275,11 @@ function PrimaCard({
 
                 return (
                   <div
-                    key={`${c.ccobertura ?? c.name}`}
+                    key={`${c.ccobertura ?? c.name ?? c.xcobertura}`}
                     className="py-2.5 first:pt-0 last:pb-0 md:py-1 md:grid md:grid-cols-[minmax(0,1fr)_4.5rem_3.5rem] md:gap-x-2 md:items-start"
                   >
                     <p className="text-[0.68rem] sm:text-xs text-white/90 font-medium leading-snug break-words min-w-0">
-                      {c.name}
+                      {c.name || c.xcobertura || (c as unknown as Record<string, string>).xdescripcion || (c as unknown as Record<string, string>).xdescripcion_l || ''}
                     </p>
                     <div className="mt-1.5 flex items-center justify-between gap-3 md:hidden text-[0.68rem] tabular-nums">
                       <span className="text-white/55">

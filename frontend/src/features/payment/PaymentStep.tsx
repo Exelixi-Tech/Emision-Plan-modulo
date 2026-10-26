@@ -137,8 +137,13 @@ export function PaymentStep() {
     const mcostoext = Number(quote?.mprimaext ?? snap.selectedPlan?.priceNum);
     const ptasamon = Number(quote?.ptasa);
 
+    if (!poliza) {
+      // Si la póliza aún no está emitida en el store de frontend, el registro
+      // del proveedor en la póliza lo realiza el backend durante /emision.
+      return null;
+    }
+
     const faltantes = ([
-      ['póliza', Boolean(poliza)],
       ['RIF del proveedor', cciRifClean > 0],
       // ['clave del proveedor', claveNum > 0],
       // ['tipo de servicio', Boolean(tipoServ)],
@@ -148,7 +153,7 @@ export function PaymentStep() {
       ['prima', mcosto > 0 && mcostoext > 0],
       ['tasa', ptasamon > 0],
     ] as const).filter(([, ok]) => !ok).map(([label]) => label);
-    if (!poliza || faltantes.length > 0) {
+    if (faltantes.length > 0) {
       const msg = `Faltan datos para registrar el proveedor: ${faltantes.join(', ')}.`;
       setProviderRegError(msg);
       setProviderRegStatus('error');
@@ -361,7 +366,7 @@ export function PaymentStep() {
         debtorName: otpName,
         amount: parseFloat(otpAmount),
         otp: otpCode.trim(),
-        concept: 'Prima de seguro Combinado Familiar - La Mundial',
+        concept: `Prima de seguro ${product?.label || 'RCV'} - La Mundial`,
       });
       setOtpResult(result);
       setOtpStep('done');

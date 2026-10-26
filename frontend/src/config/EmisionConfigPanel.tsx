@@ -145,17 +145,27 @@ export function EmisionConfigPanel() {
 
     (async () => {
       try {
-        const panelToken =
+        // SysIP no se toca: si el JWT del iframe es inválido, mint fresco vía emision-api.
+        const { bootstrapPanelToken } = await import('./panelTokenBootstrap');
+        let panelToken =
           new URL(window.location.href).searchParams.get('token')?.trim() || '';
-        const headers: Record<string, string> = {};
-        if (panelToken) headers.Authorization = `Bearer ${panelToken}`;
-        // Vida (1), AP (5) y Salud (7) se configuran por ramo: se pide el catálogo del ramo
-        // explícito (el servidor consulta por producto cuando llega cproducto). Funerario sigue igual.
-        const catalogoRamo = cramo === '1' || cramo === '5' || cramo === '7' ? '&catalogo=ramo' : '';
-        const res = await fetch(
-          `${moduleApiBase()}/personas/planes?cramo=${encodeURIComponent(cramo)}${catalogoRamo}`,
-          { headers },
-        );
+        const minted = await bootstrapPanelToken({
+          panel: 'preguntas',
+          empresaId: EMPRESA_ID,
+        });
+        if (minted) panelToken = minted;
+        if (cancelled) return;
+
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (panelToken) {
+          headers.Authorization = `Bearer ${panelToken}`;
+          headers['x-nexus-token'] = panelToken;
+        }
+        const qs = new URLSearchParams({ cramo: String(cramo) });
+        // Vida/AP/Salud: catálogo del ramo (planes por ramo); Funerario (9) sigue por producto.
+        if (cramo !== '9') qs.set('catalogo', 'ramo');
+        if (panelToken) qs.set('nexus_token', panelToken);
+        const res = await fetch(`${moduleApiBase()}/personas/planes?${qs}`, { headers });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         const raw = Array.isArray(data?.planes) ? data.planes : [];
