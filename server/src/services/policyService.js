@@ -365,11 +365,16 @@ async function quote(state, overrides = {}) {
       }
     }
 
+    // RCV obligatoria (Daños a personas y a cosas): se cobra completa en la cuota inicial si la frecuencia
+    // no es anual; sp_genera_coberturas_recibos_auto_rcv_nexus reparte los recibos con la misma regla.
+    const primaCuotaInicial = Number(breakdown?.primaCuotaInicial ?? 0);
+
     return {
       mprima,
       mprimaext,
       ptasa: result.ptasa,
       coberturas,
+      primaCuotaInicial: Number.isFinite(primaCuotaInicial) && primaCuotaInicial > 0 ? primaCuotaInicial : 0,
       metadata: {
         ...metadata,
         referenceSuma: result.referenceSuma,

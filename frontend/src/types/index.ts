@@ -301,6 +301,11 @@ export interface PolicyQuote {
   ptasa: number;
   /** Desglose por cobertura (calculate-plan-coberturas). */
   coberturas?: PolicyCoverageLine[];
+  /**
+   * Prima anual USD de las coberturas que no se fraccionan (Daños a personas y a cosas): con frecuencia
+   * distinta a la anual van completas en la cuota inicial; el resto se divide entre las cuotas.
+   */
+  primaCuotaInicial?: number;
   /** Etiqueta legible del vehiculo cotizado (ej. "TOYOTA / COROLLA"). */
   vehicleLabel?: string;
   /** Indica si La Mundial uso el catalogo por defecto (vehiculo no encontrado). */

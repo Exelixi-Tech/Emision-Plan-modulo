@@ -234,6 +234,8 @@ async function calculatePlanCoberturasViaNestApi(payload) {
     return {
       mount,
       pa: Number(body.pa ?? 0),
+      /** Prima anual USD de Daños a personas y a cosas: completa en la cuota inicial si no es anual. */
+      primaCuotaInicial: Number(body.primaCuotaInicial ?? 0),
       ca: Number(body.ca ?? 0),
       pt: Number(body.pt ?? 0),
       ap: Number(body.ap ?? 0),
