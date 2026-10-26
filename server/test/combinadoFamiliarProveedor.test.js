@@ -10,11 +10,13 @@ test('Combinado Familiar: resolvePersonasCramo resuelve ramo 51 correctamente', 
   // 2. Desde selectedProveedor
   assert.equal(resolvePersonasCramo({ selectedProveedor: { cramo: 51 } }), 51);
 
+  // 3 y 4. Combinado Familiar siempre viaja con cproducto 51 (token SSO). Sin cproducto, la regla
+  // de produccion asume funerario (57 -> 45) y no debe cambiar: ver personasRamoYRegistroProveedor.test.js.
   // 3. Desde bodyCramo
-  assert.equal(resolvePersonasCramo({ bodyCramo: 51 }), 51);
+  assert.equal(resolvePersonasCramo({ bodyCramo: 51, cproducto: '51' }), 51);
 
   // 4. Desde metadataCanal cramo
-  assert.equal(resolvePersonasCramo({ metadataCanal: { cramo: '51' } }), 51);
+  assert.equal(resolvePersonasCramo({ metadataCanal: { cramo: '51', cproducto: '51' } }), 51);
 
   // 5. Fallback Funerario 57 sigue retornando 45
   assert.equal(resolvePersonasCramo({ cproducto: '57' }), 45);

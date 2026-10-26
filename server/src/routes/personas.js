@@ -516,10 +516,16 @@ router.post('/emision', async (req, res) => {
         emitted,
         {
           plan: cplan,
+          cotizacion,
           ...(vigencia ? { fdesde: vigencia.fdesde, fhasta: vigencia.fhasta } : {}),
         },
       );
-      if (proveedorPayload && proveedorPayload.cci_rif) {
+      const faltantes = personasMapper.faltantesRegistroProveedor(proveedorPayload);
+      if (faltantes.length) {
+        console.warn(
+          `[personas/emision] Proveedor NO registrado en poliza ${emitted.cnpoliza}: faltan ${faltantes.join(', ')}`,
+        );
+      } else {
         try {
           proveedorResult = await registerPolicyProveedorViaNestApi(proveedorPayload);
           console.log(

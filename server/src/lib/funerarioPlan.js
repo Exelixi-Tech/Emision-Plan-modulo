@@ -22,6 +22,8 @@ function isPersonasCplan(cplan) {
 
 /**
  * Ramo Sis2000 para cotizar/emitir (producto 57 → 45; si no, plan o metadata SSO).
+ * El ramo del proveedor (selectedProveedor.cramo) solo aplica a Combinado Familiar, que es el unico
+ * flujo que envia proveedor; el resto de productos de personas resuelve igual que antes.
  * @param {{ selectedPlan?: { cramo?: number }, selectedProveedor?: { cramo?: number }, metadataCanal?: object, bodyCramo?: unknown, cproducto?: string }} [opts]
  * @returns {number}
  */
@@ -31,28 +33,23 @@ function resolvePersonasCramo(opts = {}) {
   const fromPlan = selectedPlan?.cramo != null ? Number(selectedPlan.cramo) : NaN;
   if (Number.isFinite(fromPlan) && fromPlan > 0) return fromPlan;
 
-  const selectedProveedor = opts.selectedProveedor;
-  const fromProveedor = selectedProveedor?.cramo != null ? Number(selectedProveedor.cramo) : NaN;
+  const fromProveedor = opts.selectedProveedor?.cramo != null ? Number(opts.selectedProveedor.cramo) : NaN;
   if (Number.isFinite(fromProveedor) && fromProveedor > 0) return fromProveedor;
+
+  const prod = String(
+    opts.cproducto ?? meta.cproducto ?? process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57',
+  ).trim();
+  if (prod === '57') return 45;
+
+  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
+    const m = parseInt(String(meta.cramo), 10);
+    if (Number.isFinite(m) && m > 0) return m;
+  }
 
   if (opts.bodyCramo != null && String(opts.bodyCramo).trim() !== '') {
     const b = parseInt(String(opts.bodyCramo), 10);
     if (Number.isFinite(b) && b > 0) return b;
   }
-
-  const explicitProd = String(opts.cproducto ?? meta.cproducto ?? '').trim();
-  if (explicitProd === '57') return 45;
-
-  if (meta.cramo != null && String(meta.cramo).trim() !== '') {
-    const m = parseInt(String(meta.cramo), 10);
-    if (Number.isFinite(m) && m > 0) {
-      if (m === 9) return 45;
-      return m;
-    }
-  }
-
-  const prod = explicitProd || String(process.env.LAMUNDIAL_PRODUCTO_FUNERARIO ?? '57').trim();
-  if (prod === '57') return 45;
 
   return parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 }

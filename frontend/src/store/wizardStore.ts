@@ -331,7 +331,7 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       cplan_proveedor: extra?.cplan ?? s.cplan_proveedor,
       cramo_proveedor: extra?.cramo ?? s.cramo_proveedor,
       cclave_num: extra?.cclave_num ?? s.cclave_num,
-      itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
+      itiposerv: extra?.itiposerv ?? s.itiposerv,
       selectedProveedor: cproveedor
         ? {
           cci_rif: cproveedor,
@@ -340,7 +340,7 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
           cplan: extra?.cplan ?? s.cplan_proveedor,
           cramo: extra?.cramo ?? s.cramo_proveedor,
           cclave_num: extra?.cclave_num ?? s.cclave_num,
-          itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
+          itiposerv: extra?.itiposerv ?? s.itiposerv,
         }
         : null,
     })),
@@ -353,7 +353,7 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       cplan_proveedor: proveedor?.cplan,
       cramo_proveedor: proveedor?.cramo,
       cclave_num: proveedor?.cclave_num,
-      itiposerv: proveedor?.itiposerv ?? 'S',
+      itiposerv: proveedor?.itiposerv,
     }),
 
   reset: () => set(initialState),

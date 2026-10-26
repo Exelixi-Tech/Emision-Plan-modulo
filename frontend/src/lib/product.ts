@@ -93,7 +93,9 @@ export function persistProductFromHints(hints?: ProductDetectHints): ProductId |
     try { sessionStorage.setItem(STORAGE_KEY, 'ap'); } catch { /* ignore */ }
     return 'ap';
   }
-  if (label.includes('combinado') || label.includes('familiar')) {
+  // Solo el nombre exacto: 'familiar' o 'combinado' sueltos tambien aparecen en Salud Familiar,
+  // Funerario Familiar o Combinado Personas.
+  if (/combinado[\s_-]*familiar/.test(label)) {
     try { sessionStorage.setItem(STORAGE_KEY, 'combinado_familiar'); } catch { /* ignore */ }
     return 'combinado_familiar';
   }
