@@ -10,9 +10,11 @@ import {
   resolveRcvQuoteBasis,
 } from '../lib/frecuencia';
 import { publicAsset } from '../lib/app-base';
+import { tarjetaYaPagada } from '../lib/rcv-tarjeta-flow';
 
 export function SidebarNav() {
-  const { step, tomador, vehicle, rcv, funeral, selectedPlan, paymentMethod, quote, quoteState } = useWizardStore();
+  const { step, tomador, vehicle, rcv, funeral, selectedPlan, paymentMethod, quote, quoteState, metadataCanal } = useWizardStore();
+  const sinPasoPago = tarjetaYaPagada(metadataCanal);
 
   const product = getProductConfig();
 
@@ -23,7 +25,8 @@ export function SidebarNav() {
       ? { n: 3, label: 'Vehículo', sub: 'Datos del auto', Icon: Car }
       : { n: 3, label: 'Asegurado', sub: 'Personas',    Icon: Users },
     { n: 4, label: 'Plan',       sub: 'Cobertura ideal',     Icon: ShieldCheck },
-    { n: 5, label: 'Pago',       sub: 'Checkout final',      Icon: CreditCard },
+    // Tarjeta ya pagada en caja: sin paso Pago.
+    ...(sinPasoPago ? [] : [{ n: 5, label: 'Pago',       sub: 'Checkout final',      Icon: CreditCard }]),
   ];
 
   const name = [tomador.nombre, tomador.apellido].filter(Boolean).join(' ');

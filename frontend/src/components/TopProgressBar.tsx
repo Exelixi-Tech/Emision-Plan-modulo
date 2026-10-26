@@ -3,17 +3,22 @@ import { useWizardStore } from '../store/wizardStore';
 import { getProductConfig } from '../lib/product';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { publicAsset } from '../lib/app-base';
+import { tarjetaYaPagada } from '../lib/rcv-tarjeta-flow';
 
 export function TopProgressBar() {
   const step = useWizardStore((s) => s.step);
+  const metadataCanal = useWizardStore((s) => s.metadataCanal);
+  // Tarjeta ya pagada en caja: sin paso Pago.
+  const sinPasoPago = tarjetaYaPagada(metadataCanal);
   const product = getProductConfig();
   const exelixiFlow = Boolean(product.exelixiCatalog);
   const cotizadorRcv = isCotizadorFlow() && product.id === 'rcv';
-  const stepNumbers = cotizadorRcv
+  const stepNumbersBase = cotizadorRcv
     ? [3, 4]
     : exelixiFlow
     ? [1, 2, ...(product.hasVehicle ? [3] : []), 4, 5]
     : [1, 2, 3, 4, 5];
+  const stepNumbers = sinPasoPago ? stepNumbersBase.filter((n) => n !== 5) : stepNumbersBase;
   const TOTAL_STEPS = stepNumbers.length;
   const safeStep = Math.max(
     1,
