@@ -467,6 +467,8 @@ export interface QuotePolicyResponse {
   mprimaext: number;
   ptasa: number;
   coberturas?: PolicyCoverageLine[];
+  /** Prima anual USD de Daños a personas y a cosas (completa en la cuota inicial si no es anual). */
+  primaCuotaInicial?: number;
   metadata?: Record<string, unknown>;
 }
 
