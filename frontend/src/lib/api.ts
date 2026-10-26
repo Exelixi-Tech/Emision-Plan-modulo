@@ -5,6 +5,7 @@ import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
+import { normalizeRcvPlanesQuery } from './rcv-planes-query';
 import {
   composeGestorCsubitem,
   normalizeCentidad,
@@ -798,6 +799,7 @@ export const catalogoApi = {
       qs.set('citem', String(cproductor).trim());
     }
     const hasEntity = appendCanalEntityQuery(qs);
+    normalizeRcvPlanesQuery(qs, iplaca);
     if (shouldUseBridgeRules() || hasEntity) qs.set('bridge', '1');
     const query = qs.toString();
     return api.get<{
