@@ -405,9 +405,28 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
         .join(',')}`
     : '';
 
+  // Edad fuera del rango del plan detectada en el front (antes de cotizar): se excluía al
+  // asegurado, no se cotizaba y al continuar salía "Cotización pendiente" en vez del motivo real.
+  const edadFueraDeRango = Boolean(planCode) && aseguradosConTitular.some((a, idx) => {
+    const idOk = (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim();
+    if (!idOk) return false;
+    if (idx > 0 && !(a.parentesco || '').toString().trim()) return false;
+    return Boolean(ageErrorForParentesco(a.fechaNac, idx === 0 ? '1' : a.parentesco, planParentescos));
+  });
+
+  useEffect(() => {
+    if (!edadFueraDeRango) return;
+    const snap = useWizardStore.getState();
+    if (snap.quoteState === 'error' && snap.quoteError === AGE_OUT_OF_RANGE_MESSAGE) return;
+    snap.clearQuote();
+    snap.setQuoteState('error', AGE_OUT_OF_RANGE_MESSAGE);
+    toast.warning(AGE_OUT_OF_RANGE_TITLE, AGE_OUT_OF_RANGE_MESSAGE, 9000);
+  }, [edadFueraDeRango, planCode]);
+
   const activeSigRef = useRef('');
 
   useEffect(() => {
+    if (edadFueraDeRango) return;
     if (!quoteSig || !planCode || aseguradosListos.length === 0) return;
 
     const snap = useWizardStore.getState();
@@ -461,7 +480,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
         toast.warning(ageIssue ? AGE_OUT_OF_RANGE_TITLE : 'Cotización no disponible', message, 9000);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteSig]);
+  }, [quoteSig, edadFueraDeRango]);
 
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote = quoteState === 'ready' && Boolean(quote);
