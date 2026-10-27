@@ -511,6 +511,7 @@ router.post('/emision', async (req, res) => {
       state,
       emission: emitted,
       empresaNombre: req.empresa?.nombre,
+      empresaId: req.empresa?.id,
       authToken: req.nexusToken,
     });
 

@@ -80,6 +80,7 @@ function filesFromDocuments(documents) {
  *   state: object,
  *   emission: object,
  *   empresaNombre?: string,
+ *   empresaId?: number|string,
  *   authToken?: string,
  * }} args
  */
@@ -108,6 +109,8 @@ async function archiveExpedienteAfterEmit(args) {
       `${ocrBase}/api/documents/commit-expediente`,
       {
         empresaNombre,
+        // Sin nombre en el token, OCR guardó en empresa-<id>: mismo criterio al archivar.
+        empresaId: args.empresaId,
         cedula,
         nomenclatura,
         cnrecibo: args.emission?.cnrecibo,
