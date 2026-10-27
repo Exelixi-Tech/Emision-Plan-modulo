@@ -255,6 +255,7 @@ router.post('/policies/emit', async (req, res) => {
       state: mergedState,
       emission: result,
       empresaNombre: req.empresa?.nombre,
+      empresaId: req.empresa?.id,
       authToken: req.nexusToken,
     });
     // Tarjeta: activar en La Mundial con xfoto_factura = URL final de la factura del expediente.
