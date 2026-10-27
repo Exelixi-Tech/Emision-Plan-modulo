@@ -2,10 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
-  Loader2, AlertTriangle, Building2, CalendarClock
+  Loader2, AlertTriangle, Building2, CalendarClock, UserCheck,
 } from 'lucide-react';
 import type { Plan } from '../../types';
-import { patrimonialApi, resolveSsoCramo, type PlanRcv, getFrecuenciasByPlan, type CatalogItem } from '../../lib/api';
+import {
+  patrimonialApi,
+  resolveSsoCramo,
+  type PlanRcv,
+  getFrecuenciasByPlan,
+  getBrokers,
+  type CatalogItem,
+} from '../../lib/api';
+import { SearchSelect } from '../../components/ui/SearchSelect';
+import {
+  getEffectiveSsoMetadata,
+  shouldShowProductorSelector,
+  isProductorRole,
+} from '../../lib/productor-selector';
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
@@ -36,12 +49,71 @@ function apiPlanToWizardPlan(p: PlanRcv): Plan {
 export function PatrimonialPlansStep() {
   const {
     patrimoniales, selectedPlan, setSelectedPlan, setCategory,
-    quote, quoteState, quoteError, rcv, setRcv,
+    quote, quoteState, quoteError, rcv, setRcv, metadataCanal,
   } = useWizardStore();
 
   const product = getProductConfig();
   /** Ramo del SSO; el del producto solo cubre el canal que no lo declara. */
   const ssoCramo = resolveSsoCramo() ?? product.cramo;
+
+  // Detección de rol y sesión de Backoffice Sis2000
+  const effectiveMeta = {
+    ...getEffectiveSsoMetadata(),
+    ...(metadataCanal || {}),
+  };
+  const showProductorSelector = shouldShowProductorSelector(effectiveMeta);
+  const isUserProductor = isProductorRole(effectiveMeta);
+
+  const [brokers, setBrokers] = useState<CatalogItem[]>([]);
+  const [brokersLoading, setBrokersLoading] = useState(false);
+
+  const initialProductorId = () => {
+    if (isUserProductor) {
+      return String(effectiveMeta.cproductor ?? effectiveMeta.citem ?? '').trim();
+    }
+    const current = rcv.cproductor ?? effectiveMeta.cproductor;
+    if (current && String(current).trim() !== '80080') {
+      return String(current).trim();
+    }
+    return '';
+  };
+  const [selectedProductorId, setSelectedProductorId] = useState<string>(initialProductorId);
+
+  useEffect(() => {
+    if (!showProductorSelector) return;
+    let cancelled = false;
+    setBrokersLoading(true);
+    getBrokers()
+      .then((items) => {
+        if (!cancelled) setBrokers(items);
+      })
+      .catch((err) => {
+        console.error('Error cargando productores:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setBrokersLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [showProductorSelector]);
+
+  const handleSelectProductor = (val: string, lbl: string) => {
+    setSelectedProductorId(val);
+    const store = useWizardStore.getState();
+    store.setMetadataCanal({
+      ...(store.metadataCanal || {}),
+      cproductor: val,
+      centidad: 'P',
+      citem: val,
+      xproductor: lbl,
+      /** El servidor emite con este productor (no con el del token) si el rol es técnico. */
+      productorSeleccionado: true,
+    });
+    setRcv({
+      cproductor: val,
+      xproductor: lbl,
+    });
+    setSelectedPlan(null);
+  };
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -54,6 +126,13 @@ export function PatrimonialPlansStep() {
 
   // ── Carga de planes patrimoniales del ramo del SSO ──────────────────────────
   useEffect(() => {
+    if (showProductorSelector && !selectedProductorId) {
+      setApiPlans([]);
+      setPlansLoading(false);
+      setSelectedPlan(null);
+      return;
+    }
+
     let cancelled = false;
     setPlansLoading(true);
     setPlansError(false);
@@ -76,7 +155,7 @@ export function PatrimonialPlansStep() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ssoCramo]);
+  }, [ssoCramo, showProductorSelector, selectedProductorId]);
 
   const activeCramo = selectedPlan?.cramo ?? ssoCramo;
 
@@ -111,7 +190,7 @@ export function PatrimonialPlansStep() {
   // ── Cotización contra quote-generalRisks ────────────────────────────────────
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
-    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}`
+    ? `patrimonial|${planCode}|${activeFrecuencia}|${activeCramo}|${selectedProductorId || ''}`
     : '';
 
   const activeSigRef = useRef('');
@@ -125,12 +204,16 @@ export function PatrimonialPlansStep() {
     activeSigRef.current = quoteSig;
     snap.setQuoteState('loading');
 
+    const effectiveProd = selectedProductorId || undefined;
     patrimonialApi.cotizar({
       cplan: planCode,
       cramo: activeCramo,
       ifrecuencia: activeFrecuencia,
       pdescuento: 0,
       precargo: 0,
+      cproductor: effectiveProd,
+      centidad: effectiveProd ? 'P' : undefined,
+      citem: effectiveProd,
     })
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;
@@ -178,6 +261,41 @@ export function PatrimonialPlansStep() {
         )}
       </div>
 
+      {/* Selector de Productor (Backoffice Sis2000 - solo para roles no-productor) */}
+      {showProductorSelector && (
+        <div className="rounded-2xl border-2 border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-white to-violet-50/40 p-4 sm:p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <label className="text-[0.68rem] font-black text-indigo-950 uppercase tracking-widest inline-flex items-center gap-1.5">
+              <UserCheck size={14} className="text-indigo-600" />
+              Productor asociado a la póliza *
+            </label>
+            {selectedProductorId && (
+              <span className="text-[0.65rem] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                Cód: {selectedProductorId}
+              </span>
+            )}
+          </div>
+          <SearchSelect
+            options={brokers.map((b) => ({ value: String(b.code), label: `${b.code} - ${b.label}` }))}
+            value={selectedProductorId || undefined}
+            onChange={(val, lbl) => handleSelectProductor(val, lbl)}
+            placeholder="Seleccione el productor..."
+            loading={brokersLoading}
+            disabled={brokersLoading}
+            noOptionsText="No se encontraron productores"
+          />
+          {!selectedProductorId ? (
+            <p className="text-[0.72rem] font-semibold text-amber-700 mt-2">
+              Selecciona el productor para consultar y calcular los planes autorizados para la emisión.
+            </p>
+          ) : (
+            <p className="text-[0.72rem] font-medium text-slate-500 mt-1.5">
+              La póliza emitida quedará asociada a este productor en Sis2000.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Selectores */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Selector de plan */}
@@ -205,6 +323,8 @@ export function PatrimonialPlansStep() {
             >
               {plansLoading ? (
                 <option value="">Cargando planes...</option>
+              ) : showProductorSelector && !selectedProductorId ? (
+                <option value="">Selecciona un productor primero</option>
               ) : plansError ? (
                 <option value="">Error al cargar planes</option>
               ) : apiPlans.length === 0 ? (
@@ -359,7 +479,11 @@ export function PatrimonialPlansStep() {
             <Shield size={22} className="text-slate-500" />
           </div>
           <p className="text-sm text-slate-500 font-medium">
-            {plansLoading ? 'Cargando planes disponibles...' : 'Elige un plan en el selector para ver la cotización.'}
+            {plansLoading
+              ? 'Cargando planes disponibles...'
+              : showProductorSelector && !selectedProductorId
+                ? 'Selecciona un productor para ver los planes disponibles.'
+                : 'Elige un plan en el selector para ver la cotización.'}
           </p>
         </div>
       )}

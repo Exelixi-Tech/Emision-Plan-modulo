@@ -15,25 +15,74 @@ const { recordFuneralEmissionFlexible } = require('../services/nexusFuneralSubmi
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 
 const { resolveEntityContext } = require('../services/canalClient');
+const { puedeElegirProductor, withNexusMetadata } = require('../lib/nexusMetadata');
 
 const router = express.Router();
 const DEFAULT_RAMO = patrimonialClient.DEFAULT_RAMO || 28;
 
 function patrimonialCanalMeta(req) {
-  const meta = { ...(req.nexusMetadata || {}) };
   const q = req.query || {};
-  const keys = [
-    'centidad', 'citem', 'cgestor', 'cgestor_in', 'cproducto', 'cproductor',
+  const b = req.body || {};
+  const stateMeta = b.metadataCanal || b.state?.metadataCanal || {};
+  const hasVerifiedAuth = Boolean(
+    req.nexusMetadata && typeof req.nexusMetadata === 'object' && Object.keys(req.nexusMetadata).length > 0
+  );
+
+  const meta = { ...(req.nexusMetadata || {}) };
+
+  // Contexto general (no sensible de actor)
+  const generalKeys = [
+    'cgestor', 'cgestor_in', 'cproducto',
     'cusuario', 'ccanalalt', 'ccanalalt_in', 'cscanalalt', 'cscanalalt_in',
   ];
-  for (const key of keys) {
+  for (const key of generalKeys) {
     if (q[key] != null && String(q[key]).trim() !== '') {
       meta[key] = String(q[key]).trim();
     }
   }
-  // El ramo del JWT SSO manda; la query solo cubre el caso sin metadata.
+
+  // Si viene selección de productor en body o en state.metadataCanal
+  // GET /planes no tiene body: el frontend envia la seleccion por query (appendSsoCanalQuery).
+  const rawProductor = b.cproductor ?? stateMeta.cproductor ?? q.cproductor;
+  const isSelected = Boolean(
+    stateMeta.productorSeleccionado === true
+    || (b.cproductor != null && String(b.cproductor).trim() !== '')
+    || (q.cproductor != null && String(q.cproductor).trim() !== '')
+  );
+
+  const canChoose = puedeElegirProductor(req.nexusMetadata || {});
+
+  if (canChoose && isSelected && rawProductor != null && String(rawProductor).trim() !== '') {
+    const prod = String(rawProductor).trim();
+    // No enumerable: no viaja al spread de meta hacia los clientes de Nest.
+    Object.defineProperty(meta, 'seleccionAplicada', { value: true, enumerable: false });
+    meta.cproductor = prod;
+    meta.centidad = String(b.centidad ?? stateMeta.centidad ?? q.centidad ?? 'P').trim();
+    meta.citem = String(b.citem ?? stateMeta.citem ?? q.citem ?? prod).trim();
+  } else if (!hasVerifiedAuth) {
+    // Modo standalone local / sin autenticación JWT: fallback a query / body
+    const prod = b.cproductor ?? stateMeta.cproductor ?? q.cproductor;
+    if (prod != null && String(prod).trim() !== '') meta.cproductor = String(prod).trim();
+    const ent = b.centidad ?? stateMeta.centidad ?? q.centidad;
+    if (ent != null && String(ent).trim() !== '') meta.centidad = String(ent).trim();
+    const item = b.citem ?? stateMeta.citem ?? q.citem;
+    if (item != null && String(item).trim() !== '') meta.citem = String(item).trim();
+  } else {
+    // Con JWT verificado y sin permiso de elección: cproductor, centidad y citem se blindan estrictamente con el JWT
+    if (req.nexusMetadata.cproductor) {
+      meta.cproductor = String(req.nexusMetadata.cproductor).trim();
+      meta.centidad = String(req.nexusMetadata.centidad || 'P').trim();
+      meta.citem = String(req.nexusMetadata.citem || req.nexusMetadata.cproductor).trim();
+    } else {
+      delete meta.cproductor;
+      delete meta.centidad;
+      delete meta.citem;
+    }
+  }
+
+  // El ramo del JWT SSO manda; la query/body solo cubre el caso sin metadata.
   if (meta.cramo == null || String(meta.cramo).trim() === '') {
-    const cramo = parseInt(String(q.cramo ?? ''), 10);
+    const cramo = parseInt(String(b.cramo ?? stateMeta.cramo ?? q.cramo ?? ''), 10);
     if (Number.isFinite(cramo)) meta.cramo = cramo;
   } else {
     meta.cramo = Number(meta.cramo);
@@ -67,17 +116,6 @@ function resolveSubmissionRefs(state) {
       || payload.sessionId
       || '',
     ).trim(),
-  };
-}
-
-function withNexusMetadata(state, nexusMetadata) {
-  if (!state || typeof state !== 'object') return state;
-  if (!nexusMetadata || typeof nexusMetadata !== 'object' || !Object.keys(nexusMetadata).length) {
-    return state;
-  }
-  return {
-    ...state,
-    metadataCanal: { ...(state.metadataCanal || {}), ...nexusMetadata },
   };
 }
 
@@ -115,8 +153,10 @@ async function handleQuote(req, res) {
     '',
   ).trim();
 
-  const ssoCramo = patrimonialCanalMeta(req).cramo;
-  const cramo = [body.cramo, body.state?.cramo, body.state?.metadataCanal?.cramo, ssoCramo, DEFAULT_RAMO]
+  const meta = patrimonialCanalMeta(req);
+  const entity = resolveEntityContext(meta);
+
+  const cramo = [body.cramo, body.state?.cramo, body.state?.metadataCanal?.cramo, meta.cramo, DEFAULT_RAMO]
     .map((v) => Number(v))
     .find((v) => Number.isFinite(v) && v > 0);
 
@@ -150,6 +190,13 @@ async function handleQuote(req, res) {
     });
   }
 
+  const cproductor = meta.cproductor;
+  const centidad = entity?.centidad || meta.centidad || (cproductor ? 'P' : undefined);
+  const citem = entity?.citem || meta.citem || (cproductor ? String(cproductor) : undefined);
+  // El canal solo se envia a la cotizacion si hubo un productor elegido y autorizado; sin
+  // seleccion, el payload queda igual que antes (no depende de que Nest acepte estos campos).
+  const canalCotizacion = meta.seleccionAplicada ? { cproductor, centidad, citem } : {};
+
   try {
     const quote = await patrimonialClient.quoteGeneralRisks({
       cramo,
@@ -159,6 +206,7 @@ async function handleQuote(req, res) {
       ifrecuencia,
       pdescuento,
       precargo,
+      ...canalCotizacion,
     });
 
     return res.json({
@@ -176,6 +224,9 @@ async function handleQuote(req, res) {
         cramo,
         cplan,
         ifrecuencia,
+        cproductor,
+        centidad,
+        citem,
       },
     });
   } catch (err) {
@@ -262,6 +313,15 @@ async function handleEmit(req, res) {
     : (state.ptasamon != null ? Number(state.ptasamon) : undefined);
   const cuotas = state.cuotas != null ? Number(state.cuotas) : 1;
 
+  const metaCanal = state.metadataCanal || {};
+  const seleccionAplicada = puedeElegirProductor(req.nexusMetadata || {})
+    && (rawState?.metadataCanal?.productorSeleccionado === true || rawState?.metadataCanal?.productorSeleccionado === 'true');
+  const entity = resolveEntityContext(metaCanal);
+  const cproductor = metaCanal.cproductor;
+  const centidad = entity?.centidad || metaCanal.centidad || (cproductor ? 'P' : undefined);
+  const citem = entity?.citem || metaCanal.citem || (cproductor ? String(cproductor) : undefined);
+  const canalCotizacion = seleccionAplicada ? { cproductor, centidad, citem } : {};
+
   try {
     // 1. Cotiza para autorizar prima y tasa
     const cotizacion = await patrimonialClient.quoteGeneralRisks({
@@ -272,6 +332,7 @@ async function handleEmit(req, res) {
       ifrecuencia,
       pdescuento: 0,
       precargo: 0,
+      ...canalCotizacion,
     });
 
     // 2. Construye el payload generalRisks
@@ -379,3 +440,5 @@ router.post('/generalRisks', handleEmit);
 module.exports = router;
 module.exports.handleEmit = handleEmit;
 module.exports.handleQuote = handleQuote;
+// Expuesto solo para pruebas.
+module.exports.patrimonialCanalMeta = patrimonialCanalMeta;
