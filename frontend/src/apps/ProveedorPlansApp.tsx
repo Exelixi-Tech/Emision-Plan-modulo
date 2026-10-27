@@ -26,14 +26,9 @@ export default function ProveedorPlansApp() {
       return;
     }
 
-    if (!cproveedor) {
-      toast.warning('Proveedor requerido', 'Por favor selecciona un proveedor de servicio.');
-      return;
-    }
-
     toast.success(
-      '¡Plan y Proveedor listos!',
-      `Plan: ${selectedPlan.name} · Proveedor: ${xproveedor || cproveedor} (cproveedor: ${cproveedor})`,
+      '¡Plan listo!',
+      `Plan: ${selectedPlan.name} · Los proveedores de servicio se asignan automáticamente según el plan.`,
       6000,
     );
 
@@ -59,7 +54,7 @@ export default function ProveedorPlansApp() {
       <EmissionPlanShell
         eyebrow="Paso 04 · Plan y Proveedor"
         title="Planes con Proveedor de Servicio"
-        subtitle="Selecciona el plan que mejor se adapte a tus necesidades y elige tu proveedor de salud o asistencia."
+        subtitle="Selecciona el plan que mejor se adapte a tus necesidades. Los proveedores de servicio se asignan según el plan."
         helpSubject="Suscripción Proveedor - Soporte"
         onContinuar={handleContinuar}
         continuarLabel="Confirmar y Continuar"
@@ -75,14 +70,14 @@ export default function ProveedorPlansApp() {
               <div className="flex-1 min-w-0">
                 <h4 className="font-bold text-base text-emerald-900 flex items-center gap-2">
                   <ShieldCheck size={18} className="text-emerald-600" />
-                  Plan y Proveedor Seleccionados
+                  Plan Seleccionado
                 </h4>
                 <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
                   Resumen de la selección para continuar con el flujo:
                 </p>
                 <div className="mt-3 p-3 bg-white/80 rounded-xl border border-emerald-200/80 font-mono text-xs text-slate-800 space-y-1">
                   <div><strong>cplan:</strong> <span className="text-indigo-600 font-bold">"{selectedPlan?.cplan}"</span> ({selectedPlan?.name})</div>
-                  <div><strong>cproveedor:</strong> <span className="text-emerald-700 font-bold">"{String(cproveedor)}"</span> ({xproveedor || 'Proveedor'})</div>
+                  <div><strong>proveedores:</strong> <span className="text-emerald-700 font-bold">asignación automática según el plan</span>{cproveedor ? ` (${xproveedor || String(cproveedor)})` : ''}</div>
                   <div><strong>frecuencia:</strong> <span className="text-violet-600 font-bold">"{funeral.frecuencia}"</span></div>
                 </div>
                 <div className="mt-4 flex gap-2">

@@ -11,7 +11,6 @@ import {
 import { formatQuoteUsdMoney, formatQuoteVesLabel, formatQuoteVesPaymentInput, formatQuoteTasa } from '../../lib/money';
 import { resolveFrecuenciaAmounts, resolveWizardFrecuenciaCode, resolveRcvQuoteBasis } from '../../lib/frecuencia';
 import { getProductConfig } from '../../lib/product';
-import { toast } from '../../store/toastStore';
 import {
   verifyMobilePayment,
   MobilePaymentVerifyError,
@@ -20,8 +19,6 @@ import {
   sypagoConfirmOtp,
   type SypagoOtpConfirmResponse,
   SypagoError,
-  registerPolicyProveedor,
-  type RegisterPolicyProveedorDto,
 } from '../../lib/api';
 
 // ── Lista completa de 26 bancos venezolanos (fuente: sudeban / notilogia 2026)
@@ -93,8 +90,6 @@ export function PaymentStep() {
 
   // ── Registro de Proveedor en Póliza (Combinado Familiar / adproveedor) ────
   // Panel de registro oculto: se conservan los setters (registro automático al pagar).
-  const [, setProviderRegStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [, setProviderRegError] = useState<string>('');
 
   // ── SyPago Débito OTP ─────────────────────────────────────────────────
   const [otpDocType, setOtpDocType] = useState('V');
@@ -116,80 +111,7 @@ export function PaymentStep() {
   // a diferencia de setState que necesita un ciclo para propagarse.
   const confirmInFlight = useRef(false);
 
-  function hasProveedorSelection(snap: ReturnType<typeof useWizardStore.getState>): boolean {
-    return Boolean(snap.selectedProveedor?.cci_rif || snap.cproveedor);
-  }
-
-  async function handleRegisterProveedorPolicy(overridePoliza?: number | string) {
-    const snap = useWizardStore.getState();
-    const poliza = overridePoliza || snap.policy?.cnpoliza;
-    const now = new Date();
-    const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-
-    // Sin valores de relleno: si falta un dato no se escribe en Sis2000 (adproveedor).
-    const cciRifClean = Number(String(snap.selectedProveedor?.cci_rif ?? snap.cproveedor ?? '').replace(/\D/g, ''));
-    const claveNum = Number(snap.selectedProveedor?.cclave_num ?? snap.cclave_num);
-    const tipoServ = String(snap.selectedProveedor?.itiposerv ?? snap.itiposerv ?? '').trim();
-    const plan = String(snap.selectedProveedor?.cplan ?? snap.cplan_proveedor ?? snap.selectedPlan?.cplan ?? '').trim();
-    const ramo = Number(snap.selectedProveedor?.cramo ?? snap.cramo_proveedor ?? product.cramo);
-    const usuario = Number(snap.metadataCanal?.cusuario);
-    const mcosto = Number(quote?.mprima);
-    const mcostoext = Number(quote?.mprimaext ?? snap.selectedPlan?.priceNum);
-    const ptasamon = Number(quote?.ptasa);
-
-    const faltantes = ([
-      ['póliza', Boolean(poliza)],
-      ['RIF del proveedor', cciRifClean > 0],
-      // ['clave del proveedor', claveNum > 0],
-      // ['tipo de servicio', Boolean(tipoServ)],
-      ['plan', Boolean(plan)],
-      ['ramo', ramo > 0],
-      ['usuario (cusuario)', usuario > 0],
-      ['prima', mcosto > 0 && mcostoext > 0],
-      ['tasa', ptasamon > 0],
-    ] as const).filter(([, ok]) => !ok).map(([label]) => label);
-    if (!poliza || faltantes.length > 0) {
-      const msg = `Faltan datos para registrar el proveedor: ${faltantes.join(', ')}.`;
-      setProviderRegError(msg);
-      setProviderRegStatus('error');
-      toast.error('Error en registro de proveedor', msg);
-      throw new Error(msg);
-    }
-
-    const payload: RegisterPolicyProveedorDto = {
-      cpoliza: poliza,
-      fanopol: now.getFullYear(),
-      fmespol: now.getMonth() + 1,
-      cramo: ramo,
-      ccerti: 1, // Certificado inicial
-      cplan: plan,
-      u_version: 'A', // Versión activa inicial en Sis2000
-      fdesde: now.toISOString().split('T')[0],
-      fhasta: nextYear.toISOString().split('T')[0],
-      cci_rif: cciRifClean,
-      cclave_num: claveNum,
-      itiposerv: tipoServ,
-      mcosto,
-      mcostoext,
-      cmoneda: 'D', // Moneda USD
-      ptasamon,
-      fingreso: now.toISOString(),
-      cusuario: usuario,
-    };
-
-    try {
-      const res = await registerPolicyProveedor(payload);
-      toast.success(
-        'Proveedor registrado en póliza',
-        `Póliza: ${poliza} · Proveedor: ${snap.selectedProveedor?.xcliente || snap.xproveedor || cciRifClean} · Ramo: ${ramo}`,
-      );
-      return res;
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Error al registrar proveedor en póliza';
-      toast.error('Error en registro de proveedor', msg);
-      throw err;
-    }
-  }
+  // Proveedores: los registra en ADPROVEEDOR el SP de emisión según el plan (criterio DBA 27-oct-2026).
 
   // Resetear estados al cambiar método de pago
   useEffect(() => {
@@ -276,9 +198,6 @@ export function PaymentStep() {
       setVerifyResult(result);
       setVerifyStatus(result.isVerified ? 'success' : 'failed');
 
-      if (result.isVerified && hasProveedorSelection(useWizardStore.getState())) {
-        void handleRegisterProveedorPolicy();
-      }
     } catch (err) {
       const msg = err instanceof MobilePaymentVerifyError
         ? err.message
@@ -366,9 +285,6 @@ export function PaymentStep() {
       setOtpResult(result);
       setOtpStep('done');
 
-      if (hasProveedorSelection(useWizardStore.getState())) {
-        void handleRegisterProveedorPolicy();
-      }
       // Latch queda activo en 'done' — no se puede volver a confirmar
     } catch (err) {
       setOtpError(err instanceof SypagoError ? err.message : 'Error al confirmar pago.');

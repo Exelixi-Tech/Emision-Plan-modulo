@@ -49,8 +49,6 @@ export function ProveedorStep() {
     quoteState,
     quoteError,
     cproveedor,
-    xproveedor,
-    selectedProveedor,
     setCproveedor,
     setSelectedProveedor,
     metadataCanal,
@@ -272,10 +270,10 @@ export function ProveedorStep() {
         <div>
           <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
             <Building2 className="w-5 h-5 text-indigo-600" />
-            Selección de Plan y Proveedor
+            Selección de Plan
           </h2>
           <p className="text-slate-500 text-sm leading-relaxed max-w-md mt-0.5">
-            Selecciona el plan y el proveedor de servicio de tu preferencia para tu póliza.
+            Selecciona el plan. Los proveedores de servicio se asignan automáticamente según el plan.
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-700">
@@ -375,72 +373,38 @@ export function ProveedorStep() {
         </div>
       </div>
 
-      {/* Selector Desplegable de Proveedor de Servicio (Aparece al seleccionar plan) */}
+      {/* Proveedores del plan: solo informativo. Se registran todos al emitir (SP, criterio DBA 27-oct-2026). */}
       {selectedPlan && (
         <div className="animate-spring-in rounded-2xl border-2 border-indigo-200/80 bg-gradient-to-r from-indigo-50/70 via-white to-violet-50/50 p-4.5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-            <label className="text-[0.68rem] font-black text-indigo-900 uppercase tracking-wider inline-flex items-center gap-1.5">
+            <p className="text-[0.68rem] font-black text-indigo-900 uppercase tracking-wider inline-flex items-center gap-1.5">
               <Building2 size={13} className="text-indigo-600" />
-              Proveedor de Servicio
-            </label>
-            {cproveedor && (
-              <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
-                <CheckCircle2 size={11} className="text-emerald-500" />
-                RIF: {String(cproveedor)}
-              </span>
-            )}
+              Proveedores de servicio del plan
+            </p>
+            <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
+              <CheckCircle2 size={11} className="text-emerald-500" />
+              Asignación automática
+            </span>
           </div>
-
-          <div className="relative group">
-            <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${cproveedor
-                ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_4px_14px_rgba(79,70,229,0.3)]'
-                : 'bg-slate-100 text-slate-500'
-              }`}>
-              {loadingProveedores ? (
-                <Loader2 size={14} className="animate-spin text-indigo-600" />
-              ) : (
-                <Building2 size={15} strokeWidth={2.5} />
-              )}
-            </div>
-
-            <select
-              value={cproveedor ? String(cproveedor) : ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                const found = proveedores.find((p) => String(p.cci_rif) === val);
-                if (found) {
-                  setSelectedProveedor(found);
-                  toast.success(
-                    'Proveedor seleccionado',
-                    `${found.xproveedor || found.xcliente} (RIF: ${found.cci_rif} · Clave: ${found.cclave_num ?? 'N/A'})`,
-                  );
-                } else {
-                  setSelectedProveedor(null);
-                }
-              }}
-              disabled={loadingProveedores || proveedores.length === 0}
-              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-indigo-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-400 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
-            >
-              {loadingProveedores ? (
-                <option value="">Consultando valrep/proveedores...</option>
-              ) : proveedoresError ? (
-                <option value="">Error al cargar proveedores de servicio</option>
-              ) : proveedores.length === 0 ? (
-                <option value="">Sin proveedores disponibles</option>
-              ) : (
-                <>
-                  <option value="" disabled>— Selecciona un Proveedor de Servicio —</option>
-                  {proveedores.map((p) => (
-                    <option key={String(p.cci_rif)} value={String(p.cci_rif)}>
-                      {p.xcliente || p.xproveedor} — (RIF: {p.cci_rif}{p.cclave_num != null ? ` · Clave: ${p.cclave_num}` : ''}{p.itiposerv ? ` · Tipo: ${p.itiposerv}` : ''})
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-          </div>
-
+          {loadingProveedores ? (
+            <p className="text-sm text-slate-500 inline-flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin text-indigo-600" />
+              Consultando proveedores del plan...
+            </p>
+          ) : proveedoresError ? (
+            <p className="text-sm text-rose-700">No se pudieron consultar los proveedores del plan.</p>
+          ) : proveedores.length === 0 ? (
+            <p className="text-sm text-slate-500">Este plan no tiene proveedores de servicio configurados.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {proveedores.map((p) => (
+                <li key={`${p.cci_rif}-${p.cclave_num ?? ''}`} className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <Building2 size={14} className="text-indigo-500 shrink-0" />
+                  {p.xcliente || p.xproveedor}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -555,11 +519,11 @@ export function ProveedorStep() {
             <div className="mt-5 pt-4 border-t border-indigo-100/80 flex items-center justify-between gap-2 flex-wrap">
               <div className="inline-flex items-center gap-1.5 text-[0.7rem] font-bold text-indigo-600">
                 <ShieldCheck size={11} />
-                Plan y Proveedor seleccionados
+                Plan seleccionado
               </div>
-              {cproveedor && (
+              {proveedores.length > 0 && (
                 <div className="text-[0.7rem] font-semibold text-slate-600">
-                  Proveedor asignado: <strong className="text-indigo-700">{selectedProveedor?.xcliente || xproveedor || currentProveedorObj?.xproveedor}</strong>
+                  Proveedores del plan: <strong className="text-indigo-700">{proveedores.map((p) => p.xcliente || p.xproveedor).join(', ')}</strong>
                 </div>
               )}
             </div>
@@ -571,7 +535,7 @@ export function ProveedorStep() {
             <Building2 size={22} className="text-slate-400" />
           </div>
           <p className="text-sm text-slate-500 font-medium">
-            {plansLoading ? 'Cargando planes disponibles...' : 'Elige un plan en el selector para habilitar el proveedor de servicio y cotización.'}
+            {plansLoading ? 'Cargando planes disponibles...' : 'Elige un plan en el selector para ver sus proveedores de servicio y la cotización.'}
           </p>
         </div>
       )}
