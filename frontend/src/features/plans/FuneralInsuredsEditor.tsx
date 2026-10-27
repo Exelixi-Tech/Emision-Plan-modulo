@@ -281,10 +281,13 @@ export function FuneralInsuredsEditor({
   parentescos,
   nmax_dep,
   maxAsegurados,
+  soloTitular = false,
 }: {
   parentescos?: PlanParentesco[] | null;
   nmax_dep?: number | null;
   maxAsegurados?: number | null;
+  /** Tarjeta: la póliza cubre solo al titular, no se agregan dependientes. */
+  soloTitular?: boolean;
 }) {
   const funeral = useWizardStore((s) => s.funeral);
   const setFuneral = useWizardStore((s) => s.setFuneral);
@@ -307,7 +310,7 @@ export function FuneralInsuredsEditor({
     asegurado.fechaNac,
   ]);
   const max = maxAseguradosDelPlan({ maxAsegurados, nmax_dep, parentescos });
-  const titularOnly = max === 1 || isTitularOnlyPlan(parentescos);
+  const titularOnly = soloTitular || max === 1 || isTitularOnlyPlan(parentescos);
   const extras = additionalParentescos(parentescos);
   const atLimit = max != null && funeral.asegurados.length >= max;
   const canAdd = extras.length > 0 && !titularOnly && !atLimit;
@@ -348,8 +351,10 @@ export function FuneralInsuredsEditor({
             Asegurados
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            El titular viene del formulario. Agrega aquí los asegurados adicionales con los mismos datos.
-            {nmax_dep != null && Number.isFinite(Number(nmax_dep))
+            {soloTitular
+              ? 'El titular viene del formulario. Con la tarjeta la póliza cubre solo al titular.'
+              : 'El titular viene del formulario. Agrega aquí los asegurados adicionales con los mismos datos.'}
+            {soloTitular ? '' : nmax_dep != null && Number.isFinite(Number(nmax_dep))
               ? ` Este plan admite hasta ${Number(nmax_dep)} dependiente${Number(nmax_dep) === 1 ? '' : 's'}.`
               : !parentescos?.length
                 ? ' Elige un plan para revisar parentescos.'

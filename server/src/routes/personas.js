@@ -435,6 +435,19 @@ router.post('/emision', async (req, res) => {
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe registrar al menos un asegurado.' });
   }
+  // Tarjeta de personas: el plan es el de la tarjeta, pago anual y solo el titular (sin dependientes).
+  if (isTarjetaFlow(state)) {
+    const planTarjeta = String(state?.metadataCanal?.cplan ?? '').trim();
+    let rechazo = null;
+    if (planTarjeta && String(cplan).trim() !== planTarjeta) {
+      rechazo = { code: 'TARJETA_PLAN', message: `La tarjeta corresponde al plan ${planTarjeta}; no se puede emitir con otro plan.` };
+    } else if (ifrecuencia !== 'A') {
+      rechazo = { code: 'TARJETA_FRECUENCIA', message: 'Con la tarjeta la póliza se emite con pago anual.' };
+    } else if (asegurados.length > 1) {
+      rechazo = { code: 'TARJETA_SOLO_TITULAR', message: 'Con la tarjeta la póliza cubre solo al titular, sin dependientes.' };
+    }
+    if (rechazo) return res.status(422).json({ success: false, ...rechazo });
+  }
   const invalid = asegurados.find((a) => !a.xrif_asegurado || a.nedad_asegurado == null);
   if (invalid) {
     return res.status(400).json({

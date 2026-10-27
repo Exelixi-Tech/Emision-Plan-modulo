@@ -20,7 +20,7 @@ import { toast } from '../../store/toastStore';
 import { AGE_OUT_OF_RANGE_MESSAGE, AGE_OUT_OF_RANGE_TITLE, isAgeOutOfRangeError } from '../../lib/personas-age';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { resolveTitularSource, syncTitularFromTomador } from '../../lib/funeral-sync';
-import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
+import { frecuenciasPersonas, getCuotasByFrecuencia, normalizeFrecuenciaCode } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
 import { shouldUseTarjetaPublicApi } from '../../lib/rcv-tarjeta-flow';
 
@@ -256,6 +256,9 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
     product.label,
   );
   const isFunerarioLabel = productLabel === product.label;
+  // Tarjeta: el plan lo fija la tarjeta, se cobra anual y cubre solo al titular (sin dependientes).
+  // No se elige plan, frecuencia ni asegurados adicionales.
+  const tarjeta = shouldUseTarjetaPublicApi();
 
   const [apiPlans, setApiPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -330,7 +333,9 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
     getFrecuenciasByPlan(planCode, planCramo(selectedPlan, product.cramo))
       .then((items) => {
         if (cancelled) return;
-        const list = frecuenciasPersonas(items, FRECUENCIAS_PERSONAS_FALLBACK);
+        const all = frecuenciasPersonas(items, FRECUENCIAS_PERSONAS_FALLBACK);
+        const anual = all.filter((i) => normalizeFrecuenciaCode(String(i.code)) === 'A');
+        const list = tarjeta ? (anual.length ? anual : FRECUENCIAS_PERSONAS_FALLBACK) : all;
         setApiFrecuencias(list);
         const currentValid = list.find((i) => String(i.code) === funeral.frecuencia);
         if (!currentValid) {
@@ -348,7 +353,14 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
       });
 
     return () => { cancelled = true; };
-  }, [selectedPlan?.cplan, selectedPlan?.cramo, product.cramo, setFuneral, funeral.frecuencia]);
+  }, [selectedPlan?.cplan, selectedPlan?.cramo, product.cramo, setFuneral, funeral.frecuencia, tarjeta]);
+
+  // Tarjeta: solo el titular. Si quedaron dependientes de antes (volver atrás), se quitan.
+  useEffect(() => {
+    if (tarjeta && funeral.asegurados.length > 1) {
+      setFuneral({ asegurados: funeral.asegurados.slice(0, 1) });
+    }
+  }, [tarjeta, funeral.asegurados, setFuneral]);
 
   useEffect(() => {
     syncTitularFromTomador();
@@ -558,7 +570,9 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
     <div className="animate-fade-in space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
-          {viajeroPorDias
+          {tarjeta
+            ? 'Este es el plan de tu tarjeta. Cubre solo al titular, con pago anual.'
+            : viajeroPorDias
             ? `Indica las fechas de tu viaje (de ${VIAJE_MIN_DIAS} a ${VIAJE_MAX_DIAS} días): el plan y la prima se calculan según los días.`
             : isFunerarioLabel
               ? 'Selecciona el plan funerario que mejor se ajuste a tu grupo familiar.'
@@ -619,7 +633,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
             <Star size={11} className="text-violet-500" />
-            {isFunerarioLabel ? 'Plan funerario' : 'Plan'}
+            {tarjeta ? 'Plan de tu tarjeta' : isFunerarioLabel ? 'Plan funerario' : 'Plan'}
           </label>
           <div className="relative group">
             <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all ${
@@ -639,7 +653,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                   ?? null;
                 applySelectedPlan(found);
               }}
-              disabled={plansLoading || apiPlans.length === 0}
+              disabled={tarjeta || plansLoading || apiPlans.length === 0}
               className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
             >
               {plansLoading ? (
@@ -658,7 +672,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                       parentescos: p.parentescos,
                     });
                     const label = selectPlanDisplayName(p);
-                    const cupo = nmax == null
+                    const cupo = nmax == null || tarjeta
                       ? label
                       : nmax === 0
                         ? `${label} · sin dependientes`
@@ -721,7 +735,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
             <select
               value={funeral.frecuencia ?? ''}
               onChange={(e) => setFuneral({ frecuencia: e.target.value })}
-              disabled={frecLoading || apiFrecuencias.length === 0 || !selectedPlan}
+              disabled={tarjeta || frecLoading || apiFrecuencias.length === 0 || !selectedPlan}
               className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
             >
               {frecLoading ? (
@@ -753,6 +767,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
         parentescos={planParentescos}
         nmax_dep={selectedPlan?.nmax_dep}
         maxAsegurados={selectedPlan?.maxAsegurados}
+        soloTitular={tarjeta}
       />
 
       {/* Detalle del plan + prima */}
@@ -766,7 +781,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                   {selectedPlan.tag}
                 </span>
                 <h3 className="font-display font-black text-slate-900 text-xl sm:text-2xl leading-tight break-words">{selectedPlan.name}</h3>
-                {planNmaxDep != null && (
+                {planNmaxDep != null && !tarjeta && (
                   <p className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-[0.7rem] font-bold text-indigo-800">
                     <Users size={12} className="text-indigo-500 shrink-0" />
                     Hasta {planNmaxDep} dependiente{planNmaxDep === 1 ? '' : 's'}
