@@ -20,7 +20,7 @@ const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
-const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
+const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
@@ -550,7 +550,7 @@ router.post('/emision', async (req, res) => {
       }
     }
 
-    await archiveExpedienteAfterEmit({
+    const expediente = await archiveExpedienteAfterEmit({
       state,
       emission: emitted,
       empresaNombre: req.empresa?.nombre,
@@ -579,6 +579,8 @@ router.post('/emision', async (req, res) => {
             ?? (Number(String(validatePayload.rif_titular ?? '').replace(/\D/g, '')) || undefined),
         },
         emitMetadata,
+        // xfoto_factura = URL final de la factura archivada (la de pendiente/ ya no existe).
+        { xfotoFactura: pickFacturaLink(expediente) },
       );
     }
 
