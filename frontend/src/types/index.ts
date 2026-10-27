@@ -12,7 +12,9 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'vida' | 'ap' | 'ap79' | 'com-fam' | 'combinado_familiar' | 'proveedor';
+export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'combinado_familiar' | 'proveedor' | 'vida' | 'ap' | 'ap79';
+
+export type BienData = PatrimonialesData;
 
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 

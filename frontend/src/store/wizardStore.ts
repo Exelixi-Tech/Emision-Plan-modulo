@@ -164,7 +164,8 @@ const initialState: WizardState = {
   cramo_proveedor: undefined,
   cclave_num: undefined,
   itiposerv: undefined,
-  selectedProveedor: null,
+  // undefined (no null): no viaja por el bridge (JSON lo omite) en productos sin proveedor.
+  selectedProveedor: undefined,
   // 'mobile' (Pago Móvil vía Banco Activo) es el método activo por defecto.
   // 'transfer' está oculto en la UI por ahora; se mantendrá el tipo para compat.
   paymentMethod: 'mobile',
@@ -331,17 +332,17 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       cplan_proveedor: extra?.cplan ?? s.cplan_proveedor,
       cramo_proveedor: extra?.cramo ?? s.cramo_proveedor,
       cclave_num: extra?.cclave_num ?? s.cclave_num,
-      itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
+      itiposerv: extra?.itiposerv ?? s.itiposerv,
       selectedProveedor: cproveedor
         ? {
-            cci_rif: cproveedor,
-            xproveedor: xproveedor ?? '',
-            xcliente: xproveedor ?? '',
-            cplan: extra?.cplan ?? s.cplan_proveedor,
-            cramo: extra?.cramo ?? s.cramo_proveedor,
-            cclave_num: extra?.cclave_num ?? s.cclave_num,
-            itiposerv: extra?.itiposerv ?? s.itiposerv ?? 'S',
-          }
+          cci_rif: cproveedor,
+          xproveedor: xproveedor ?? '',
+          xcliente: xproveedor ?? '',
+          cplan: extra?.cplan ?? s.cplan_proveedor,
+          cramo: extra?.cramo ?? s.cramo_proveedor,
+          cclave_num: extra?.cclave_num ?? s.cclave_num,
+          itiposerv: extra?.itiposerv ?? s.itiposerv,
+        }
         : null,
     })),
 
@@ -353,7 +354,7 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       cplan_proveedor: proveedor?.cplan,
       cramo_proveedor: proveedor?.cramo,
       cclave_num: proveedor?.cclave_num,
-      itiposerv: proveedor?.itiposerv ?? 'S',
+      itiposerv: proveedor?.itiposerv,
     }),
 
   reset: () => set(initialState),

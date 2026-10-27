@@ -371,17 +371,29 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
  * @returns {object|null}
  */
 function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
-  const proveedor = state?.selectedProveedor || (state?.proveedor ? {
-    cci_rif: state.proveedor.cci_rif,
-    cclave_num: state.proveedor.cclave_num,
-    itiposerv: state.proveedor.itiposerv,
-    cplan: state.proveedor.cplan_proveedor,
-    cramo: state.proveedor.cramo_proveedor,
-  } : null);
+  const proveedor =
+    state?.selectedProveedor ||
+    (state?.proveedor
+      ? {
+          cci_rif: state.proveedor.cci_rif,
+          cclave_num: state.proveedor.cclave_num,
+          itiposerv: state.proveedor.itiposerv,
+          cplan: state.proveedor.cplan_proveedor,
+          cramo: state.proveedor.cramo_proveedor,
+        }
+      : state?.cproveedor
+        ? {
+            cci_rif: state.cproveedor,
+            cclave_num: state.cclave_num,
+            itiposerv: state.itiposerv,
+            cplan: state.cplan_proveedor,
+            cramo: state.cramo_proveedor,
+          }
+        : null);
 
   if (!proveedor) return null;
 
-  const poliza = overrides.poliza || emitted?.cpoliza || emitted?.number;
+  const poliza = overrides.poliza || emitted?.cnpoliza || emitted?.cpoliza || emitted?.number;
   if (!poliza) return null;
 
   const now = new Date();
@@ -399,9 +411,13 @@ function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
     cproducto: metadata.cproducto,
   }));
   const usuario = metadata.cusuario ? parseInt(metadata.cusuario, 10) : 0;
-  const mcosto = Number(state?.mprima ?? 0);
-  const mcostoext = Number(state?.mprimaext ?? state?.selectedPlan?.priceNum ?? 0);
-  const ptasamon = Number(state?.ptasa ?? 0);
+  // Montos de la cotizacion autoritativa de la emision (overrides.cotizacion); si no viene, la del
+  // state (quote), y por ultimo la raiz del state. Sin valores inventados: si falta, queda en 0 y
+  // faltantesRegistroProveedor() impide escribir en adproveedor.
+  const cot = overrides.cotizacion || state?.quote || state || {};
+  const mcosto = Number(cot.mprima ?? 0);
+  const mcostoext = Number(cot.mprimaext ?? 0);
+  const ptasamon = Number(cot.ptasa ?? 0);
 
   const fdesde = overrides.fdesde || todayYmd();
   const fhasta = overrides.fhasta || nextYear.toISOString().slice(0, 10);
@@ -429,11 +445,31 @@ function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
   };
 }
 
+/**
+ * Datos obligatorios para registrar el proveedor en adproveedor (Sis2000). Devuelve la lista de
+ * faltantes; si no esta vacia, NO se registra (nunca se escriben ceros ni valores por defecto).
+ */
+function faltantesRegistroProveedor(payload) {
+  if (!payload) return ['proveedor'];
+  const faltan = [];
+  if (!payload.cpoliza) faltan.push('poliza');
+  if (!(payload.cci_rif > 0)) faltan.push('RIF del proveedor');
+  if (!(payload.cclave_num > 0)) faltan.push('clave del proveedor');
+  if (!payload.itiposerv) faltan.push('tipo de servicio');
+  if (!payload.cplan) faltan.push('plan');
+  if (!(payload.cramo > 0)) faltan.push('ramo');
+  if (!(payload.cusuario > 0)) faltan.push('usuario (cusuario)');
+  if (!(payload.mcosto > 0) || !(payload.mcostoext > 0)) faltan.push('prima');
+  if (!(payload.ptasamon > 0)) faltan.push('tasa');
+  return faltan;
+}
+
 module.exports = {
   buildAseguradosForQuote,
   buildEmissionPersonRequest,
   buildValidateEmissionPersonRequest,
   buildRegisterPolicyProveedorRequest,
+  faltantesRegistroProveedor,
   edadDesdeFecha,
   resolveNedadAsegurado,
   _internal: {

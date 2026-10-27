@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import type { CanalVisibility } from './canal-visibility';
-import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine, ProveedorItem } from '../types';
+import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
+import type { ProveedorItem } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
@@ -1207,7 +1208,7 @@ export async function getProveedores(params: {
     xcliente: String(item.xcliente || item.xproveedor || '').trim(),
     cplan: item.cplan || params.cplan,
     cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
-    itiposerv: item.itiposerv || 'S',
+    itiposerv: item.itiposerv,
   }));
 }
 
