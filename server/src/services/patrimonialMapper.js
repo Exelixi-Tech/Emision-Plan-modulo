@@ -232,7 +232,8 @@ function mapWizardToGeneralRisksEmitDto(state, cotizacion = {}, overrides = {}) 
     fdesde,
     fhasta,
     dec_persona_politica: tomador.personaPoliticamenteExpuesta === true || tomador.dec_persona_politica === 1 ? 1 : 0,
-    dec_term_y_cod: 1,
+    // Aceptación real del Formulario (Términos y Condiciones + declaración de fe); sin el dato se conserva 1.
+    dec_term_y_cod: (tomador.aceptaTerminos === false || tomador.declaraVeracidad === false) ? 0 : 1,
     cproductor,
     ifrecuencia,
     ctipocanal,
