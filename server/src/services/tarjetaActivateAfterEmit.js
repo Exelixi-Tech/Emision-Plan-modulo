@@ -100,8 +100,9 @@ function buildTarjetaActivatePayload(state, emission, opts = {}) {
   const nfactura = normalizeNfactura(meta.nfactura || state?.tarjeta?.nfactura);
   if (nfactura) payload.nfactura = nfactura;
 
+  // Solo link absoluto: una ruta relativa (pendiente/, _inbox/) no le sirve a La Mundial.
   const xfoto_factura = String(opts.xfotoFactura || '').trim() || resolveXfotoFactura(state);
-  if (xfoto_factura) payload.xfoto_factura = xfoto_factura;
+  if (/^https?:\/\//i.test(xfoto_factura || '')) payload.xfoto_factura = xfoto_factura;
 
   return payload;
 }

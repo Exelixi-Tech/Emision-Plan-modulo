@@ -17,6 +17,7 @@ const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { isRcvTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
+const { rechazoSinFotoFactura, alertarSiFaltaFactura } = require('../services/tarjetaFacturaGuard');
 
 const router = express.Router();
 
@@ -245,6 +246,9 @@ router.post('/policies/emit', async (req, res) => {
       `[modulo-emision/emit] metadataCanal centidad=${meta.centidad ?? '?'} citem=${meta.citem ?? '?'} cproductor=${meta.cproductor ?? 'default'} cusuario=${meta.cusuario ?? meta.cusuario_planes ?? 'default'} cgestor=${meta.cgestor ?? 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'}`,
     );
 
+    const sinFactura = rechazoSinFotoFactura(mergedState);
+    if (sinFactura) return res.status(sinFactura.status).json(sinFactura.body);
+
     const result = await policyService.quoteAndEmit(mergedState, {
       plan,
       frecuencia: frecuencia || state?.rcv?.frecuencia,
@@ -261,6 +265,7 @@ router.post('/policies/emit', async (req, res) => {
     // Tarjeta: activar en La Mundial con xfoto_factura = URL final de la factura del expediente.
     if (typeof result.activateTarjeta === 'function') {
       const facturaLink = pickFacturaLink(expediente);
+      alertarSiFaltaFactura(mergedState, result, facturaLink, result.metadata);
       await result.activateTarjeta(facturaLink ? { xfotoFactura: facturaLink } : {}, result.metadata);
       delete result.activateTarjeta;
     }

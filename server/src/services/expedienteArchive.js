@@ -3,6 +3,7 @@
  * Fail-open: un error de disco/OCR no debe tumbar la emisión.
  */
 const axios = require('axios');
+const { requiereFotoFactura } = require('./tarjetaFacturaGuard');
 
 const DOC_KEYS = [
   'cedula',
@@ -56,19 +57,27 @@ function buildNomenclatura(emission) {
 
 /**
  * @param {object} documents
+ * @param {object} [metadataCanal] tarjeta: xfoto_factura = link de la foto subida en OCR
  * @returns {Array<{ url: string, docType: string, name?: string }>}
  */
-function filesFromDocuments(documents) {
-  if (!documents || typeof documents !== 'object') return [];
+function filesFromDocuments(documents, metadataCanal) {
   const out = [];
-  for (const key of DOC_KEYS) {
-    const url = documents[key]?.file?.url;
-    if (!url) continue;
-    out.push({
-      url,
-      docType: key,
-      name: documents[key]?.file?.name,
-    });
+  if (documents && typeof documents === 'object') {
+    for (const key of DOC_KEYS) {
+      const url = documents[key]?.file?.url;
+      if (!url) continue;
+      out.push({
+        url,
+        docType: key,
+        name: documents[key]?.file?.name,
+      });
+    }
+  }
+  // La factura subida antes de leer la cédula queda en _inbox (no en pendiente/):
+  // sin el link explícito OCR no la encuentra al archivar.
+  const xfoto = String(metadataCanal?.xfoto_factura || '').trim();
+  if (xfoto && !out.some((f) => f.docType === 'factura')) {
+    out.push({ url: xfoto, docType: 'factura' });
   }
   return out;
 }
@@ -97,7 +106,7 @@ async function archiveExpedienteAfterEmit(args) {
   const ocrBase = String(process.env.OCR_API_URL || 'http://127.0.0.1:4001').replace(/\/$/, '');
   const cedula = resolveTitularCedula(args.state);
   const nomenclatura = buildNomenclatura(args.emission);
-  const files = filesFromDocuments(args.state?.documents);
+  const files = filesFromDocuments(args.state?.documents, args.state?.metadataCanal);
   const empresaNombre = String(args.empresaNombre || '').trim();
 
   if (!cedula) {
@@ -128,6 +137,7 @@ async function archiveExpedienteAfterEmit(args) {
         fmespol: args.emission?.fmespol,
         files,
         nfactura: resolveNfactura(args.state),
+        facturaRequerida: requiereFotoFactura(args.state),
         emisionLinks: {
           poliza: args.emission?.urlpoliza,
           conductor_habitual: args.emission?.url_conductor_habitual,

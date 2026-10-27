@@ -21,6 +21,7 @@ const {
 } = require('../services/nexusFuneralSubmission');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
+const { rechazoSinFotoFactura, alertarSiFaltaFactura } = require('../services/tarjetaFacturaGuard');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
@@ -392,6 +393,8 @@ router.post('/emision', async (req, res) => {
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
   // Tarjeta de personas: sin aceptar mecanismos/términos y la declaración de salud no se emite.
+  const sinFactura = rechazoSinFotoFactura(state);
+  if (sinFactura) return res.status(sinFactura.status).json(sinFactura.body);
   if (isTarjetaFlow(state) && (funeral.aceptaTerminos !== true || funeral.diagnosticoEnfermedad === true)) {
     return res.status(422).json({
       success: false,
@@ -572,6 +575,8 @@ router.post('/emision', async (req, res) => {
     // Flujo tarjeta: activa la tarjeta en La Mundial (fail-open, igual que RCV).
     // casegurado = titular si nest-api no lo devuelve.
     if (isTarjetaFlow(state)) {
+      const facturaLink = pickFacturaLink(expediente);
+      alertarSiFaltaFactura(state, emitted, facturaLink, emitMetadata);
       await activateTarjetaAfterEmit(
         state,
         {
@@ -581,7 +586,7 @@ router.post('/emision', async (req, res) => {
         },
         emitMetadata,
         // xfoto_factura = URL final de la factura archivada (la de pendiente/ ya no existe).
-        { xfotoFactura: pickFacturaLink(expediente) },
+        { xfotoFactura: facturaLink },
       );
     }
 
