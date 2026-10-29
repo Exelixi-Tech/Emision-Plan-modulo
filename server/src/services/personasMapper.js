@@ -375,11 +375,11 @@ function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
     state?.selectedProveedor ||
     (state?.proveedor
       ? {
-          cci_rif: state.proveedor.cci_rif,
+          cci_rif: state.proveedor.cci_rif ?? state.proveedor.cproveedor,
           cclave_num: state.proveedor.cclave_num,
           itiposerv: state.proveedor.itiposerv,
-          cplan: state.proveedor.cplan_proveedor,
-          cramo: state.proveedor.cramo_proveedor,
+          cplan: state.proveedor.cplan_proveedor || state.proveedor.cplan,
+          cramo: state.proveedor.cramo_proveedor || state.proveedor.cramo,
         }
       : state?.cproveedor
         ? {

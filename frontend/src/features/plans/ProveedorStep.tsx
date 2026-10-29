@@ -18,7 +18,7 @@ import { decodeNexusTokenMetadata, getNexusToken } from '../../lib/nexus-token-c
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
-import { frecuenciasPersonas } from '../../lib/frecuencia';
+import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -202,9 +202,11 @@ export function ProveedorStep() {
   const aseguradosListos = funeral.asegurados.filter(
     (a) => (a.identificacion || '').toString().trim() && (a.fechaNac || '').toString().trim(),
   );
+  // SysIP calcPrima personas siempre cotiza ifrecuencia=A (prima anual).
+  // La prima anual no cambia con la frecuencia; Pagos divide entre las cuotas.
   const planCode = selectedPlan?.cplan ?? '';
   const quoteSig = planCode
-    ? `proveedor|${planCode}|${funeral.frecuencia}|${aseguradosListos
+    ? `proveedor|${selectedPlan?.cramo ?? ''}:${planCode}|${aseguradosListos
       .map((a) => `${a.parentesco}:${a.identificacion}:${a.fechaNac}`)
       .join(',')}`
     : '';
@@ -223,7 +225,7 @@ export function ProveedorStep() {
     personasApi.cotizar({
       cplan: planCode,
       cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
-      ifrecuencia: funeral.frecuencia,
+      ifrecuencia: 'A',
       asegurados: aseguradosListos.map((a) => ({
         parentesco: a.parentesco,
         identificacion: a.identificacion,
@@ -263,6 +265,7 @@ export function ProveedorStep() {
   const isLoadingQuote = quoteState === 'loading';
   const hasRealQuote = quoteState === 'ready' && Boolean(quote);
   const annualUsd = hasRealQuote ? quote!.mprimaext : 0;
+  const cuotasFrecuencia = getCuotasByFrecuencia(funeral.frecuencia);
 
   const currentProveedorObj = proveedores.find((p) => String(p.cci_rif) === String(cproveedor));
 
@@ -372,6 +375,14 @@ export function ProveedorStep() {
             </select>
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
+          {cuotasFrecuencia > 1 && (
+            <p className="mt-1.5 text-xs text-slate-600">
+              {annualUsd > 0
+                ? `${cuotasFrecuencia} cuotas de $${(annualUsd / cuotasFrecuencia).toFixed(2)}. `
+                : `${cuotasFrecuencia} cuotas. `}
+              Hoy pagas la 1ª cuota y las siguientes se cobran por domiciliación bancaria.
+            </p>
+          )}
         </div>
       </div>
 
