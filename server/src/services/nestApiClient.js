@@ -9,6 +9,7 @@ const {
   buildAuthHeaders,
   trackResponse,
 } = require('./nestTokenService');
+const { getNestMonitorAppIdHeader } = require('./monitorReporter');
 
 function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 60_000;
@@ -29,7 +30,10 @@ function buildHeaders(extra = {}) {
 
 async function axiosOpts(extra = {}) {
   return {
-    headers: await buildAuthHeaders(),
+    headers: {
+      ...(await buildAuthHeaders()),
+      ...getNestMonitorAppIdHeader(),
+    },
     timeout: getTimeout(),
     ...extra,
   };
@@ -234,6 +238,8 @@ async function calculatePlanCoberturasViaNestApi(payload) {
     return {
       mount,
       pa: Number(body.pa ?? 0),
+      /** Prima anual USD de Daños a personas y a cosas: completa en la cuota inicial si no es anual. */
+      primaCuotaInicial: Number(body.primaCuotaInicial ?? 0),
       ca: Number(body.ca ?? 0),
       pt: Number(body.pt ?? 0),
       ap: Number(body.ap ?? 0),
@@ -420,6 +426,43 @@ async function validateEmissionAutoViaNestApi(params) {
   throw err;
 }
 
+// ── Moneda (tasa BCV por fecha) ──────────────────────────────────────────────
+
+/**
+ * @param {string} fechaYmd YYYY-MM-DD
+ * @returns {Promise<{ ptasa: number, fecha: string, source: string }>}
+ */
+async function getTasaBcvForDateViaNestApi(fechaYmd) {
+  const url = `${getBaseUrl()}/api/v1/moneda/tasa-bcv?fecha=${encodeURIComponent(fechaYmd)}`;
+  const response = trackResponse(await axios.get(url, await axiosOpts({
+    validateStatus: () => true,
+  })));
+
+  if (response.status >= 200 && response.status < 300) {
+    const data = response.data?.data ?? response.data;
+    const ptasa = Number(data?.ptasa ?? 0);
+    if (!(ptasa > 0)) {
+      const err = new Error('nest-api no retornó tasa BCV válida');
+      err.code = 'BCV_RATE_ERROR';
+      throw err;
+    }
+    return {
+      ptasa,
+      fecha: String(data?.fecha ?? fechaYmd).slice(0, 10),
+      source: String(data?.source ?? 'mavamonedas'),
+    };
+  }
+
+  const body = response.data ?? {};
+  const code = body.code || (response.status === 404 ? 'BCV_RATE_NOT_FOUND' : 'NEST_API_BCV_ERROR');
+  const err = new Error(
+    formatNestApiErrorMessage(body, `HTTP ${response.status} consultando tasa BCV en nest-api`),
+  );
+  err.code = code;
+  err.httpStatus = response.status;
+  throw err;
+}
+
 // ── INMA (catálogo vehículo) ─────────────────────────────────────────────────
 
 /** @returns {Promise<{ min: number, max: number }>} */
@@ -483,6 +526,18 @@ async function getRecargosRcv(cramo = 18) {
     throw new Error(data?.message || 'No se pudo cargar recargos RCV');
   }
   return data?.recargos ?? data?.data?.recargos ?? [];
+}
+
+/** Vigencias por tipo de placa (mavigencias_PR). E = extranjera: 15 días a 12 meses con % de prima anual. */
+async function getValrepVigencias(iplaca = 'E') {
+  const { data } = await axios.get(
+    `${getBaseUrl()}/api/v1/valrep/vigencias?iplaca=${encodeURIComponent(iplaca)}`,
+    await axiosOpts({ validateStatus: () => true }),
+  );
+  if (data?.status === false || data?.success === false) {
+    throw new Error(data?.message || 'No se pudieron cargar las vigencias');
+  }
+  return data?.data?.vigencias ?? data?.vigencias ?? [];
 }
 
 // ── Valrep (estados, ciudades, listas, frecuencias) ─────────────────────────
@@ -550,6 +605,53 @@ const FRECUENCIAS_GENERIC_FALLBACK = [
  * filas en maplanes_frec, devolver ANUAL como SysIP persons-alt (nunca 502).
  * @returns {Promise<Array<{ code: string, label: string, ndias?: number|null }>>}
  */
+/**
+ * Productores / Brokers desde Sis2000 (POST /api/v1/valrep/brokers)
+ * @returns {Promise<Array<{ code: number, label: string }>>}
+ */
+async function getValrepBrokers() {
+  const urls = [
+    `${getBaseUrl()}/api/v1/valrep/brokers`,
+    `${process.env.LAMUNDIAL_CARDS_URL || process.env.LAMUNDIAL_EMISSION_URL || 'https://qaapisys2000.lamundialdeseguros.com'}/api/v1/valrep/brokers`,
+    'https://apisys2000.lamundialdeseguros.com/api/v1/valrep/brokers',
+  ];
+
+  let raw = [];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const response = await axios.post(
+        url,
+        {},
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10_000,
+          validateStatus: () => true,
+        },
+      );
+      if (response.status >= 200 && response.status < 300 && response.data?.status !== false) {
+        raw = response.data?.data?.broker ?? response.data?.broker ?? [];
+        if (raw.length > 0) break;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!raw.length && lastError) {
+    throw lastError;
+  }
+
+  return raw
+    .map((b) => ({
+      code: Number(b.cproductor),
+      label: String(b.xproductor ?? '').trim(),
+    }))
+    .filter((it) => it.code > 0 && it.label !== '')
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function getValrepFrecuencias(cplan, cramo) {
   const body = { cplan };
   if (cramo != null) body.cramo = cramo;
@@ -656,14 +758,17 @@ module.exports = {
   buildAuthHeaders,
   trackResponse,
   getTimeout,
+  getTasaBcvForDateViaNestApi,
   getInmaAnios,
   getInmaMarcas,
   getInmaModelos,
   getInmaVersiones,
   getCategoriasUso,
   getRecargosRcv,
+  getValrepVigencias,
   getValrepStates,
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
+  getValrepBrokers,
 };

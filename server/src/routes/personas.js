@@ -21,6 +21,18 @@ const {
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
+const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
+const { fetchPlanesV2 } = require('../services/planesClient');
+const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
+const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
+const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
+
+/** Edad fuera del rango de la tarifa del plan: mismo mensaje para cotizar y emitir. */
+const AGE_OUT_OF_RANGE_MESSAGE =
+  'La edad indicada del titular no está permitida en el rango del plan. Elige otro plan.';
+function isAgeOutOfRange(msg) {
+  return /criterios de edad|edad fuera|fuera de rango|prima del recibo en 0|sin tarifa/i.test(String(msg || ''));
+}
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -65,6 +77,56 @@ const router = express.Router();
 
 const DEFAULT_RAMO = parseInt(process.env.LAMUNDIAL_RAMO_PERSON, 10) || 9;
 
+/** Ramos con prima por días (viajero ramo 5 y viaje local ramo 25). */
+const VIAJERO_RAMOS = new Set([5, 25]);
+
+/**
+ * Fraccionadas (igual que RCV): se cotiza la prima anual y se emite con la frecuencia real;
+ * el SP genera los N recibos, Pagos cobra el 1º y domicilia el resto.
+ * C (cuatrimestral) no se ofrece en personas: se emite Anual.
+ */
+const FRECUENCIAS_FRACCIONADAS = new Set(['M', 'T', 'S']);
+const CUOTAS_POR_FRECUENCIA = { M: 12, T: 4, S: 2 };
+
+function personasIfrecuencia(code) {
+  const c = String(code || 'A').trim().toUpperCase().charAt(0) || 'A';
+  return c === 'C' ? 'A' : c;
+}
+
+/** La cotización de personas es anual; solo D/B (viajero corto) cotiza con su frecuencia. */
+function personasIfrecuenciaCotiza(ifrecuencia) {
+  return FRECUENCIAS_FRACCIONADAS.has(ifrecuencia) ? 'A' : ifrecuencia;
+}
+
+/** Viajero: fechas del viaje elegidas en el plan (salida/regreso, tope 15 días). */
+function viajeroVigenciaDesdeFechas(funeral) {
+  const fdesde = String(funeral?.viajeFdesde ?? '').trim();
+  const fhasta = String(funeral?.viajeFhasta ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fdesde) || !/^\d{4}-\d{2}-\d{2}$/.test(fhasta)) return null;
+  const ndias = Math.round(
+    (new Date(`${fhasta}T00:00:00Z`).getTime() - new Date(`${fdesde}T00:00:00Z`).getTime()) / 86400000,
+  ) + 1;
+  if (!Number.isFinite(ndias) || ndias < 1 || ndias > 15) return null;
+  return { ndias, fdesde, fhasta };
+}
+
+/** Viajero: vigencia del viaje; sin fechas, desde hoy por los días del plan (igual que la cotización del wizard). */
+function resolveViajeroVigencia(selectedPlan, cramo, funeral) {
+  if (!VIAJERO_RAMOS.has(Number(cramo))) return null;
+  const delViaje = viajeroVigenciaDesdeFechas(funeral);
+  if (delViaje) return delViaje;
+  let ndias = Number(selectedPlan?.ndias);
+  if (!Number.isFinite(ndias) || ndias <= 0) {
+    const m = String(selectedPlan?.name ?? selectedPlan?.tag ?? '').match(/(\d+)\s*d[ií]as?/i);
+    ndias = m ? Number(m[1]) : NaN;
+  }
+  if (!Number.isFinite(ndias) || ndias <= 0) return null;
+  const fdesde = personasMapper._internal.todayYmd();
+  const hasta = new Date(`${fdesde}T00:00:00Z`);
+  hasta.setUTCDate(hasta.getUTCDate() + ndias - 1);
+  return { ndias, fdesde, fhasta: hasta.toISOString().slice(0, 10) };
+}
+
 /** Fusiona metadata JWT con query (mismo criterio que RCV /catalogo/planes). */
 function funeralCanalMeta(req) {
   const meta = { ...(req.nexusMetadata || {}) };
@@ -99,18 +161,48 @@ function mapAsegurado(a) {
 // ── GET /planes ─────────────────────────────────────────────────────────────
 router.get('/planes', async (req, res) => {
   const meta = funeralCanalMeta(req);
+  const askedRamo = req.query.cramo != null ? parseInt(String(req.query.cramo), 10) : NaN;
+  // Catálogo del ramo: panel de scoring (catalogo=ramo) o llamadas sin producto (Vida 1 / AP 5).
+  // Con producto (MarketPlace/SSO, incluido Viajero 25/26) se consulta por producto + canal/productor
+  // (mausuplan), igual que SysIP: cada canal o productor ve solo los planes que tiene habilitados.
+  const conProducto = String(meta.cproducto ?? req.query.cproducto ?? '').trim() !== '';
+  if (req.query.catalogo === 'ramo' || (!conProducto && (askedRamo === 1 || askedRamo === 5))) {
+    try {
+      const targetRamo = Number.isFinite(askedRamo) ? askedRamo : 1;
+      const result = await fetchPlanesV2({ ...meta, cramo: targetRamo });
+      const planes = (result.planes || []).filter((p) => Number(p.cramo) === targetRamo);
+      res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+      return res.json({
+        success: true,
+        planes,
+        canal: { cramo: targetRamo, catalogo: 'ramo' },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[personas/planes] catalogo ramo', askedRamo, msg);
+      return res.status(502).json({
+        success: false,
+        code: 'PLANES_RAMO_ERROR',
+        message: `No se pudieron obtener los planes del ramo ${askedRamo}: ${msg}`,
+      });
+    }
+  }
+
   const rawEntity = resolveEntityContext(meta);
   const sisOk = rawEntity
     && (rawEntity.centidad === 'P' || rawEntity.centidad === 'C' || rawEntity.centidad === 'G');
   const entity = sisOk ? rawEntity : null;
   const productorRaw = meta.cproductor != null ? String(meta.cproductor).trim() : '';
   const cproductor = productorRaw && productorRaw !== '80080' ? productorRaw : null;
-  const cproducto = meta.cproducto != null && String(meta.cproducto).trim() !== ''
-    ? String(meta.cproducto).trim()
-    : (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
+  const metaCproducto = meta.cproducto != null && String(meta.cproducto).trim() !== '' ? String(meta.cproducto).trim() : null;
+  const cproducto = metaCproducto || req.query.cproducto || (process.env.LAMUNDIAL_PRODUCTO_FUNERARIO || '57');
   const cramo = cproducto === '57'
     ? 45
-    : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO);
+    : (meta.cramo ? parseInt(meta.cramo, 10) : (req.query.cramo ? parseInt(req.query.cramo, 10) : DEFAULT_RAMO));
   try {
     const { planes: raw } = await personasClient.getPlanesPer({
       cramo,
@@ -161,12 +253,26 @@ router.get('/planes', async (req, res) => {
 
 // ── POST /cotizacion ──────────────────────────────────────────────────────────
 router.post('/cotizacion', async (req, res) => {
-  const { cplan, ifrecuencia } = req.body || {};
-  const cramo = req.body?.cramo ? parseInt(req.body.cramo, 10) : DEFAULT_RAMO;
+  const { cplan, ifrecuencia, ndias, fdesde, fhasta } = req.body || {};
+  const cramo = resolvePersonasCramo({
+    // Manda el ramo del plan (body), como SysIP. Funerario 57 tiene sus planes en el ramo 9
+    // (en el 45 solo está FUNESP): forzar 45 dejaba la cotización en prima cero.
+    selectedPlan: { cramo: req.body?.cramo },
+    bodyCramo: req.body?.cramo,
+    metadataCanal: req.nexusMetadata,
+    cproducto: req.nexusMetadata?.cproducto,
+  });
   const asegurados = Array.isArray(req.body?.asegurados) ? req.body.asegurados.map(mapAsegurado) : [];
 
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'cplan es obligatorio' });
+  }
+  if (!isPersonasCplan(cplan, req.nexusMetadata?.cproducto)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_PERSONAS',
+      message: `El plan ${cplan} no es válido para el producto personas.`,
+    });
   }
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe enviar al menos un asegurado' });
@@ -181,12 +287,21 @@ router.post('/cotizacion', async (req, res) => {
   }
 
   try {
-    const quote = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    const quote = await personasClient.getCotizacionPer({
+      cramo,
+      cplan,
+      asegurados,
+      ifrecuencia,
+      ...(ndias != null && Number(ndias) > 0 ? { ndias: Number(ndias) } : {}),
+      ...(fdesde ? { fdesde: String(fdesde).trim() } : {}),
+      ...(fhasta ? { fhasta: String(fhasta).trim() } : {}),
+    });
     res.json({
       success: true,
       mprima: quote.mprima,
       mprimaext: quote.mprimaext,
       ptasa: quote.ptasa,
+      coberturas: quote.coberturas,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -194,11 +309,14 @@ router.post('/cotizacion', async (req, res) => {
       .map((a) => `${a.xrif_asegurado || '?'} (${a.nedad_asegurado} años, parentesco ${a.cparen})`)
       .join('; ');
     console.error('[personas/cotizacion]', msg, edades);
-    const isAge = /criterios de edad/i.test(msg);
+    const isAge = isAgeOutOfRange(msg);
     res.status(isAge ? 422 : 502).json({
       success: false,
-      code: err.code || (isAge ? 'PERSONAS_AGE' : 'LAMUNDIAL_PERSON_ERROR'),
-      message: `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
+      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: isAge
+        ? AGE_OUT_OF_RANGE_MESSAGE
+        : `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
+      ...(isAge && edades ? { detail: `Edad calculada: ${edades}.` } : {}),
     });
   }
 });
@@ -272,7 +390,11 @@ router.post('/emision', async (req, res) => {
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
   const cplan = state?.selectedPlan?.cplan;
-  const cramo = DEFAULT_RAMO;
+  const cramo = resolvePersonasCramo({
+    selectedPlan: state?.selectedPlan,
+    metadataCanal: state?.metadataCanal,
+    cproducto: state?.metadataCanal?.cproducto,
+  });
 
   if (!state || !state.tomador) {
     return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.tomador requerido.' });
@@ -280,8 +402,17 @@ router.post('/emision', async (req, res) => {
   if (!cplan) {
     return res.status(400).json({ success: false, code: 'MISSING_PLAN', message: 'Debe seleccionar un plan funerario (selectedPlan.cplan).' });
   }
+  if (!isPersonasCplan(cplan, state?.metadataCanal?.cproducto)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PLAN_NOT_PERSONAS',
+      message: `El plan ${cplan} no es válido para el producto personas.`,
+    });
+  }
 
-  const ifrecuencia = frecuencia || funeral.frecuencia || 'A';
+  const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
+  const ifrecuenciaCotiza = personasIfrecuenciaCotiza(ifrecuencia);
+  const vigencia = resolveViajeroVigencia(state.selectedPlan, cramo, funeral);
   const asegurados = personasMapper.buildAseguradosForQuote(funeral, {
     tomador: state.tomador,
     asegurado: state.asegurado,
@@ -302,7 +433,34 @@ router.post('/emision', async (req, res) => {
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
-    const cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia });
+    let cotizacion = await personasClient.getCotizacionPer({ cramo, cplan, asegurados, ifrecuencia: ifrecuenciaCotiza, ...(vigencia ?? {}) });
+
+    // 1b. Recargos/descuentos del cuestionario (mismo cálculo que la solicitud).
+    //     La prima ajustada es la que se cobra (ingreso de caja / registro). A Sis2000 va la
+    //     prima base y el % de cada asegurado: el SP v3 aplica el % por tarifa en pepoltar_ind.
+    const cotizacionBase = cotizacion;
+    const meta0 = state.metadataCanal || {};
+    const { questions } = await resolveQuestionsForPlan(cplan, {
+      empresaId: Number(req.empresa?.id ?? process.env.EMPRESA_ID ?? 1) || 1,
+      metadata: meta0,
+      cramo,
+      cproducto: meta0.cproducto,
+      selectedPlan: state.selectedPlan,
+    });
+    const premiumAdjust = await adjustPremiumByAnswers({
+      questions,
+      persons: funeral.asegurados,
+      asegurados,
+      byInsured: funeral.healthAnswersByInsured,
+      quoteOne: (aseg) =>
+        personasClient.getCotizacionPer({ cramo, cplan, asegurados: [aseg], ifrecuencia: ifrecuenciaCotiza, ...(vigencia ?? {}) }),
+    });
+    if (premiumAdjust) {
+      console.log(
+        `[personas/emision] prima ajustada por cuestionario base=${premiumAdjust.base.mprimaext} final=${premiumAdjust.quote.mprimaext}`,
+      );
+      cotizacion = { ...cotizacion, ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || cotizacion.ptasa };
+    }
 
     // 2. Valida titular/plan (paso 5 — speeValidatePersonGeneral).
     const validatePayload = personasMapper.buildValidateEmissionPersonRequest(state, {
@@ -322,9 +480,25 @@ router.post('/emision', async (req, res) => {
     // 3. Construye el payload de emisión y emite.
     const { payload, metadata } = personasMapper.buildEmissionPersonRequest(
       state,
-      cotizacion,
+      cotizacionBase,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    if (vigencia) {
+      payload.fdesde = vigencia.fdesde;
+      payload.fhasta = vigencia.fhasta;
+    }
+    // % de recargo/descuento por asegurado (mismo orden que funeral.asegurados; el 0 es el titular).
+    if (premiumAdjust && Array.isArray(payload.asegurados)) {
+      premiumAdjust.porAsegurado.forEach((row, idx) => {
+        const aseg = payload.asegurados[idx];
+        if (!aseg) return;
+        if (row.recargoPct > 0) aseg.precargo = row.recargoPct;
+        if (row.descuentoPct > 0) aseg.pdescuento = row.descuentoPct;
+      });
+      const titular = premiumAdjust.porAsegurado[0];
+      if (titular?.recargoPct > 0) payload.precargo_titular = titular.recargoPct;
+      if (titular?.descuentoPct > 0) payload.pdescuento_titular = titular.descuentoPct;
+    }
 
     const meta = state.metadataCanal || {};
     console.log(
@@ -343,7 +517,8 @@ router.post('/emision', async (req, res) => {
     const emitMetadata = { ...metadata };
     const url_ingreso_caja = await resolveIngresoCajaAfterPayment(state, {
       cnrecibo: emitted.cnrecibo,
-      mpagoFallback: cotizacion.mprima,
+      // Sin monto capturado: 1er recibo = prima anual ÷ cuotas (fraccionado).
+      mpagoFallback: Math.round((cotizacion.mprima / (CUOTAS_POR_FRECUENCIA[ifrecuencia] || 1)) * 100) / 100,
       metadata: emitMetadata,
     });
     if (url_ingreso_caja) {
@@ -361,16 +536,25 @@ router.post('/emision', async (req, res) => {
         mprimaext: cotizacion.mprimaext,
         ptasa: cotizacion.ptasa,
       },
+      /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
+      ...(premiumAdjust ? { premiumAdjust } : {}),
     };
     const funeralRefs = resolveFuneralRefs(state);
     try {
+      // Tráfico (admin Nexus): producto real de personas (Vida, AP, Salud, 4 en 1…), no "funerario".
+      const trafficMeta = { ...(req.nexusMetadata || {}), ...(state.metadataCanal || {}) };
       await registerIssuedPolicy({
         empresaId: req.empresa?.id,
-        producto: 'funerario',
+        producto: productLabelFromMeta(trafficMeta) || 'funerario',
         emission: emissionRecord,
         state,
         planNombre: cplan,
         frecuencia: ifrecuencia,
+        extra: {
+          flujo: 'personas',
+          cproducto: trafficMeta.cproducto ?? null,
+          cramo: trafficMeta.cramo ?? null,
+        },
       });
     } catch (feedErr) {
       console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);
@@ -417,10 +601,11 @@ router.post('/emision', async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     const httpStatus = err.httpStatus || 502;
     console.error('[personas/emision]', err.code || '', msg);
-    return res.status(httpStatus).json({
+    const isAge = isAgeOutOfRange(msg);
+    return res.status(isAge ? 422 : httpStatus).json({
       success: false,
-      code: err.code || 'LAMUNDIAL_PERSON_ERROR',
-      message: msg,
+      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: isAge ? AGE_OUT_OF_RANGE_MESSAGE : msg,
       ...(err.endpoint ? { endpoint: err.endpoint } : {}),
       stage: 'emit',
     });
