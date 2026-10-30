@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import type { CanalVisibility } from './canal-visibility';
 import type { DocType, OcrResult, DocumentFile, PolicyCoverageLine } from '../types';
+import type { ProveedorItem } from '../types';
 import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
@@ -1036,6 +1037,7 @@ export interface SubmitFuneralReviewPayload {
   healthAnswers: Record<string, unknown>;
   documents?: Record<string, unknown>;
   metadataCanal?: Record<string, unknown> | null;
+  cproveedor?: number | string;
   /** true si hay puente de módulos: verde → Pagos en la misma sesión, sin correo. */
   directCheckout?: boolean;
   /** Solicitud ya enviada a mesa en esta sesión: el servidor no deja crear otra. */
@@ -1132,6 +1134,63 @@ export async function validateFuneralEmission(payload: {
     throw err;
   }
 }
+
+export type { ProveedorItem };
+
+
+/**
+ * Consulta proveedores de servicio para un plan vía /valrep/proveedores (o /v1/partner/starter/proveedores/list).
+ */
+export async function getProveedores(params: {
+  cplan: string;
+  cramo?: number | string;
+  centidad?: string;
+  citem?: string;
+  cci_rif?: string | number;
+  cclave_num?: number;
+}): Promise<ProveedorItem[]> {
+  const qs = new URLSearchParams({
+    cplan: params.cplan,
+    cramo: String(params.cramo ?? 28),
+  });
+  if (params.centidad) qs.set('centidad', params.centidad);
+  if (params.citem) qs.set('citem', params.citem);
+  if (params.cci_rif) qs.set('cci_rif', String(params.cci_rif));
+  if (params.cclave_num != null) qs.set('cclave_num', String(params.cclave_num));
+
+  const response = await api.get<{
+    ok?: boolean;
+    items?: ProveedorItem[];
+    data?: ProveedorItem[] | { items?: ProveedorItem[] };
+  }>(`/valrep/proveedores?${qs.toString()}`);
+
+  const resData = response.data;
+  let list: ProveedorItem[] = [];
+  if (resData?.items && Array.isArray(resData.items)) {
+    list = resData.items;
+  } else if (Array.isArray(resData?.data)) {
+    list = resData.data;
+  } else if (
+    typeof resData?.data === 'object' &&
+    resData.data !== null &&
+    'items' in resData.data &&
+    Array.isArray((resData.data as { items?: ProveedorItem[] }).items)
+  ) {
+    list = (resData.data as { items?: ProveedorItem[] }).items!;
+  }
+
+  return list.map((item) => ({
+    ...item,
+    xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
+    xcliente: String(item.xcliente || item.xproveedor || '').trim(),
+    cplan: item.cplan || params.cplan,
+    cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
+    itiposerv: item.itiposerv,
+  }));
+}
+
+
+
 
 // ──────────────────────────────────────────────────────────────────────
 //  Patrimonial (Riesgos Generales, ramo 20) — planes, cotización y emisión
