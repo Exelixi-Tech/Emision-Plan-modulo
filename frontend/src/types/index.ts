@@ -61,7 +61,7 @@ export interface DocumentState {
   error?: string;
 }
 
-export type TomadorData = {
+export type TomadorData = ProfesionOcupacionFields & {
   tipoDoc: string;
   identificacion: string;
   nombre: string;
@@ -94,7 +94,7 @@ export type TomadorData = {
   itipoDiligencia?: 'S' | 'C';
 };
 
-export type PersonData = {
+export type PersonData = ProfesionOcupacionFields & {
   nombre: string;
   apellido: string;
   identificacion: string;
@@ -161,8 +161,18 @@ export interface Plan {
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
 
+/** Profesión (maprofes), ocupación (maocupac) y actividad económica (maactivi) de una persona. */
+export interface ProfesionOcupacionFields {
+  cprofesion?: number | string;
+  xprofesion?: string;
+  cocupacion?: number | string;
+  xocupacion?: string;
+  cactividad?: number | string;
+  xactividad?: string;
+}
+
 /** Persona (asegurado/beneficiario) del producto Funerario. */
-export interface FuneralPerson {
+export interface FuneralPerson extends ProfesionOcupacionFields {
   tipoDoc: string;
   identificacion: string;
   nombre: string;

@@ -243,7 +243,7 @@ export default function FuneralPlansApp() {
         incomplete === 0 ? 'Faltan datos del titular' : 'Faltan datos del asegurado',
         incomplete === 0
           ? 'Completa estatura, peso, dirección y contacto del titular en el formulario.'
-          : 'Completa todos los datos del asegurado adicional (como en SysIP) antes de continuar.',
+          : 'Completa todos los datos del asegurado adicional (incluye profesión y ocupación o actividad económica) antes de continuar.',
         7000,
       );
       return;

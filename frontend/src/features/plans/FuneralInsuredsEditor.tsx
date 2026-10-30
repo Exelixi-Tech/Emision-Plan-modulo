@@ -4,8 +4,11 @@ import { Field, Input, Textarea } from '../../components/ui/FormField';
 import { IdentityInput } from '../../components/ui/IdentityInput';
 import { SearchSelect } from '../../components/ui/SearchSelect';
 import { PersonLocationFields } from '../../components/PersonLocationFields';
+import { ProfesionOcupacionFields } from '../../components/ProfesionOcupacionFields';
 import { useCatalogs, useCiudades } from '../../hooks/useCatalogs';
+import { usePersonCatalogs } from '../../hooks/usePersonCatalogs';
 import { formatTelefono } from '../../lib/phone';
+import { hasProfesionOcupacion } from '../../lib/profesion-ocupacion';
 import {
   additionalParentescos,
   ageErrorForParentesco,
@@ -65,7 +68,9 @@ export function isFuneralInsuredComplete(person: FuneralPerson, isTitular: boole
     && hasText(person.estadoCivil)
     && est != null && est >= 0.5 && est <= 2.5
     && peso != null && peso >= 2 && peso <= 400
-    && (isTitular || hasText(person.parentesco)),
+    && (isTitular || hasText(person.parentesco))
+    // El titular trae profesión y ocupación del formulario (allí se validan); aquí no se editan.
+    && (isTitular || hasProfesionOcupacion(person)),
   );
 }
 
@@ -113,6 +118,7 @@ function FuneralExtraPersonForm({
   provisionalId?: string;
 }) {
   const catalogs = useCatalogs();
+  const personCatalogs = usePersonCatalogs();
   const ciuState = useCiudades(person.cestado);
   const errors: Record<string, string | undefined> = {};
   if (ageErr && /edad|años|mínima|máxima/i.test(ageErr)) errors.fechaNac = ageErr;
@@ -261,6 +267,8 @@ function FuneralExtraPersonForm({
           loading={catalogs.loading}
         />
       </Field>
+      <div className="hidden sm:block" />
+      <ProfesionOcupacionFields person={person} onChange={onChange} catalogs={personCatalogs} />
       <Field label="Dirección *" full>
         <Textarea
           value={person.direccion ?? ''}
