@@ -959,6 +959,21 @@ export function getValrepList(domain: string): Promise<CatalogItem[]> {
   return _fetchValrep(`/valrep/list/${domain.toUpperCase()}`);
 }
 
+/** Profesiones (maprofes → cprofesion). */
+export function getProfesiones(): Promise<CatalogItem[]> {
+  return _fetchValrep('/valrep/profesiones');
+}
+
+/** Ocupaciones (maocupac → cocupacion). */
+export function getOcupaciones(): Promise<CatalogItem[]> {
+  return _fetchValrep('/valrep/ocupaciones');
+}
+
+/** Actividades económicas (maactivi → cactividad). */
+export function getActividades(): Promise<CatalogItem[]> {
+  return _fetchValrep('/valrep/actividades');
+}
+
 /**
  * Frecuencias dinámicas por plan y ramo.
  */
