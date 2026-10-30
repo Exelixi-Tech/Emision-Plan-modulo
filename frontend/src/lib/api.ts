@@ -1105,27 +1105,6 @@ export async function validateFuneralEmission(payload: {
 
 export type { ProveedorItem };
 
-export interface RegisterPolicyProveedorDto {
-  cpoliza?: number | string;
-  fanopol?: number;
-  fmespol?: number;
-  cramo?: number;
-  ccerti?: number;
-  cplan?: string;
-  u_version?: string;
-  fdesde?: string | Date;
-  fhasta?: string | Date;
-  cci_rif?: number | string;
-  cclave_num?: number;
-  itiposerv?: string;
-  mcosto?: number;
-  mcostoext?: number;
-  cmoneda?: string;
-  ptasamon?: number;
-  fingreso?: string | Date;
-  cusuario?: number;
-  [key: string]: any;
-}
 
 /**
  * Consulta proveedores de servicio para un plan vía /valrep/proveedores (o /v1/partner/starter/proveedores/list).
@@ -1178,21 +1157,6 @@ export async function getProveedores(params: {
   }));
 }
 
-/**
- * Registra un proveedor asociado a una póliza en dbo.adproveedor vía
- * POST /valrep/proveedores/register-policy (proxy backend).
- */
-export async function registerPolicyProveedor(
-  payload: RegisterPolicyProveedorDto,
-): Promise<{ status?: boolean; ok?: boolean; message?: string; data?: any }> {
-  const response = await api.post<{
-    ok?: boolean;
-    status?: boolean;
-    message?: string;
-    data?: any;
-  }>('/valrep/proveedores/register-policy', payload);
-  return response.data;
-}
 
 
 

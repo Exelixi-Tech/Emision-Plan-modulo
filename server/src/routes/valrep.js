@@ -10,7 +10,6 @@ const {
   getValrepList,
   getValrepFrecuencias,
   getValrepProveedores,
-  registerPolicyProveedorViaNestApi,
   validateEmissionAutoViaNestApi,
   getValrepBrokers,
 } = require('../services/nestApiClient');
@@ -181,20 +180,5 @@ router.all('/proveedores', async (req, res) => {
   }
 });
 
-router.post('/proveedores/register-policy', async (req, res) => {
-  try {
-    const result = await registerPolicyProveedorViaNestApi(req.body);
-    res.json({ ok: true, status: true, message: 'Proveedor registrado en póliza exitosamente', data: result });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[valrep/proveedores/register-policy]', msg);
-    res.status(err.httpStatus || 502).json({
-      ok: false,
-      status: false,
-      error: 'No se pudo registrar el proveedor en la póliza',
-      message: msg,
-    });
-  }
-});
 
 module.exports = router;
