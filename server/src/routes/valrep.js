@@ -11,6 +11,9 @@ const {
   getValrepFrecuencias,
   validateEmissionAutoViaNestApi,
   getValrepBrokers,
+  getValrepProfesiones,
+  getValrepOcupaciones,
+  getValrepActividades,
 } = require('../services/nestApiClient');
 
 const router = express.Router();
@@ -58,6 +61,25 @@ router.get('/brokers', async (_req, res) => {
     res.status(502).json({ ok: false, error: 'No se pudo obtener la lista de productores' });
   }
 });
+
+// Profesión (maprofes), ocupación (maocupac) y actividad económica (maactivi) de las personas.
+const PERSON_CATALOGS = {
+  profesiones: { load: getValrepProfesiones, error: 'No se pudo obtener profesiones' },
+  ocupaciones: { load: getValrepOcupaciones, error: 'No se pudo obtener ocupaciones' },
+  actividades: { load: getValrepActividades, error: 'No se pudo obtener actividades económicas' },
+};
+
+for (const [path, { load, error }] of Object.entries(PERSON_CATALOGS)) {
+  router.get(`/${path}`, async (_req, res) => {
+    try {
+      const items = await load();
+      res.json({ ok: true, source: 'nest-api', items });
+    } catch (err) {
+      logError(path, err);
+      res.status(502).json({ ok: false, error });
+    }
+  });
+}
 
 router.get('/city', async (req, res) => {
   const cestado = req.query.cestado ?? req.query.estado ?? null;

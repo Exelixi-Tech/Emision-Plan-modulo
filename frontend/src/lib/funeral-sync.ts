@@ -1,5 +1,6 @@
 import { useWizardStore } from '../store/wizardStore';
 import type { FuneralPerson, PersonData, TomadorData } from '../types';
+import { pickProfesionOcupacion } from './profesion-ocupacion';
 
 type PersonSource = TomadorData | PersonData | FuneralPerson;
 
@@ -74,6 +75,7 @@ export function syncTitularFromTomador(): void {
     direccion: src.direccion || titular.direccion,
     peso,
     estatura,
+    ...pickProfesionOcupacion(src, titular),
   };
 
   const unchanged =
@@ -88,6 +90,9 @@ export function syncTitularFromTomador(): void {
     && fieldEq(titular.direccion, next.direccion)
     && fieldEq(titular.peso, next.peso)
     && fieldEq(titular.estatura, next.estatura)
+    && fieldEq(titular.cprofesion, next.cprofesion)
+    && fieldEq(titular.cocupacion, next.cocupacion)
+    && fieldEq(titular.cactividad, next.cactividad)
     && fieldEq(titular.parentesco, '1');
 
   if (unchanged) return;

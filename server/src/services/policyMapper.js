@@ -506,6 +506,10 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     direccion_tomador: cleanString(tomador.direccion),
     cprofesion_tomador: parseOptionalCode(tomador.cprofesion),
     cactividad_tomador: parseOptionalCode(tomador.cactividad),
+    // Formulario marca ocupacionSeparada cuando cprofesion es profesión (maprofes) y cocupacion ocupación
+    // (maocupac). Sin la marca (datos de una versión anterior) cprofesion trae la ocupación.
+    bocupacion_separada: tomador.ocupacionSeparada === true,
+    cocupacion_tomador: parseOptionalCode(tomador.cocupacion),
     itipo_diligencia: state.diligencia?.itipoDiligencia || tomador.itipoDiligencia || null,
 
     // Titular del vehiculo
@@ -523,6 +527,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     direccion_titular: sameInsured ? cleanString(tomador.direccion) : cleanString(titular.direccion),
     cprofesion_titular: sameInsured ? parseOptionalCode(tomador.cprofesion) : parseOptionalCode(titular.cprofesion),
     cactividad_titular: sameInsured ? parseOptionalCode(tomador.cactividad) : parseOptionalCode(titular.cactividad),
+    cocupacion_titular: sameInsured ? parseOptionalCode(tomador.cocupacion) : parseOptionalCode(titular.cocupacion),
     telefono_titular: sameInsured ? cleanPhone(tomador.telefono) : cleanPhone(titular.telefono),
     correo_titular: sameInsured ? cleanString(tomador.email) : cleanString(titular.email),
 
@@ -726,6 +731,11 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
   if (p.cactividad_tomador != null) body.cactividad_tomador = p.cactividad_tomador;
   if (p.cprofesion_titular != null) body.cprofesion_titular = p.cprofesion_titular;
   if (p.cactividad_titular != null) body.cactividad_titular = p.cactividad_titular;
+  if (p.bocupacion_separada) {
+    body.bocupacion_separada = true;
+    if (p.cocupacion_tomador != null) body.cocupacion_tomador = p.cocupacion_tomador;
+    if (p.cocupacion_titular != null) body.cocupacion_titular = p.cocupacion_titular;
+  }
   if (Array.isArray(p.expediente) && p.expediente.length > 0) body.expediente = p.expediente;
 
   return body;

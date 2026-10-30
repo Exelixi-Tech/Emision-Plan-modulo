@@ -61,7 +61,7 @@ export interface DocumentState {
   error?: string;
 }
 
-export type TomadorData = {
+export type TomadorData = ProfesionOcupacionFields & {
   tipoDoc: string;
   identificacion: string;
   nombre: string;
@@ -81,14 +81,20 @@ export type TomadorData = {
   cestado?: number;
   /** Código numérico La Mundial de la ciudad (cciudad). Se obtiene del selector de catálogo. */
   cciudad?: number;
+  /** Profesión (maprofes). Con ocupacionSeparada; sin ella, datos anteriores que traen la ocupación. */
   cprofesion?: number | string;
+  /** Ocupación (maocupac). */
+  cocupacion?: number | string;
   cactividad?: number | string;
   xprofesion?: string;
+  xocupacion?: string;
   xactividad?: string;
+  /** true: cprofesion es profesión y cocupacion ocupación (Formulario los captura por separado). */
+  ocupacionSeparada?: boolean;
   itipoDiligencia?: 'S' | 'C';
 };
 
-export type PersonData = {
+export type PersonData = ProfesionOcupacionFields & {
   nombre: string;
   apellido: string;
   identificacion: string;
@@ -155,8 +161,18 @@ export interface Plan {
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
 
+/** Profesión (maprofes), ocupación (maocupac) y actividad económica (maactivi) de una persona. */
+export interface ProfesionOcupacionFields {
+  cprofesion?: number | string;
+  xprofesion?: string;
+  cocupacion?: number | string;
+  xocupacion?: string;
+  cactividad?: number | string;
+  xactividad?: string;
+}
+
 /** Persona (asegurado/beneficiario) del producto Funerario. */
-export interface FuneralPerson {
+export interface FuneralPerson extends ProfesionOcupacionFields {
   tipoDoc: string;
   identificacion: string;
   nombre: string;

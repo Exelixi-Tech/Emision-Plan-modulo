@@ -117,6 +117,22 @@ function parseMetric(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Código de catálogo (maprofes / maocupac / maactivi): entero positivo o null. */
+function catalogCode(v) {
+  if (v == null || String(v).trim() === '') return null;
+  const n = parseInt(String(v), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Profesión, ocupación y actividad económica de una persona del wizard. */
+function profesionFields(person) {
+  return {
+    cprofesion: catalogCode(person?.cprofesion),
+    cocupacion: catalogCode(person?.cocupacion),
+    cactividad: catalogCode(person?.cactividad),
+  };
+}
+
 function geoCode(person, codeKey, labelKey) {
   const code = person?.[codeKey];
   if (code != null && String(code).trim() !== '') {
@@ -208,6 +224,19 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
   const ciudad_tomador = tomador.cciudad != null && tomador.cciudad !== ''
     ? Number(tomador.cciudad) : (tomador.ciudad || null);
 
+  // Profesión / ocupación / actividad: el titular que es el mismo tomador hereda lo que le falte.
+  const profTomador = profesionFields(tomador);
+  const titularEsTomador = !titular.identificacion
+    || digitsToNumber(titular.identificacion) === digitsToNumber(tomador.identificacion);
+  const profTitularPropio = profesionFields(titular);
+  const profTitular = titularEsTomador
+    ? {
+      cprofesion: profTitularPropio.cprofesion ?? profTomador.cprofesion,
+      cocupacion: profTitularPropio.cocupacion ?? profTomador.cocupacion,
+      cactividad: profTitularPropio.cactividad ?? profTomador.cactividad,
+    }
+    : profTitularPropio;
+
   const payload = {
     cramo,
     plan,
@@ -234,6 +263,9 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     direccion_tomador: cleanString(tomador.direccion),
     telefono_tomador: cleanPhone(tomador.telefono),
     correo_tomador: cleanString(tomador.email),
+    cprofesion_tomador: profTomador.cprofesion,
+    cocupacion_tomador: profTomador.cocupacion,
+    cactividad_tomador: profTomador.cactividad,
 
     // ── Titular (1er asegurado; si es nulo se pasa nulo para que BD lo asigne) ─
     tipo_cedula_titular: titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null,
@@ -250,6 +282,9 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     direccion_titular: cleanString(titular.direccion) || cleanString(tomador.direccion),
     telefono_titular: cleanPhone(titular.telefono) || cleanPhone(tomador.telefono),
     correo_titular: cleanString(titular.email) || cleanString(tomador.email),
+    cprofesion_titular: profTitular.cprofesion,
+    cocupacion_titular: profTitular.cocupacion,
+    cactividad_titular: profTitular.cactividad,
 
     // ── Declaraciones ──────────────────────────────────────────────────────────
     dec_persona_politica: tomador.personaPoliticamenteExpuesta === true ? 1 : 0,
@@ -288,6 +323,7 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
         estatura: parseMetric(a.estatura ?? a.nestatura_asegurado),
         npeso_asegurado: parseMetric(a.peso ?? a.npeso_asegurado),
         nestatura_asegurado: parseMetric(a.estatura ?? a.nestatura_asegurado),
+        ...(idx === 0 ? profTitular : profesionFields(a)),
       };
     }),
 

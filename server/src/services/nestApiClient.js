@@ -572,6 +572,31 @@ async function getValrepCities(cestado) {
   );
 }
 
+/** Listas valrep `{ cvalor, xdescripcion }` → `{ code, label }`. */
+function mapValrepGetList(raw) {
+  return (raw ?? [])
+    .map((i) => ({ code: String(i.cvalor ?? ''), label: String(i.xdescripcion ?? '').trim() }))
+    .filter((it) => it.code !== '' && it.label !== '');
+}
+
+/** Profesiones (maprofes) — sp_get_profesiones_nexus. */
+async function getValrepProfesiones() {
+  const { data } = await axios.get(`${getBaseUrl()}/api/v1/valrep/profesiones`, await axiosOpts());
+  return mapValrepGetList(data?.data?.listas);
+}
+
+/** Ocupaciones (maocupac) — sp_get_ocupaciones_nexus. */
+async function getValrepOcupaciones() {
+  const { data } = await axios.get(`${getBaseUrl()}/api/v1/valrep/ocupaciones`, await axiosOpts());
+  return mapValrepGetList(data?.data?.listas);
+}
+
+/** Actividades económicas (maactivi) — sp_get_actividades_nexus. */
+async function getValrepActividades() {
+  const { data } = await axios.get(`${getBaseUrl()}/api/v1/valrep/actividades`, await axiosOpts());
+  return mapValrepGetList(data?.data?.listas);
+}
+
 /** @returns {Promise<Array<{ code: string, label: string }>>} */
 async function getValrepList(domain) {
   const response = await axios.post(
@@ -770,5 +795,8 @@ module.exports = {
   getValrepCities,
   getValrepList,
   getValrepFrecuencias,
+  getValrepProfesiones,
+  getValrepOcupaciones,
+  getValrepActividades,
   getValrepBrokers,
 };
