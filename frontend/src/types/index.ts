@@ -75,10 +75,16 @@ export type TomadorData = {
   cestado?: number;
   /** Código numérico La Mundial de la ciudad (cciudad). Se obtiene del selector de catálogo. */
   cciudad?: number;
+  /** Profesión (maprofes). Con ocupacionSeparada; sin ella, datos anteriores que traen la ocupación. */
   cprofesion?: number | string;
+  /** Ocupación (maocupac). */
+  cocupacion?: number | string;
   cactividad?: number | string;
   xprofesion?: string;
+  xocupacion?: string;
   xactividad?: string;
+  /** true: cprofesion es profesión y cocupacion ocupación (Formulario los captura por separado). */
+  ocupacionSeparada?: boolean;
   itipoDiligencia?: 'S' | 'C';
 };
 
