@@ -16,6 +16,7 @@ const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
+const { registrarPendiente } = require('../services/postEmisionPendiente');
 
 const { handleEmit: handlePatrimonialEmit, handleQuote: handlePatrimonialQuote } = require('./patrimonial');
 
@@ -304,6 +305,17 @@ router.post('/policies/emit', async (req, res) => {
       });
     } catch (feedErr) {
       console.warn('[modulo-emision/emit] feed Nexus:', feedErr?.message || feedErr);
+      if (mergedState?.paymentVerified) {
+        registrarPendiente({
+          flujo: 'rcv',
+          step: 'record_emission_error',
+          error: feedErr?.message || feedErr,
+          state: mergedState,
+          internalPolicyId: result.internalPolicyId,
+          cnpoliza: result.cnpoliza,
+          cnrecibo: result.cnrecibo,
+        });
+      }
     }
     return res.status(201).json({
       success: true, message: 'Poliza emitida exitosamente.',
@@ -346,6 +358,7 @@ function _send(res, err, stage) {
     success: false, code, message: err.message,
     ...(err.details ? { details: err.details } : {}),
     ...(err.internalPolicyId ? { internalPolicyId: err.internalPolicyId } : {}),
+    ...(err.postEmision ? { postEmision: err.postEmision } : {}),
     ...(detail ? { detail } : {}),
     ...(err.endpoint ? { endpoint: err.endpoint } : {}),
     stage,
