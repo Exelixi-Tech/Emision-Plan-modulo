@@ -19,6 +19,7 @@ const {
   resolveCityCode,
 } = require('./catalogs');
 const { resolveCusuarioCoberturas } = require('./planesClient');
+const { renovacionDeState } = require('../lib/renovacion');
 
 // ---------- helpers ----------
 
@@ -468,11 +469,15 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const ndias = resolveRcvNdias(state, overrides);
   const fecha_emision = overrides.fechaEmision || todayYmd();
   const iplaca = resolveIplaca(v);
+  // Renovación (póliza nueva enlazada): la vigencia arranca en fdesde sugerida (fhasta de la anterior).
+  // Sin renovación inicioVigencia = fecha_emision, igual que siempre.
+  const renovacion = renovacionDeState(state);
+  const inicioVigencia = renovacion ? renovacion.fdesde : fecha_emision;
   const vigencia =
-    resolveVigenciaExtranjera(state, fecha_emision)
+    resolveVigenciaExtranjera(state, inicioVigencia)
     || ((frecuencia === 'D' || iplaca === 'B') && ndias != null
-      ? resolveVigencia(fecha_emision, ndias)
-      : resolveVigenciaAnual(fecha_emision));
+      ? resolveVigencia(inicioVigencia, ndias)
+      : resolveVigenciaAnual(inicioVigencia));
   const msumaaseg = resolveMsumaaseg(state, quoteMeta);
   const internalId = overrides.internalPolicyId || genInternalPolicyId();
   const rcv = state.rcv || {};
@@ -517,6 +522,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     fhasta: vigencia.fhasta,
     msumaaseg,
     iplaca,
+    ...(renovacion ? { cnpoliza_rel: renovacion.cnpoliza_rel, itipoEmi: renovacion.itipoEmi } : {}),
 
     productor: productor != null ? String(productor) : undefined,
     cusuario,
@@ -741,6 +747,8 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     femision,
     fdesde,
     fhasta,
+    // Renovación: póliza anterior en cnpoliza_rel (nest-api solo lee este campo explícito).
+    ...(p.cnpoliza_rel ? { cnpoliza_rel: String(p.cnpoliza_rel), itipoEmi: p.itipoEmi || 'NU' } : {}),
   };
 
   body.ccanalalt = parseCanalAltOptional(p.ccanalalt);
