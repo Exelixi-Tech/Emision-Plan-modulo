@@ -161,6 +161,50 @@ function normalizeTipoCedula(v) {
   return 'V';
 }
 
+/**
+ * RCV persona jurídica: cómo se manda el apellido al SP (env RCV_PJ_APELLIDO_MODO).
+ *  - razon_social (default): apellido = razón social, igual que SysIP (seguro si alguna tabla lo exige NOT NULL).
+ *  - vacio: apellido = '' (el SP sp_pre_emision_automovil_rcv_nexus no lo exige para J/G/C).
+ */
+function rcvPjApellidoModo() {
+  const v = String(process.env.RCV_PJ_APELLIDO_MODO || '').trim().toLowerCase();
+  return v === 'vacio' ? 'vacio' : 'razon_social';
+}
+
+/** OCR del RIF (slot cédula) si el estado de la sesión lo trae. */
+function ocrRifDe(state, slot) {
+  const ocr = state?.documents?.[slot]?.ocr;
+  return ocr && typeof ocr === 'object' ? ocr : {};
+}
+
+/** Persona jurídica: nombre = razón social; apellido según RCV_PJ_APELLIDO_MODO. */
+function nombresPJ(person, ocr) {
+  const razon = cleanString(person?.nombre || person?.razonSocial || ocr?.razonSocial || ocr?.nombre);
+  return { nombre: razon, apellido: rcvPjApellidoModo() === 'vacio' ? '' : razon };
+}
+
+/**
+ * Titular persona natural sin fecha: la toma del OCR de su cédula (cedula_titular) o de la
+ * licencia cuando la licencia está a nombre de la misma cédula del titular.
+ */
+function resolveFnacTitularOcr(state, titular) {
+  const docs = state?.documents || {};
+  const deCedula = normalizeDate(docs.cedula_titular?.ocr?.fechaNacimiento || '');
+  if (deCedula) return deCedula;
+  const lic = docs.licencia?.ocr;
+  const idTitular = onlyDigits(titular?.identificacion);
+  const idLic = onlyDigits(lic?.identificacion);
+  if (lic?.fechaNacimiento && idTitular && idLic && idTitular === idLic) {
+    return normalizeDate(lic.fechaNacimiento);
+  }
+  return null;
+}
+
+/** Persona jurídica: fecha de constitución → inscripción del RIF → fecha de emisión. */
+function resolveFechaPJ(person, ocr, fechaEmision) {
+  return normalizeDate(person?.fechaInscripcion || ocr?.fechaInscripcion || '') || fechaEmision;
+}
+
 function normalizeSexo(v) {
   const s = cleanString(v).toUpperCase().charAt(0);
   return s === 'F' ? 'F' : 'M';
@@ -458,8 +502,26 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const fnacTomador = resolveBirthDate(tomador);
   const fnacTitularRaw = sameInsured ? fnacTomador : resolveBirthDate(titular);
   // Paridad SysIP sp_pre_emision: si falta una, hereda de la otra.
-  const fnac_tomador = fnacTomador || fnacTitularRaw;
-  const fnac_titular = fnacTitularRaw || fnacTomador;
+  // Persona jurídica (J) sin fecha: fecha de constitución → inscripción del RIF (OCR) → fecha de emisión.
+  const tomadorPJ = tipo_cedula_tomador === 'J';
+  const titularPJ = tipo_cedula_titular === 'J';
+  // La excepción PJ aplica SOLO a la persona con tipoDoc J: una persona natural (V/E) jamás
+  // hereda la fecha de inscripción del RIF de la otra parte (daría 0 años → "menor de edad").
+  // Titular natural sin fecha: OCR de su cédula → OCR de la licencia si es la misma cédula.
+  const fnac_tomador = tomadorPJ
+    ? (fnacTomador || resolveFechaPJ(tomador, ocrRifDe(state, 'cedula'), fecha_emision))
+    : (fnacTomador || (titularPJ ? null : fnacTitularRaw));
+  const fnac_titular = sameInsured
+    ? fnac_tomador
+    : titularPJ
+      ? (fnacTitularRaw || resolveFechaPJ(titular, ocrRifDe(state, 'cedula_titular'), fecha_emision))
+      : (fnacTitularRaw || resolveFnacTitularOcr(state, titular) || (tomadorPJ ? null : fnac_tomador));
+  const pjTomador = tomadorPJ ? nombresPJ(tomador, ocrRifDe(state, 'cedula')) : null;
+  // Titular distinto y persona natural: null (antes caía en pjTomador y recibía la razón social del tomador J).
+  const pjTitular = sameInsured
+    ? pjTomador
+    : (titularPJ ? nombresPJ(titular, ocrRifDe(state, 'cedula_titular')) : null);
+  const itipoDiligencia = state.diligencia?.itipoDiligencia || tomador.itipoDiligencia || null;
 
   // Prioridad: código real del selector (cestado/cciudad) → fallback al mapa estático por texto
   const stateCodeTomador = tomador.cestado   ? parseInt(tomador.cestado, 10)  : resolveStateCode(tomador.estado);
@@ -495,8 +557,8 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     // Tomador
     tipo_cedula_tomador,
     rif_tomador: onlyDigits(tomador.identificacion),
-    nombre_tomador: cleanString(tomador.nombre),
-    apellido_tomador: cleanString(tomador.apellido),
+    nombre_tomador: pjTomador ? pjTomador.nombre : cleanString(tomador.nombre),
+    apellido_tomador: pjTomador ? pjTomador.apellido : cleanString(tomador.apellido),
     telefono_tomador: cleanPhone(tomador.telefono),
     correo_tomador: cleanString(tomador.email),
     sexo_tomador: normalizeSexo(tomador.sexo),
@@ -506,14 +568,15 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     direccion_tomador: cleanString(tomador.direccion),
     cprofesion_tomador: parseOptionalCode(tomador.cprofesion),
     cactividad_tomador: parseOptionalCode(tomador.cactividad),
-    itipo_diligencia: state.diligencia?.itipoDiligencia || tomador.itipoDiligencia || null,
+    // SP RCV: persona jurídica no admite diligencia simplificada (THROW 99011) → 'C'.
+    itipo_diligencia: tomadorPJ ? 'C' : itipoDiligencia,
 
     // Titular del vehiculo
     tipo_cedula_titular,
     rif_titular: sameInsured ? onlyDigits(tomador.identificacion) : onlyDigits(titular.identificacion),
-    nombre_titular: sameInsured ? cleanString(tomador.nombre) : cleanString(titular.nombre),
-    apellido_titular: sameInsured ? cleanString(tomador.apellido) : cleanString(titular.apellido),
-    sexo_titular: sameInsured ? normalizeSexo(tomador.sexo) : (titular.sexo ? normalizeSexo(titular.sexo) : ''),
+    nombre_titular: pjTitular ? pjTitular.nombre : (sameInsured ? cleanString(tomador.nombre) : cleanString(titular.nombre)),
+    apellido_titular: pjTitular ? pjTitular.apellido : (sameInsured ? cleanString(tomador.apellido) : cleanString(titular.apellido)),
+    sexo_titular: sameInsured ? normalizeSexo(tomador.sexo) : (titular.sexo || titularPJ ? normalizeSexo(titular.sexo) : ''),
     fnac_titular,
     estado_titular: stateCodeTitular,
     ciudad_titular: cityCodeTitular,

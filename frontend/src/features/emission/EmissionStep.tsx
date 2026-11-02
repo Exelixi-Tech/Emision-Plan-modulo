@@ -7,6 +7,7 @@ import { SearchSelect } from '../../components/ui/SearchSelect';
 import { useCatalogs, useCiudades } from '../../hooks/useCatalogs';
 import { User, Heart, ShieldAlert, FileText } from 'lucide-react';
 import { formatTelefono, isValidPhonePrefix } from '../../lib/phone';
+import { isRcv } from '../../lib/product';
 
 export function SectionCard({
   title,
@@ -89,6 +90,8 @@ export function EmissionStep() {
     const digs = (v?: string) => (v ?? '').replace(/\D/g, '').length;
 
     const validatePerson = (person: any, prefix: string) => {
+      // RCV persona jurídica (RIF J/G/C): razón social en nombre; sin apellido, sexo, estado civil ni fecha de nacimiento.
+      const esPJ = isRcv() && ['J', 'G', 'C'].includes(String(person.tipoDoc ?? '').trim().toUpperCase());
       if (req(person.identificacion)) {
         e[`${prefix}identificacion`] = 'La identificación es obligatoria';
       } else if (digs(person.identificacion) < 6) {
@@ -103,14 +106,18 @@ export function EmissionStep() {
         e[`${prefix}nombre`] = 'El nombre debe tener al menos 2 caracteres';
       }
 
-      if (req(person.apellido)) {
+      if (esPJ) {
+        // Sin apellido para persona jurídica.
+      } else if (req(person.apellido)) {
         e[`${prefix}apellido`] = 'El apellido es obligatorio';
       } else if (len(person.apellido) < 2) {
         e[`${prefix}apellido`] = 'El apellido debe tener al menos 2 caracteres';
       }
 
-      if (req(person.sexo))       e[`${prefix}sexo`]        = 'Selecciona el sexo';
-      if (req(person.estadoCivil)) e[`${prefix}estadoCivil`] = 'Selecciona el estado civil';
+      if (!esPJ) {
+        if (req(person.sexo))       e[`${prefix}sexo`]        = 'Selecciona el sexo';
+        if (req(person.estadoCivil)) e[`${prefix}estadoCivil`] = 'Selecciona el estado civil';
+      }
 
       if (req(person.telefono)) {
         e[`${prefix}telefono`] = 'El teléfono es obligatorio';
@@ -126,7 +133,7 @@ export function EmissionStep() {
         e[`${prefix}email`] = 'Ingresa un correo válido';
       }
 
-      if (req(person.fechaNac)) e[`${prefix}fechaNac`] = 'La fecha de nacimiento es obligatoria';
+      if (!esPJ && req(person.fechaNac)) e[`${prefix}fechaNac`] = 'La fecha de nacimiento es obligatoria';
       if (req(person.estado))   e[`${prefix}estado`]   = 'El estado es obligatorio';
       if (req(person.ciudad))   e[`${prefix}ciudad`]   = 'La ciudad es obligatoria';
 
