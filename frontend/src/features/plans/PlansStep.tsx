@@ -496,6 +496,8 @@ export function PlansStep() {
   const cardDisplayPrice = tarjetaVesPrimary ? displayVes : displayPrice;
   const cardShowVesLine = !tarjetaFlow || tarjetaVesPrimary;
   const cardShowTasa = !tarjetaFlow || tarjetaVesPrimary;
+  /** Renovación con el plan anterior disponible: resumen fijo (como tarjeta), sin selector de plan. */
+  const planFijoRenovacion = !lockedCplan && planRenovacionEncontrado === true && Boolean(selectedPlan);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -548,9 +550,9 @@ export function PlansStep() {
       )}
 
       {/* Selectores */}
-      <div className={`grid grid-cols-1 gap-4 ${lockedCplan ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${lockedCplan || planFijoRenovacion ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
 
-        {!lockedCplan && (
+        {!lockedCplan && !planFijoRenovacion && (
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
             <Shield size={11} className="text-indigo-500" />
@@ -583,7 +585,7 @@ export function PlansStep() {
                 ? <Loader2 size={14} className="animate-spin" />
                 : <Check size={15} strokeWidth={2.5} />}
             </div>
-            {lockedCplan ? (
+            {lockedCplan || planFijoRenovacion ? (
               <div className="w-full pl-14 pr-4 py-3.5 rounded-xl border-2 border-violet-200 bg-violet-50/60 text-sm font-bold text-slate-900 select-none">
                 {plansLoading
                   ? 'Cargando plan…'

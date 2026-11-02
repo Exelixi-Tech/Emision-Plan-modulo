@@ -13,6 +13,7 @@ import { getProductConfig } from '../lib/product';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { toast } from '../store/toastStore';
 import { StepGlyph, StepKicker, StepperFxStyles, StepperProgress, STEPPER_TONE_EMERALD } from './StepperFx';
+import { useRenovacion } from '../lib/renovacion';
 
 type StepItem = { n: number; label: string; Icon: typeof Car; displayStep?: number };
 
@@ -27,6 +28,7 @@ export function TopStepper() {
   const selectedPlan = useWizardStore((s) => s.selectedPlan);
   const product = getProductConfig();
   const cotizadorRcv = isCotizadorFlow() && product.id === 'rcv';
+  const enRenovacion = Boolean(useRenovacion());
   const [navigating, setNavigating] = useState(false);
   const [navTarget, setNavTarget] = useState<number | null>(null);
 
@@ -39,7 +41,7 @@ export function TopStepper() {
   };
 
   // Misma visual que RCV: stepper completo también en Exélixi (paridad de flujo).
-  const STEPS: StepItem[] = cotizadorRcv
+  const STEPS_BASE: StepItem[] = cotizadorRcv
     ? [
         { n: 3, displayStep: 1, label: 'Vehículo', Icon: Car },
         { n: 4, displayStep: 2, label: 'Plan', Icon: ShieldCheck },
@@ -63,6 +65,10 @@ export function TopStepper() {
         { n: 4, label: 'Plan', Icon: ShieldCheck },
         { n: 5, label: 'Pago', Icon: CreditCard },
       ];
+  // Renovación: no hay paso de documentos (se entró directo al cliente); se renumera desde 1.
+  const STEPS: StepItem[] = enRenovacion
+    ? STEPS_BASE.filter((st) => st.n !== 1).map((st, i) => ({ ...st, displayStep: i + 1 }))
+    : STEPS_BASE;
 
   /** Pasos que emisión renderiza localmente. */
   const LOCAL_STEPS = cotizadorRcv ? [4] : product.exelixiCatalog ? [2, 3, 4] : [4];
