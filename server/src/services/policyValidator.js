@@ -20,6 +20,21 @@ function ageInYears(yyyymmdd) {
 }
 
 /**
+ * V/P: cédula venezolana o pasaporte (1-8 dígitos).
+ * J/G/C: RIF de persona jurídica con dígito verificador, ej. J-31317476-9 (1-9), como lo guarda Sis2000.
+ * E: documento extranjero, ej. C.C. Colombia (1-10).
+ */
+const RIF_MAX_DIGITOS = { E: 10, J: 9, G: 9, C: 9 };
+
+function rifMaxDigitos(tipo) {
+  return RIF_MAX_DIGITOS[String(tipo || '').trim().toUpperCase()] ?? 8;
+}
+
+function rifValido(rif, tipo) {
+  return new RegExp(`^\\d{1,${rifMaxDigitos(tipo)}}$`).test(String(rif || ''));
+}
+
+/**
  * @param {object} p Payload de createEmissionAuto ya construido por mapper.
  * @returns {string[]} Lista de errores (vacia = OK).
  */
@@ -44,7 +59,9 @@ function validateEmissionPayload(p) {
 
   // Tomador — cédula/RIF: 1–8 dígitos (alineado con formulario Exélixi)
   if (!/^[VEJ]$/.test(p.tipo_cedula_tomador || '')) errors.push('tipo_cedula_tomador invalido (V|E|J)');
-  if (!/^\d{1,8}$/.test(p.rif_tomador || '')) errors.push('rif_tomador invalido (solo digitos, 1-8)');
+  if (!rifValido(p.rif_tomador, p.tipo_cedula_tomador)) {
+    errors.push(`rif_tomador invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_tomador)})`);
+  }
   if (!p.nombre_tomador?.trim()) errors.push('nombre_tomador requerido');
   if (!p.apellido_tomador?.trim()) errors.push('apellido_tomador requerido');
   if (!/^[+]?\d{8,15}$/.test(String(p.telefono_tomador || '').replace(/\s+/g, ''))) {
@@ -60,7 +77,9 @@ function validateEmissionPayload(p) {
 
   // Titular (si distinto al tomador, mismas reglas basicas)
   if (!/^[VEJ]$/.test(p.tipo_cedula_titular || '')) errors.push('tipo_cedula_titular invalido (V|E|J)');
-  if (!/^\d{1,8}$/.test(p.rif_titular || '')) errors.push('rif_titular invalido (solo digitos, 1-8)');
+  if (!rifValido(p.rif_titular, p.tipo_cedula_titular)) {
+    errors.push(`rif_titular invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_titular)})`);
+  }
   if (!p.nombre_titular?.trim()) errors.push('nombre_titular requerido');
   if (!p.apellido_titular?.trim()) errors.push('apellido_titular requerido');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular || '')) {
@@ -89,4 +108,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears } };
+module.exports = { validateEmissionPayload, _internal: { ageInYears, rifMaxDigitos, rifValido } };
