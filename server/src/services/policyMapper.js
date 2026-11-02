@@ -184,6 +184,23 @@ function nombresPJ(person, ocr) {
   return { nombre: razon, apellido: rcvPjApellidoModo() === 'vacio' ? '' : razon };
 }
 
+/**
+ * Titular persona natural sin fecha: la toma del OCR de su cédula (cedula_titular) o de la
+ * licencia cuando la licencia está a nombre de la misma cédula del titular.
+ */
+function resolveFnacTitularOcr(state, titular) {
+  const docs = state?.documents || {};
+  const deCedula = normalizeDate(docs.cedula_titular?.ocr?.fechaNacimiento || '');
+  if (deCedula) return deCedula;
+  const lic = docs.licencia?.ocr;
+  const idTitular = onlyDigits(titular?.identificacion);
+  const idLic = onlyDigits(lic?.identificacion);
+  if (lic?.fechaNacimiento && idTitular && idLic && idTitular === idLic) {
+    return normalizeDate(lic.fechaNacimiento);
+  }
+  return null;
+}
+
 /** Persona jurídica: fecha de constitución → inscripción del RIF → fecha de emisión. */
 function resolveFechaPJ(person, ocr, fechaEmision) {
   return normalizeDate(person?.fechaInscripcion || ocr?.fechaInscripcion || '') || fechaEmision;
@@ -493,14 +510,22 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   // Persona jurídica (J) sin fecha: fecha de constitución → inscripción del RIF (OCR) → fecha de emisión.
   const tomadorPJ = tipo_cedula_tomador === 'J';
   const titularPJ = tipo_cedula_titular === 'J';
+  // La excepción PJ aplica SOLO a la persona con tipoDoc J: una persona natural (V/E) jamás
+  // hereda la fecha de inscripción del RIF de la otra parte (daría 0 años → "menor de edad").
+  // Titular natural sin fecha: OCR de su cédula → OCR de la licencia si es la misma cédula.
   const fnac_tomador = tomadorPJ
     ? (fnacTomador || resolveFechaPJ(tomador, ocrRifDe(state, 'cedula'), fecha_emision))
-    : (fnacTomador || fnacTitularRaw);
-  const fnac_titular = titularPJ && !sameInsured
-    ? (fnacTitularRaw || resolveFechaPJ(titular, ocrRifDe(state, 'cedula_titular'), fecha_emision))
-    : (fnacTitularRaw || fnac_tomador);
+    : (fnacTomador || (titularPJ ? null : fnacTitularRaw));
+  const fnac_titular = sameInsured
+    ? fnac_tomador
+    : titularPJ
+      ? (fnacTitularRaw || resolveFechaPJ(titular, ocrRifDe(state, 'cedula_titular'), fecha_emision))
+      : (fnacTitularRaw || resolveFnacTitularOcr(state, titular) || (tomadorPJ ? null : fnac_tomador));
   const pjTomador = tomadorPJ ? nombresPJ(tomador, ocrRifDe(state, 'cedula')) : null;
-  const pjTitular = titularPJ && !sameInsured ? nombresPJ(titular, ocrRifDe(state, 'cedula_titular')) : pjTomador;
+  // Titular distinto y persona natural: null (antes caía en pjTomador y recibía la razón social del tomador J).
+  const pjTitular = sameInsured
+    ? pjTomador
+    : (titularPJ ? nombresPJ(titular, ocrRifDe(state, 'cedula_titular')) : null);
   const itipoDiligencia = state.diligencia?.itipoDiligencia || tomador.itipoDiligencia || null;
 
   // Prioridad: código real del selector (cestado/cciudad) → fallback al mapa estático por texto

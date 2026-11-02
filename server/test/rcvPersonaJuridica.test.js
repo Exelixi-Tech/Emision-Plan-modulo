@@ -81,3 +81,75 @@ test('validador: persona natural sigue exigiendo apellido y fnac', () => {
   assert.ok(errs.includes('apellido_tomador requerido'));
   assert.ok(errs.some((e) => e.startsWith('fnac_tomador')));
 });
+
+// Bug QA 02-nov: tomador J (EXELIXI, inscripción 2025-05-14) + titular V distinto sin fechaNac
+// → Emisión heredaba la fecha del RIF al titular (0 años) y rechazaba "titular debe ser mayor de edad".
+function estadoTomadorJTitularV(extraTitular = {}, documents) {
+  const st = estadoPJ({ identificacion: '506973332', nombre: 'EXELIXI TECH, C.A.', fechaNac: '2025-05-14' });
+  st.sameInsured = false;
+  st.asegurado = {
+    tipoDoc: 'V', identificacion: '14484939', nombre: 'JOSE MANUEL', apellido: 'SOUTO FERNANDEZ',
+    telefono: '04141234567', email: 'jose@example.com', sexo: 'M', estadoCivil: 'S', fechaNac: '',
+    cestado: 17, cciudad: 1, direccion: 'CARACAS', ...extraTitular,
+  };
+  st.documents = documents || {
+    cedula: { ocr: { tipoDoc: 'J', identificacion: '506973332', razonSocial: 'EXELIXI TECH, C.A.', fechaInscripcion: '2025-05-14' } },
+    licencia: { ocr: { identificacion: 'V14484939', nombre: 'JOSE MANUEL', apellido: 'SOUTO FERNANDEZ', fechaNacimiento: '1979-09-07' } },
+  };
+  return st;
+}
+
+test('tomador J + titular V sin fecha: titular toma la fecha de la licencia OCR, nunca la del RIF', () => {
+  const p = build(estadoTomadorJTitularV());
+  assert.equal(p.tipo_cedula_tomador, 'J');
+  assert.equal(p.tipo_cedula_titular, 'V');
+  assert.equal(p.fnac_tomador, '2025-05-14');
+  assert.equal(p.fnac_titular, '1979-09-07');
+  assert.equal(p.nombre_titular, 'JOSE MANUEL');
+  assert.equal(p.apellido_titular, 'SOUTO FERNANDEZ');
+  assert.equal(p.nombre_tomador, 'EXELIXI TECH, C.A.');
+  const errs = validateEmissionPayload(p);
+  for (const e of errs) assert.doesNotMatch(e, /fnac|mayor de edad|apellido_titular/);
+});
+
+test('tomador J + titular V sin fecha ni OCR: fnac_titular vacío (error de formato, no "menor de edad")', () => {
+  const p = build(estadoTomadorJTitularV({}, { cedula: { ocr: { tipoDoc: 'J', fechaInscripcion: '2025-05-14' } } }));
+  assert.equal(p.fnac_titular, null);
+  const errs = validateEmissionPayload(p);
+  assert.ok(errs.some((e) => e.startsWith('fnac_titular formato')));
+  assert.ok(!errs.includes('titular debe ser mayor de edad (18+)'));
+});
+
+test('tomador J + titular V: licencia de otra cédula no se usa; cedula_titular OCR sí', () => {
+  const docs = {
+    licencia: { ocr: { identificacion: 'V99999999', fechaNacimiento: '1990-01-01' } },
+    cedula_titular: { ocr: { identificacion: 'V14484939', fechaNacimiento: '1979-09-07' } },
+  };
+  assert.equal(build(estadoTomadorJTitularV({}, docs)).fnac_titular, '1979-09-07');
+  delete docs.cedula_titular;
+  assert.equal(build(estadoTomadorJTitularV({}, docs)).fnac_titular, null);
+});
+
+test('titular V con fecha propia la conserva aunque el tomador sea J', () => {
+  const p = build(estadoTomadorJTitularV({ fechaNac: '1980-02-02' }));
+  assert.equal(p.fnac_titular, '1980-02-02');
+  assert.equal(validateEmissionPayload(p).filter((e) => /fnac|mayor de edad/.test(e)).length, 0);
+});
+
+test('tomador V sin fecha + titular J: el tomador no hereda la fecha del RIF del titular', () => {
+  const st = estadoPJ({ tipoDoc: 'V', identificacion: '19529692', nombre: 'ANA', apellido: 'PEREZ', fechaNac: '' });
+  st.sameInsured = false;
+  st.asegurado = { tipoDoc: 'J', identificacion: '313005495', nombre: 'UNIDAD INTEGRAL DE SALUD UNISA, C.A.', fechaNac: '', cestado: 17, cciudad: 1, direccion: 'X' };
+  st.documents = { cedula_titular: { ocr: { tipoDoc: 'J', fechaInscripcion: '2005-03-21' } } };
+  const p = build(st);
+  assert.equal(p.fnac_tomador, null);
+  assert.equal(p.fnac_titular, '2005-03-21');
+  assert.ok(validateEmissionPayload(p).some((e) => e.startsWith('fnac_tomador')));
+});
+
+test('sameInsured=true con tomador J: titular también J con la misma fecha PJ', () => {
+  const p = build(estadoPJ({ identificacion: '506973332', nombre: 'EXELIXI TECH, C.A.', fechaNac: '' }));
+  assert.equal(p.tipo_cedula_titular, 'J');
+  assert.equal(p.fnac_titular, p.fnac_tomador);
+  assert.equal(validateEmissionPayload(p).filter((e) => /fnac|mayor de edad/.test(e)).length, 0);
+});
