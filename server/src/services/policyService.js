@@ -464,7 +464,11 @@ async function quoteAndEmit(state, overrides = {}) {
       serial_motor: payload.serial_motor || payload.serial_carroceria,
     });
   } catch (err) {
-    if (err.code === 'PLATE_ALREADY_INSURED') {
+    if (err.code === 'PLATE_ALREADY_INSURED' && payload.cnpoliza_rel) {
+      // Renovación: la placa sigue asegurada por la póliza que se renueva (cnpoliza_rel) hasta su
+      // fhasta, que es el fdesde de la nueva. No se bloquea aquí; el SP valida al emitir.
+      console.warn(`[emit] renovación ${payload.cnpoliza_rel}: placa con póliza vigente, se continúa (${err.message})`);
+    } else if (err.code === 'PLATE_ALREADY_INSURED') {
       // Pago ya verificado y la placa aparece asegurada: probable reintento tras
       // timeout/emisión previa. Se deja constancia para conciliar (no se re-emite ni cobra).
       // nest-api no expone lookup público por placa (lookupEmissionByPlaca es privado);
@@ -479,11 +483,12 @@ async function quoteAndEmit(state, overrides = {}) {
         internalPolicyId: metadata.internalPolicyId,
         ...(postEmision ? { postEmision } : {}),
       });
+    } else {
+      throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
+        stage: 'validate',
+        internalPolicyId: metadata.internalPolicyId,
+      });
     }
-    throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
-      stage: 'validate',
-      internalPolicyId: metadata.internalPolicyId,
-    });
   }
 
   // 4) Validar localmente antes de quemar cupo

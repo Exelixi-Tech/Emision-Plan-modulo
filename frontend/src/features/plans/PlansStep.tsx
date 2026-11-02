@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
+import { planPreferidoRenovacion } from '../../lib/renovacion';
+import { RenovacionBanner } from '../../components/RenovacionBanner';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
   Loader2, AlertTriangle, CalendarClock, UserCheck,
@@ -174,6 +176,8 @@ export function PlansStep() {
   const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState(false);
   const [plansEmptyMessage, setPlansEmptyMessage] = useState<string | null>(null);
+  /** Renovación: ¿el plan de la póliza anterior está en los planes de hoy? (null = no aplica). */
+  const [planRenovacionEncontrado, setPlanRenovacionEncontrado] = useState<boolean | null>(null);
   const [apiFrecuencias, setApiFrecuencias] = useState<CatalogItem[]>([]);
   const [frecLoading, setFrecLoading] = useState(false);
   // Placa extranjera: vigencia corta (mavigencias_PR) en lugar de frecuencia; Sis2000 prorratea la prima.
@@ -266,8 +270,14 @@ export function PlansStep() {
           setCanalVisibility(res.data.canalVisibility);
         }
         if (mapped.length > 0 || lockedCplan) setCategory(label);
+        const planRenovacion = lockedCplan ? null : planPreferidoRenovacion();
         if (lockedCplan) {
           setSelectedPlan(resolveLockedTarjetaPlan(mapped, lockedCplan, tarjetaMeta, label));
+        } else if (planRenovacion) {
+          // Renovación: mismo plan si sigue en los planes de hoy; si no, el cliente elige.
+          const found = mapped.find((p) => String(p.cplan ?? '').toUpperCase() === planRenovacion) ?? null;
+          setPlanRenovacionEncontrado(Boolean(found));
+          setSelectedPlan(found);
         } else {
           setSelectedPlan(null);
         }
@@ -489,6 +499,7 @@ export function PlansStep() {
 
   return (
     <div className="animate-fade-in space-y-6">
+      <RenovacionBanner planEncontrado={planRenovacionEncontrado} />
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
           {lockedCplan
