@@ -19,9 +19,15 @@ function ageInYears(yyyymmdd) {
   return age;
 }
 
-/** V/J: cédula o RIF venezolano (1-8 dígitos). E: documento extranjero, ej. C.C. Colombia (1-10). */
+/**
+ * V/P: cédula venezolana o pasaporte (1-8 dígitos).
+ * J/G/C: RIF de persona jurídica con dígito verificador, ej. J-31317476-9 (1-9), como lo guarda Sis2000.
+ * E: documento extranjero, ej. C.C. Colombia (1-10).
+ */
+const RIF_MAX_DIGITOS = { E: 10, J: 9, G: 9, C: 9 };
+
 function rifMaxDigitos(tipo) {
-  return String(tipo || '').trim().toUpperCase() === 'E' ? 10 : 8;
+  return RIF_MAX_DIGITOS[String(tipo || '').trim().toUpperCase()] ?? 8;
 }
 
 function rifValido(rif, tipo) {
@@ -102,4 +108,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears } };
+module.exports = { validateEmissionPayload, _internal: { ageInYears, rifMaxDigitos, rifValido } };
