@@ -8,7 +8,7 @@ type Props = {
 };
 
 export function FuneralSubmissionPending({ tomadorEmail, planName, verdict, message }: Props) {
-  const planLabel = planName?.trim() || 'tu plan funerario';
+  const planLabel = planName?.trim() || 'tu plan';
   const referred = verdict !== 'emit';
 
   return (

@@ -16,8 +16,35 @@ const policyService = require('../services/policyService');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
+const { registrarPendiente } = require('../services/postEmisionPendiente');
+
+const { handleEmit: handlePatrimonialEmit, handleQuote: handlePatrimonialQuote } = require('./patrimonial');
 
 const router = express.Router();
+
+/**
+ * Patrimoniales (ramo 28, cproducto 89 = Responsabilidad Civil General) llegan por las
+ * mismas rutas /policies/*. El ramo 28 TAMBIEN lo usa RCV Binacional (maplanes), asi que
+ * NO se decide por cramo: se decide por cproducto (o por product explicito).
+ * Prioridad del cproducto: JWT SSO (servidor) > state.metadataCanal > plan > body.
+ */
+const PATRIMONIAL_CPRODUCTOS = new Set(
+  String(process.env.LAMUNDIAL_CPRODUCTO_PATRIMONIAL || '89')
+    .split(',').map((c) => c.trim()).filter(Boolean),
+);
+function isPatrimonialRequest(req) {
+  const { state } = req.body || {};
+  const product = String(state?.product ?? req.body?.product ?? '').trim().toLowerCase();
+  if (product === 'patrimoniales' || product === 'patrimonial') return true;
+  const cproducto = String(
+    req.nexusMetadata?.cproducto
+      ?? state?.metadataCanal?.cproducto
+      ?? state?.selectedPlan?.cproducto
+      ?? req.body?.cproducto
+      ?? '',
+  ).trim();
+  return PATRIMONIAL_CPRODUCTOS.has(cproducto);
+}
 
 function decodeJwtMetadata(token) {
   if (!token || typeof token !== 'string') return {};
@@ -40,6 +67,32 @@ function preferGestorCode(...vals) {
   return codes.find((c) => c.includes('-')) || codes[0];
 }
 
+/** Ids de rol (serol.crol) de productor/corredor, configurables con CROL_PRODUCTOR (lista separada por comas). */
+const CROLES_PRODUCTOR = String(process.env.CROL_PRODUCTOR ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter((v) => v !== '')
+  .map(Number)
+  .filter((n) => Number.isInteger(n));
+
+/**
+ * Misma regla que el selector del frontend: backoffice solo si el usuario es interno, no productor y
+ * con productor de sesión genérico (80080 o vacío); marketplace solo si el productor de la sesión es 80080.
+ * `meta.cproductor` debe ser el del token, no el que el cliente eligió.
+ */
+function puedeElegirProductor(meta) {
+  const origen = String(meta?.origen ?? meta?.source ?? '').trim().toLowerCase();
+  if (origen === 'marketplace') return String(meta?.cproductor ?? '').trim() === '80080';
+
+  if (origen === 'backoffice') {
+    const productor = String(meta?.cproductor ?? '').trim();
+    if (productor !== '' && productor !== '80080') return false;
+    const crol = meta?.crol != null && String(meta.crol).trim() !== '' ? Number(meta.crol) : NaN;
+    return Number.isFinite(crol) && !CROLES_PRODUCTOR.includes(crol);
+  }
+  return false;
+}
+
 /** Fusiona metadata SSO del JWT (nexusAuth) + tokens del state. */
 function withNexusMetadata(state, nexusMetadata) {
   if (!state || typeof state !== 'object') return state;
@@ -53,7 +106,14 @@ function withNexusMetadata(state, nexusMetadata) {
   }
 
   const mergedMeta = { ...(state.metadataCanal || {}), ...(nexusMetadata || {}) };
+  // Técnico que eligió productor en el selector: se emite con ese productor, no con el del token.
+  const usaSeleccion = puedeElegirProductor({ ...mergedMeta, cproductor: nexusMetadata?.cproductor }) && state.metadataCanal?.productorSeleccionado === true;
+  const seleccionKeys = new Set(['cproductor', 'centidad', 'citem']);
   for (const key of actorKeys) {
+    if (usaSeleccion && seleccionKeys.has(key) && state.metadataCanal?.[key]) {
+      mergedMeta[key] = state.metadataCanal[key];
+      continue;
+    }
     const vals = sources.map((src) => src?.[key]);
     const val = (key === 'cgestor' || key === 'cgestor_in')
       ? preferGestorCode(...vals)
@@ -153,6 +213,7 @@ function withNexusMetadata(state, nexusMetadata) {
  */
 router.post('/policies/quote', async (req, res) => {
   try {
+    if (isPatrimonialRequest(req)) return handlePatrimonialQuote(req, res);
     const { state, plan } = req.body || {};
     if (!state || !state.vehicle) {
       return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'state.vehicle requerido.' });
@@ -164,6 +225,7 @@ router.post('/policies/quote', async (req, res) => {
       mprimaext: result.mprimaext,
       ptasa: result.ptasa,
       coberturas: result.coberturas,
+      primaCuotaInicial: result.primaCuotaInicial ?? 0,
       metadata: result.metadata,
     });
   } catch (err) {
@@ -195,6 +257,7 @@ router.post('/policies/clasificar-diligencia', async (req, res) => {
 
 router.post('/policies/emit', async (req, res) => {
   try {
+    if (isPatrimonialRequest(req)) return handlePatrimonialEmit(req, res);
     const { state, plan, frecuencia, ndias } = req.body || {};
     if (!state || !state.vehicle || !state.tomador) {
       const { tomador, plan: legacyPlan, payment } = req.body || {};
@@ -242,6 +305,17 @@ router.post('/policies/emit', async (req, res) => {
       });
     } catch (feedErr) {
       console.warn('[modulo-emision/emit] feed Nexus:', feedErr?.message || feedErr);
+      if (mergedState?.paymentVerified) {
+        registrarPendiente({
+          flujo: 'rcv',
+          step: 'record_emission_error',
+          error: feedErr?.message || feedErr,
+          state: mergedState,
+          internalPolicyId: result.internalPolicyId,
+          cnpoliza: result.cnpoliza,
+          cnrecibo: result.cnrecibo,
+        });
+      }
     }
     return res.status(201).json({
       success: true, message: 'Poliza emitida exitosamente.',
@@ -284,6 +358,7 @@ function _send(res, err, stage) {
     success: false, code, message: err.message,
     ...(err.details ? { details: err.details } : {}),
     ...(err.internalPolicyId ? { internalPolicyId: err.internalPolicyId } : {}),
+    ...(err.postEmision ? { postEmision: err.postEmision } : {}),
     ...(detail ? { detail } : {}),
     ...(err.endpoint ? { endpoint: err.endpoint } : {}),
     stage,

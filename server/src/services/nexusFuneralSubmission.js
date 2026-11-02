@@ -36,7 +36,7 @@ async function createFuneralSubmission(payload) {
     const url = `${base}/api/funeral-submissions`;
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
+      const timer = setTimeout(() => controller.abort(), 60000);
       const res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -82,7 +82,7 @@ async function postEmission(path, payload) {
     const url = `${base}/api/funeral-submissions/${path}`;
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
+      const timer = setTimeout(() => controller.abort(), 60000);
       const res = await fetch(url, {
         method: 'POST',
         headers: {

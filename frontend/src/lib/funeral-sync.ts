@@ -23,13 +23,28 @@ function extraMetrics(p: unknown): { peso?: string; estatura?: string } {
 }
 
 /**
+ * Persona que es el titular: la sección "persona que será asegurada (Titular)" del
+ * formulario si está completa (cédula y fecha de nacimiento); si no, el tomador cuando
+ * es la misma persona. Así la edad que se cotiza es la del titular que se ve en pantalla.
+ */
+export function resolveTitularSource<A extends { identificacion?: string; fechaNac?: string }, B extends { identificacion?: string; fechaNac?: string }>(
+  sameInsured: boolean | undefined,
+  tomador: A,
+  asegurado: B,
+): A | B {
+  const asegOk = String(asegurado?.identificacion ?? '').trim() && String(asegurado?.fechaNac ?? '').trim();
+  if (asegOk) return asegurado;
+  return sameInsured !== false ? tomador : asegurado;
+}
+
+/**
  * Copia al titular (primer asegurado) los datos del formulario:
  * tomador si es la misma persona, o el asegurado si el pagador es otro.
  * Sin esto, emisión cotiza solo los adicionales (prima a la mitad).
  */
 export function syncTitularFromTomador(): void {
   const { sameInsured, tomador, asegurado, funeral, setFuneral } = useWizardStore.getState();
-  const src: PersonSource = sameInsured !== false ? tomador : asegurado;
+  const src: PersonSource = resolveTitularSource(sameInsured, tomador, asegurado);
   const lista = Array.isArray(funeral.asegurados) ? funeral.asegurados : [];
   const titular = lista[0];
   if (!titular || !src) return;

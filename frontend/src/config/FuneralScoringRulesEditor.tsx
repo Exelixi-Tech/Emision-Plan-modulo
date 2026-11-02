@@ -22,22 +22,23 @@ export type FuneralScoringRules = {
 };
 
 export const DEFAULT_FUNERAL_SCORING_RULES: FuneralScoringRules = {
-  rangesEnabled: false,
+  rangesEnabled: true,
   ranges: {
     emit: {
       min: 0,
-      max: 29,
-      message: 'Tus respuestas permiten continuar con la contratación.',
+      max: 25,
+      message: 'Puede emitir sin inconvenientes.',
     },
     referred: {
-      min: 30,
-      max: 69,
-      message: 'Un técnico revisará tu solicitud antes de continuar al pago.',
+      min: 26,
+      max: 39,
+      message: 'Comunicarse con el corredor de seguro.',
     },
     reject: {
-      min: 70,
-      max: 9999,
-      message: 'Según tus respuestas no es posible emitir esta póliza en línea.',
+      min: 40,
+      max: 1000,
+      message:
+        'Se han detectado varios factores de riesgo inhabilitantes, no es posible continuar con el proceso.',
     },
   },
   concurrence: {
@@ -112,8 +113,8 @@ const BAND_UI: Record<BandKey, {
     input: 'focus:border-amber-400',
   },
   reject: {
-    title: 'Rechazo',
-    subtitle: 'No se emite en línea',
+    title: 'Rechazo en línea',
+    subtitle: 'No paga solo: llega a mesa técnica',
     Icon: Ban,
     wrap: 'border-rose-200 bg-gradient-to-br from-rose-50/80 to-white',
     badge: 'bg-rose-600 text-white',

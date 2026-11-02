@@ -12,7 +12,15 @@ export type DocType =
 export type { DiligenciaState, TipoDiligencia } from '../lib/diligencia';
 
 /** Producto de seguro que se está suscribiendo en el flujo. */
-export type ProductId = 'rcv' | 'funerario';
+export type ProductId = 'rcv' | 'funerario' | 'patrimoniales' | 'vida' | 'ap' | 'ap79';
+
+export interface PatrimonialesData {
+  datosBien: string;
+  tipo: string;
+  descripcion: string;
+}
+
+export type BienData = PatrimonialesData;
 
 export type DocStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -119,6 +127,8 @@ export interface PlanParentesco {
 export interface Plan {
   /** Código del plan en Sis2000 (ej. "RCVBAS", "Auto"). Se envía al backend en quote/emit. */
   cplan?: string;
+  /** Ramo Sis2000 del plan (puede diferir del cramo SSO en productos multi-ramo). */
+  cramo?: number;
   name: string;
   price: string;
   priceNum: number;
@@ -139,6 +149,8 @@ export interface Plan {
   nmax_dep?: number | null;
   /** Tope de personas en la póliza: titular + nmax_dep. */
   maxAsegurados?: number;
+  /** Días de vigencia (Viajero / maplanes_frec.ndias). */
+  ndias?: number | null;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';
@@ -154,6 +166,8 @@ export interface FuneralPerson {
   /** Código de parentesco La Mundial (1=Titular, 2=Cónyuge, 3=Hijo(a)…). */
   parentesco: string;
   pporcen?: number;
+  /** Menor de edad sin cédula: se usa la cédula del titular + correlativo (provisional). */
+  sinCedula?: boolean;
   telefono?: string;
   email?: string;
   estadoCivil?: string;
@@ -172,6 +186,18 @@ export interface FuneralPerson {
 export interface RcvPlanData {
   frecuencia: string;
   ndias?: number | null;
+  /**
+   * Placa extranjera: vigencia corta elegida (mavigencias_PR). El servidor calcula fdesde/fhasta
+   * y Sis2000 prorratea la prima anual (nvalor = % de la prima anual).
+   */
+  vigenciaExt?: {
+    cvigencia: number;
+    xvigencia: string;
+    /** D = días, M = meses */
+    imedida: string;
+    ntiempo: number;
+    nvalor: number;
+  } | null;
   /** Cobertura opcional activa para emisión (RC = solo RCV). */
   coberAdicional?: string;
   /** Sync con coberAdicional; máximo una opción (CA, PT o PP). */
@@ -183,6 +209,8 @@ export interface RcvPlanData {
   tasaPP?: number;
   sumaAsegBl?: number;
   sumaAsegAd?: number;
+  cproductor?: number | string | null;
+  xproductor?: string | null;
 }
 
 /** Datos del producto Funerario (personas). Se usa cuando product = 'funerario'. */
@@ -199,6 +227,16 @@ export interface FuneralData {
   healthAnswersByInsured?: Record<string, Record<string, unknown>>;
   /** true cuando el cuestionario fue completado y guardado en BD. */
   healthQuestionnaireDone?: boolean;
+  /** Viajero: fechas del viaje (YYYY-MM-DD); definen días, plan y vigencia de la póliza. */
+  viajeFdesde?: string;
+  viajeFhasta?: string;
+}
+
+/** Datos del bien asegurado (producto patrimoniales). */
+export interface PatrimonialesData {
+  datosBien: string;
+  tipo: string;
+  descripcion: string;
 }
 
 export interface VehicleData {
@@ -242,9 +280,13 @@ export interface VehicleData {
 export interface PolicyCoverageLine {
   ccobertura?: number | string;
   name: string;
+  xcobertura?: string;
   prima: number;
   sumaAsegurada: number | null;
   cproducto?: string;
+  msuma?: number | null;
+  msumamax?: number | null;
+  msumamin?: number | null;
 }
 
 export interface PolicyQuote {
@@ -256,6 +298,11 @@ export interface PolicyQuote {
   ptasa: number;
   /** Desglose por cobertura (calculate-plan-coberturas). */
   coberturas?: PolicyCoverageLine[];
+  /**
+   * Prima anual USD de las coberturas que no se fraccionan (Daños a personas y a cosas): con frecuencia
+   * distinta a la anual van completas en la cuota inicial; el resto se divide entre las cuotas.
+   */
+  primaCuotaInicial?: number;
   /** Etiqueta legible del vehiculo cotizado (ej. "TOYOTA / COROLLA"). */
   vehicleLabel?: string;
   /** Indica si La Mundial uso el catalogo por defecto (vehiculo no encontrado). */
@@ -292,6 +339,8 @@ export interface WizardState {
   tomador: TomadorData;
   /** Datos del producto Funerario (personas). Solo se usa si product = 'funerario'. */
   funeral: FuneralData;
+  /** Datos del bien (patrimoniales). */
+  patrimoniales?: PatrimonialesData;
   /** Frecuencia de pago RCV (plan automóvil). */
   rcv: RcvPlanData;
   /** true cuando la frecuencia activa es M/T/S (propaga a Pagos vía bridge). */
@@ -325,4 +374,16 @@ export interface WizardState {
   diligencia: import('../lib/diligencia').DiligenciaState | null;
   /** Reglas de visibilidad del canal (SysIP / nest-api canal/visibility). */
   canalVisibility: CanalVisibility | null;
+  /** Solicitud de personas ya enviada a mesa técnica en esta sesión (bloquea recotizar/responder). */
+  funeralSubmission: FuneralSubmissionLock | null;
+}
+
+export interface FuneralSubmissionLock {
+  id: string;
+  sessionId: string;
+  cplan: string;
+  verdict: string;
+  scoreTotal: number;
+  message?: string;
+  createdAt: string;
 }

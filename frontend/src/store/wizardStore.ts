@@ -7,12 +7,14 @@ import type {
   PersonData,
   VehicleData,
   FuneralData,
+  PatrimonialesData,
   RcvPlanData,
   Plan,
   PaymentMethod,
   IssuedPolicy,
   PolicyQuote,
   QuoteState,
+  FuneralSubmissionLock,
 } from '../types';
 import { getProductId } from '../lib/product';
 import { isFrecuenciaFraccionada } from '../lib/frecuencia';
@@ -70,6 +72,14 @@ const defaultRcv = (): RcvPlanData => ({
   ndias: null,
   coberAdicional: 'RC',
   coberAdicionales: [],
+  cproductor: null,
+  xproductor: null,
+});
+
+const defaultPatrimoniales = (): PatrimonialesData => ({
+  datosBien: '',
+  tipo: '',
+  descripcion: '',
 });
 
 const defaultFuneral = (): FuneralData => ({
@@ -101,6 +111,7 @@ interface WizardActions {
   setConductor: (data: Partial<PersonData>) => void;
   setVehicle: (data: Partial<VehicleData>) => void;
   setFuneral: (data: Partial<FuneralData>) => void;
+  setPatrimoniales: (data: Partial<PatrimonialesData>) => void;
   setRcv: (data: Partial<RcvPlanData>, options?: { keepQuote?: boolean }) => void;
   setCategory: (c: string) => void;
   setSelectedPlan: (plan: Plan | null) => void;
@@ -112,6 +123,7 @@ interface WizardActions {
   setMetadataCanal: (data: Record<string, any> | null) => void;
   setDiligencia: (data: Partial<DiligenciaState> | null) => void;
   setCanalVisibility: (data: CanalVisibility | null) => void;
+  setFuneralSubmission: (data: FuneralSubmissionLock | null) => void;
   reset: () => void;
 }
 
@@ -130,6 +142,7 @@ const initialState: WizardState = {
   ocrDone: false,
   tomador: defaultTomador(),
   funeral: defaultFuneral(),
+  patrimoniales: defaultPatrimoniales(),
   rcv: defaultRcv(),
   fraccionado: false,
   sameInsured: true,
@@ -154,6 +167,7 @@ const initialState: WizardState = {
   metadataCanal: null,
   diligencia: buildDiligenciaState({ itipoDiligencia: 'S', clasificadoEn: 'emision' }),
   canalVisibility: null,
+  funeralSubmission: null,
 };
 
 export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
@@ -228,6 +242,9 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
       return patch;
     }),
 
+  setPatrimoniales: (data) =>
+    set((s) => ({ patrimoniales: { ...(s.patrimoniales || defaultPatrimoniales()), ...data } })),
+
   setRcv: (data, options?: { keepQuote?: boolean }) =>
     set((s) => {
       const next = { ...s.rcv, ...data };
@@ -276,6 +293,8 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
     set({ quote: null, quoteState: 'idle', quoteError: null, quoteVehicleSignature: null }),
 
   setMetadataCanal: (data) => set({ metadataCanal: data }),
+
+  setFuneralSubmission: (data) => set({ funeralSubmission: data }),
 
   setDiligencia: (data) =>
     set((s) => {

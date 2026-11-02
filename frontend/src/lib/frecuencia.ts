@@ -35,6 +35,15 @@ export function isFrecuenciaFraccionada(code?: string | null): boolean {
   return FREQ_FRACCIONADA.has(normalizeFrecuenciaCode(code));
 }
 
+/**
+ * Personas: A/S/T/M como RCV (Pagos cobra la 1ª cuota y domicilia el resto).
+ * C (cuatrimestral) no se ofrece. Si no queda ninguna, se usa `fallback` (Anual).
+ */
+export function frecuenciasPersonas<T extends { code: number | string }>(items: T[], fallback: T[]): T[] {
+  const list = items.filter((i) => normalizeFrecuenciaCode(String(i.code)) !== 'C');
+  return list.length ? list : fallback;
+}
+
 export function getCuotasByFrecuencia(code?: string | null): number {
   const n = CUOTAS_BY_FREC[normalizeFrecuenciaCode(code)];
   return n != null && n > 0 ? n : 1;
@@ -82,6 +91,9 @@ export function getFrecuenciaQuoteNote(
     return `Prima cotizada ${formatQuoteUsdMoney(amounts.installmentUsd)}${amounts.periodSuffix}`;
   }
   if (amounts.cuotas <= 1 || amounts.annualUsd <= 0) return null;
+  if (amounts.rcvCuotaInicialUsd > 0) {
+    return `Prima anual cotizada ${formatQuoteUsdMoney(amounts.annualUsd)}: RCV ${formatQuoteUsdMoney(amounts.rcvCuotaInicialUsd)} completa en la cuota inicial + ${formatQuoteUsdMoney(amounts.nextInstallmentUsd)} por cuota (${amounts.cuotas} cuotas)`;
+  }
   return `Prima anual cotizada ${formatQuoteUsdMoney(amounts.annualUsd)} ÷ ${amounts.cuotas} cuotas`;
 }
 
@@ -122,7 +134,9 @@ export function resolveQuoteDisplayAmounts(
       heroVesSuffix: '/ año',
       paymentUsd: amounts.installmentUsd,
       paymentVes: amounts.installmentVes,
-      totalLabel: 'Total a pagar (1er recibo)',
+      totalLabel: amounts.rcvCuotaInicialUsd > 0
+        ? 'Total a pagar (1er recibo, incluye RCV completa)'
+        : 'Total a pagar (1er recibo)',
     };
   }
 
@@ -147,6 +161,12 @@ export interface FrecuenciaAmounts {
   installmentUsd: number;
   /** Monto por cuota Bs. */
   installmentVes: number;
+  /** Cuotas 2..n en USD (sin la RCV obligatoria); igual a installmentUsd si no aplica la regla. */
+  nextInstallmentUsd: number;
+  /** Cuotas 2..n en Bs. */
+  nextInstallmentVes: number;
+  /** Parte de la cuota inicial que es RCV obligatoria completa (USD); 0 si no aplica. */
+  rcvCuotaInicialUsd: number;
   periodSuffix: string;
   paySummary: string;
 }
@@ -170,7 +190,7 @@ export function resolveFrecuenciaAmounts(
   frecuenciaCode?: string | null,
   options?: { frecuenciaLabel?: string; quoteBasis?: 'annual-total' | 'per-installment' },
 ): FrecuenciaAmounts {
-  const cuotas = getCuotasByFrecuencia(frecuenciaCode);
+  let cuotas = getCuotasByFrecuencia(frecuenciaCode);
   const basis = options?.quoteBasis ?? 'annual-total';
   const rawUsd = quote?.mprimaext ?? 0;
   const rawVes = quote?.mprima ?? 0;
@@ -180,6 +200,9 @@ export function resolveFrecuenciaAmounts(
   let annualVes: number;
   let installmentUsd: number;
   let installmentVes: number;
+  let nextInstallmentUsd: number;
+  let nextInstallmentVes: number;
+  let rcvCuotaInicialUsd = 0;
 
   if (basis === 'per-installment') {
     installmentUsd = normalizeQuoteUsd(rawUsd);
@@ -190,16 +213,34 @@ export function resolveFrecuenciaAmounts(
     annualVes = ptasa > 0
       ? roundQuoteAmount(computeQuoteVes(annualUsd, ptasa), 2)
       : rawVes * cuotas;
+    nextInstallmentUsd = installmentUsd;
+    nextInstallmentVes = installmentVes;
   } else {
     annualUsd = normalizeQuoteUsd(rawUsd);
     annualVes = ptasa > 0
       ? roundQuoteAmount(computeQuoteVes(annualUsd, ptasa), 2)
       : rawVes;
-    installmentUsd = divideByCuotas(annualUsd, cuotas);
+    // RCV obligatoria (Daños a personas y a cosas) completa en la cuota inicial; el resto se divide.
+    // Misma regla que sp_genera_coberturas_recibos_auto_rcv_nexus al generar los recibos en Sis2000.
+    const rcvUsd = cuotas > 1 ? Math.max(0, Number(quote?.primaCuotaInicial ?? 0)) : 0;
+    if (rcvUsd > 0 && rcvUsd >= annualUsd) {
+      // Solo hay RCV: nada que fraccionar, Sis2000 emite un único recibo.
+      cuotas = 1;
+    }
+    rcvCuotaInicialUsd = cuotas > 1 && rcvUsd > 0 ? roundQuoteAmount(rcvUsd, 2) : 0;
+    const restoUsd = annualUsd - rcvCuotaInicialUsd;
+    nextInstallmentUsd = divideByCuotas(restoUsd, cuotas);
+    installmentUsd = rcvCuotaInicialUsd + nextInstallmentUsd;
+    const vesShare = (usd: number) => (annualUsd > 0 ? rawVes * (usd / annualUsd) : 0);
     installmentVes = roundInstallmentVes(
       ptasa > 0
         ? computeQuoteVes(installmentUsd, ptasa)
-        : divideByCuotas(rawVes, cuotas),
+        : (rcvCuotaInicialUsd > 0 ? vesShare(installmentUsd) : divideByCuotas(rawVes, cuotas)),
+    );
+    nextInstallmentVes = roundInstallmentVes(
+      ptasa > 0
+        ? computeQuoteVes(nextInstallmentUsd, ptasa)
+        : (rcvCuotaInicialUsd > 0 ? vesShare(nextInstallmentUsd) : divideByCuotas(rawVes, cuotas)),
     );
   }
 
@@ -209,6 +250,9 @@ export function resolveFrecuenciaAmounts(
     annualVes,
     installmentUsd,
     installmentVes,
+    nextInstallmentUsd,
+    nextInstallmentVes,
+    rcvCuotaInicialUsd,
     periodSuffix: getFrecuenciaPeriodSuffix(frecuenciaCode),
     paySummary: getFrecuenciaPaySummary(frecuenciaCode, options?.frecuenciaLabel),
   };
