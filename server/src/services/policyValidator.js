@@ -63,12 +63,17 @@ function validateEmissionPayload(p) {
     errors.push(`rif_tomador invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_tomador)})`);
   }
   if (!p.nombre_tomador?.trim()) errors.push('nombre_tomador requerido');
-  if (!p.apellido_tomador?.trim()) errors.push('apellido_tomador requerido');
+  // Persona jurídica (J): apellido y fecha de nacimiento no aplican (el SP RCV no exige apellido a J/G/C).
+  const tomadorPJ = p.tipo_cedula_tomador === 'J';
+  const titularPJ = p.tipo_cedula_titular === 'J';
+  if (!tomadorPJ && !p.apellido_tomador?.trim()) errors.push('apellido_tomador requerido');
   if (!/^[+]?\d{8,15}$/.test(String(p.telefono_tomador || '').replace(/\s+/g, ''))) {
     errors.push('telefono_tomador invalido (8-15 digitos, opcional +)');
   }
   if (!/.+@.+\..+/.test(p.correo_tomador || '')) errors.push('correo_tomador invalido');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_tomador || '')) {
+  if (tomadorPJ) {
+    if (p.fnac_tomador && !/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_tomador)) errors.push('fnac_tomador formato YYYY-MM-DD');
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_tomador || '')) {
     errors.push('fnac_tomador formato YYYY-MM-DD');
   } else if (ageInYears(p.fnac_tomador) < 18) {
     errors.push('tomador debe ser mayor de edad (18+)');
@@ -81,8 +86,10 @@ function validateEmissionPayload(p) {
     errors.push(`rif_titular invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_titular)})`);
   }
   if (!p.nombre_titular?.trim()) errors.push('nombre_titular requerido');
-  if (!p.apellido_titular?.trim()) errors.push('apellido_titular requerido');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular || '')) {
+  if (!titularPJ && !p.apellido_titular?.trim()) errors.push('apellido_titular requerido');
+  if (titularPJ) {
+    if (p.fnac_titular && !/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular)) errors.push('fnac_titular formato YYYY-MM-DD');
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular || '')) {
     errors.push('fnac_titular formato YYYY-MM-DD (fecha nacimiento titular/asegurado)');
   } else if (ageInYears(p.fnac_titular) < 18) {
     errors.push('titular debe ser mayor de edad (18+)');
