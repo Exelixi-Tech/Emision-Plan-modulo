@@ -456,16 +456,21 @@ async function quoteAndEmit(state, overrides = {}) {
       serial_motor: payload.serial_motor || payload.serial_carroceria,
     });
   } catch (err) {
-    if (err.code === 'PLATE_ALREADY_INSURED') {
+    if (err.code === 'PLATE_ALREADY_INSURED' && payload.cnpoliza_rel) {
+      // Renovación: la placa sigue asegurada por la póliza que se renueva (cnpoliza_rel) hasta su
+      // fhasta, que es el fdesde de la nueva. No se bloquea aquí; el SP valida al emitir.
+      console.warn(`[emit] renovación ${payload.cnpoliza_rel}: placa con póliza vigente, se continúa (${err.message})`);
+    } else if (err.code === 'PLATE_ALREADY_INSURED') {
       throw new PolicyError('LAMUNDIAL_PLATE_ALREADY_INSURED', err.message, 409, {
         stage: 'validate',
         internalPolicyId: metadata.internalPolicyId,
       });
+    } else {
+      throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
+        stage: 'validate',
+        internalPolicyId: metadata.internalPolicyId,
+      });
     }
-    throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
-      stage: 'validate',
-      internalPolicyId: metadata.internalPolicyId,
-    });
   }
 
   // 4) Validar localmente antes de quemar cupo

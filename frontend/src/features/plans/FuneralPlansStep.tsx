@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
+import { planPreferidoRenovacion } from '../../lib/renovacion';
+import { RenovacionBanner } from '../../components/RenovacionBanner';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
   Loader2, AlertTriangle, Users, CalendarClock
@@ -298,6 +300,12 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
         }
         setApiPlans(mapped);
         const current = useWizardStore.getState().selectedPlan;
+        // Renovación: sin plan elegido aún, preseleccionar el de la póliza anterior si sigue disponible.
+        const planRenovacion = current ? null : planPreferidoRenovacion();
+        if (planRenovacion) {
+          setSelectedPlan(mapped.find((p) => String(p.cplan ?? '').toUpperCase() === planRenovacion) ?? null);
+          return;
+        }
         const keep = current
           ? mapped.find(
               (p) =>
@@ -568,6 +576,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
 
   return (
     <div className="animate-fade-in space-y-6">
+      <RenovacionBanner />
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
           {tarjeta

@@ -29,6 +29,7 @@ const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
+const { renovacionDeState, esLaPolizaQueSeRenueva } = require('../lib/renovacion');
 
 /** Edad fuera del rango de la tarifa del plan: mismo mensaje para cotizar y emitir. */
 const AGE_OUT_OF_RANGE_MESSAGE =
@@ -337,7 +338,9 @@ router.post('/poliza-vigente', async (req, res) => {
   }
   try {
     const result = await personasClient.checkPolizaVigente({ rif, cramo });
-    if (result.hasVigente) {
+    // Renovación: la póliza que se renueva (cnpoliza_rel) no bloquea; cualquier otra sí.
+    const renovada = result.hasVigente && esLaPolizaQueSeRenueva(result.cnpoliza, req.body?.cnpoliza_rel);
+    if (result.hasVigente && !renovada) {
       return res.json({
         success: true,
         blocked: true,
@@ -512,6 +515,14 @@ router.post('/emision', async (req, res) => {
     if (vigencia) {
       payload.fdesde = vigencia.fdesde;
       payload.fhasta = vigencia.fhasta;
+    }
+    // Renovación (póliza nueva enlazada): cnpoliza_rel va en `poliza` (nest-api personas) y la
+    // vigencia arranca en el fhasta de la anterior. Sin renovación no cambia nada.
+    const renovacion = vigencia ? null : renovacionDeState(state);
+    if (renovacion) {
+      payload.poliza = renovacion.cnpoliza_rel;
+      payload.fdesde = renovacion.fdesde;
+      payload.fhasta = renovacion.fhasta;
     }
     // % de recargo/descuento por asegurado (mismo orden que funeral.asegurados; el 0 es el titular).
     if (premiumAdjust && Array.isArray(payload.asegurados)) {
