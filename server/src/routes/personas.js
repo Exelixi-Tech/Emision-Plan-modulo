@@ -413,6 +413,17 @@ router.post('/emision', async (req, res) => {
       message: `El plan ${cplan} no es válido para el producto personas.`,
     });
   }
+  // Persona jurídica solo como tomador; pasaporte alfanumérico no cabe en cci_rif (NUMERIC).
+  const identidadErrors = personasMapper.validatePersonasIdentidades(state);
+  if (identidadErrors.length) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_IDENTIDAD',
+      message: identidadErrors.join(' '),
+      errors: identidadErrors,
+      stage: 'validate',
+    });
+  }
 
   const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
   const ifrecuenciaCotiza = personasIfrecuenciaCotiza(ifrecuencia);
