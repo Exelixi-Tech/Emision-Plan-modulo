@@ -19,6 +19,29 @@ function normalizeNfactura(raw) {
   return String(raw || '').replace(/\D/g, '').slice(0, 16);
 }
 
+/**
+ * Referencia del pago (Pagos → paymentCapture) para usarla como nfactura cuando no hay factura.
+ * No se pasa por normalizeNfactura: la referencia puede traer letras y tafactura.nfactura es
+ * varchar (SysIP la escribe como VarChar(30)); solo se quitan espacios y se corta a 30.
+ */
+function normalizeReferencia(raw) {
+  return String(raw || '').trim().replace(/\s+/g, '').slice(0, 30);
+}
+
+function sinFacturaFields(state, meta, cnpoliza) {
+  const pay = state?.paymentCapture || {};
+  const referencia = normalizeReferencia(pay.reference || pay.transactionId || pay.xreferencia);
+  // Último recurso (sin referencia de pago): cnpoliza sin guiones, determinístico, para que
+  // el INSERT en tafactura no falle por NULL.
+  const out = { nfactura: referencia || String(cnpoliza).replace(/\D/g, '').slice(0, 30) };
+  const ctarjeta = String(meta.ctarjeta ?? '').trim();
+  if (ctarjeta) {
+    out.ctarjeta = ctarjeta;
+    out.xfactura = `TAR-${ctarjeta}`; // mismo default que ventacards
+  }
+  return out;
+}
+
 function resolveXfotoFactura(state) {
   const doc = state?.documents?.factura;
   const url = doc?.file?.url || doc?.url || state?.metadataCanal?.xfoto_factura;
@@ -89,7 +112,13 @@ function buildTarjetaActivatePayload(state, emission) {
   };
 
   const nfactura = normalizeNfactura(meta.nfactura || state?.tarjeta?.nfactura);
-  if (nfactura) payload.nfactura = nfactura;
+  if (nfactura) {
+    payload.nfactura = nfactura;
+  } else {
+    // Sin factura: cards/activate inserta nfactura en tafactura (NOT NULL). Igual que
+    // ventacards de La Mundial, mandamos la referencia bancaria del pago como nfactura.
+    Object.assign(payload, sinFacturaFields(state, meta, cnpoliza));
+  }
 
   const xfoto_factura = resolveXfotoFactura(state);
   if (xfoto_factura) payload.xfoto_factura = xfoto_factura;
