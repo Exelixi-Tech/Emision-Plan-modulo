@@ -69,18 +69,40 @@ test('personas: J/G/C como titular, asegurado o beneficiario → error (400 en l
   assert.equal(personasMapper.validatePersonasIdentidades(conBenJ).length, 1);
 });
 
-test('personas: pasaporte numérico → P; alfanumérico (caso EM2849387) → error', () => {
+test('personas: pasaporte numérico → P; alfanumérico (caso EM2849387) titular/tomador → cid + dígitos', () => {
   const pasNum = { ...titularNatural, tipoDoc: 'P', identificacion: '123456789' };
   const { payload } = personasMapper.buildEmissionPersonRequest(estadoPersonas(pasNum, [pasNum]), {});
   assert.equal(payload.tipo_cedula_tomador, 'P');
   assert.equal(payload.tipo_cedula_titular, 'P');
   assert.equal(payload.asegurados[0].icedula_asegurado, 'P');
   assert.equal(payload.rif_titular, 123456789);
+  assert.equal(payload.cid_titular, undefined);
 
   const pasAlfa = { ...titularNatural, tipoDoc: 'P', identificacion: 'EM2849387', nombre: 'ZHIZHONG', apellido: 'HUANG', sexo: 'M', fechaNac: '1988-02-24' };
-  const errs = personasMapper.validatePersonasIdentidades(estadoPersonas(pasAlfa, [pasAlfa]));
-  assert.ok(errs.length >= 1);
-  assert.match(errs[0], /RIF personal E-xxxxxxxx-x/);
+  const st = estadoPersonas(pasAlfa, [pasAlfa]);
+  assert.deepEqual(personasMapper.validatePersonasIdentidades(st), []);
+  const p = personasMapper.buildEmissionPersonRequest(st, {}).payload;
+  assert.equal(p.cid_titular, 'P-EM2849387');
+  assert.equal(p.cid_tomador, 'P-EM2849387');
+  assert.equal(p.rif_titular, 2849387);
+  assert.equal(p.rif_tomador, 2849387);
+  assert.equal(p.tipo_cedula_titular, 'P');
+  assert.equal(p.asegurados[0].icedula_asegurado, 'P');
+  assert.equal(p.asegurados[0].xrif_asegurado, 2849387);
+  const v = personasMapper.buildValidateEmissionPersonRequest(st, { plan: 'FUN01' });
+  assert.equal(v.cid_titular, 'P-EM2849387');
+  assert.equal(v.rif_titular, 2849387);
+
+  // Menos de 5 dígitos o más de 13 caracteres → error claro.
+  const corto = { ...pasAlfa, identificacion: 'EMX1234' };
+  assert.match(personasMapper.validatePersonasIdentidades(estadoPersonas(corto, [corto]))[0], /entre 5 y 9 dígitos/);
+  const largo = { ...pasAlfa, identificacion: 'ABCDEFG1234567' };
+  assert.ok(personasMapper.validatePersonasIdentidades(estadoPersonas(largo, [largo])).length >= 1);
+
+  // Asegurado adicional / beneficiario con pasaporte alfanumérico: sigue bloqueado.
+  const errs = personasMapper.validatePersonasIdentidades(estadoPersonas(titularNatural, [titularNatural, pasAlfa]));
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /Asegurado 2: .*RIF personal E-xxxxxxxx-x/);
 });
 
 function estadoRcv(tomador) {

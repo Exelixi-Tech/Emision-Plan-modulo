@@ -3,6 +3,8 @@ const {
   MSG_PASAPORTE_ALFANUMERICO,
   esTipoJuridico,
   esPasaporteAlfanumerico,
+  errorPasaporteAlfanumerico,
+  cidSiPasaporteAlfanumerico,
   ocrRifDe,
   nombresPJ,
   resolveFechaPJ,
@@ -64,13 +66,14 @@ function normalizeDate(v) {
 /**
  * Tipo de cédula/RIF: V|E|J|G|C. Default V.
  * P (pasaporte) con identificación solo numérica viaja como 'P' (sp_create_maclient_nexus: persona
- * natural, cid 'P-<num>'); sin identificación numérica conserva el comportamiento previo (V).
- * El pasaporte alfanumérico lo bloquea validatePersonasIdentidades antes de llegar aquí.
+ * natural, cid 'P-<num>'). Pasaporte alfanumérico también viaja como 'P' (titular/tomador con
+ * cid_*; en asegurados adicionales y beneficiarios lo bloquea validatePersonasIdentidades).
+ * Sin identificación conserva el comportamiento previo (V).
  */
 function normalizeTipoCedula(v, identificacion) {
   const s = cleanString(v).toUpperCase().charAt(0);
   if (s === 'P') {
-    return /^\d+$/.test(cleanString(identificacion).replace(/[\s.-]/g, '')) ? 'P' : 'V';
+    return /^[A-Za-z0-9]+$/.test(cleanString(identificacion).replace(/[\s.-]/g, '')) ? 'P' : 'V';
   }
   return ['V', 'E', 'J', 'G', 'C'].includes(s) ? s : 'V';
 }
@@ -100,7 +103,14 @@ function validatePersonasIdentidades(state = {}) {
   const conPasaporte = [['Tomador', tomador], ...asegurados.map((a, i) => [i === 0 ? 'Titular' : `Asegurado ${i + 1}`, a]),
     ...beneficiarios.map((b, i) => [`Beneficiario ${i + 1}`, b])];
   for (const [rol, per] of conPasaporte) {
-    if (esPasaporteAlfanumerico(per?.tipoDoc, per?.identificacion)) errors.push(`${rol}: ${MSG_PASAPORTE_ALFANUMERICO}`);
+    if (!esPasaporteAlfanumerico(per?.tipoDoc, per?.identificacion)) continue;
+    // Titular y tomador: se admite (cid = 'P-' + pasaporte completo, cci_rif = dígitos) si cumple el formato.
+    if (rol === 'Tomador' || rol === 'Titular') {
+      const err = errorPasaporteAlfanumerico(per.identificacion);
+      if (err) errors.push(`${rol}: ${err}`);
+    } else {
+      errors.push(`${rol}: ${MSG_PASAPORTE_ALFANUMERICO}`);
+    }
   }
   return errors;
 }
@@ -283,6 +293,8 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     // Persona jurídica (J/G/C): razón social, apellido vacío, sin sexo/estado civil, fnac = constitución o null.
     tipo_cedula_tomador: normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion),
     rif_tomador: digitsToNumber(tomador.identificacion),
+    // Pasaporte alfanumérico: maclient.cid completo ('P-EM2849387'); rif_* van solo con los dígitos.
+    ...cidField('cid_tomador', tomador),
     nombre_tomador: pjTomador ? pjTomador.nombre : cleanString(tomador.nombre),
     apellido_tomador: pjTomador ? pjTomador.apellido : cleanString(tomador.apellido),
     sexo_tomador: pjTomador ? null : normalizeSexo(tomador.sexo),
@@ -297,6 +309,7 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     // ── Titular (1er asegurado; si es nulo se pasa nulo para que BD lo asigne) ─
     tipo_cedula_titular: titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc, titular.identificacion) : null,
     rif_titular: titular.identificacion ? digitsToNumber(titular.identificacion) : null,
+    ...cidField('cid_titular', titular),
     nombre_titular: titular.nombre ? cleanString(titular.nombre) : null,
     apellido_titular: titular.apellido ? cleanString(titular.apellido) : null,
     sexo_titular: titular.sexo ? normalizeSexo(titular.sexo) : null,
@@ -415,7 +428,17 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
     tipo_cedula_titular: titular.tipoDoc
       ? normalizeTipoCedula(titular.tipoDoc, titular.identificacion)
       : normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion),
+    tipo_cedula_tomador: normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion),
+    // nest-api revisa antes de pagar que el pasaporte no choque con otro cliente de Sis2000.
+    ...cidField('cid_titular', titular.identificacion ? titular : tomador),
+    ...cidField('cid_tomador', tomador),
   };
+}
+
+/** { [key]: 'P-EM2849387' } si la persona trae pasaporte alfanumérico; {} si no. */
+function cidField(key, persona) {
+  const cid = cidSiPasaporteAlfanumerico(persona?.tipoDoc, persona?.identificacion);
+  return cid ? { [key]: cid } : {};
 }
 
 module.exports = {
