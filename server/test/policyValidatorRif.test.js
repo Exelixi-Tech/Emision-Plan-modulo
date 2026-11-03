@@ -23,3 +23,11 @@ test('sin tipo se usa el límite de cédula (8)', () => {
   assert.equal(rifMaxDigitos(undefined), 8);
   assert.equal(rifValido('', 'J'), false);
 });
+
+test('mapper: G (gobierno) va como J y su RIF de 9 dígitos pasa el validador', () => {
+  const { _internal: { normalizeTipoCedula } } = require('../src/services/policyMapper');
+  assert.equal(normalizeTipoCedula('G'), 'J');
+  assert.equal(rifValido('200000627', normalizeTipoCedula('g')), true);
+  assert.equal(normalizeTipoCedula('P'), 'V');
+  assert.equal(normalizeTipoCedula(''), 'V');
+});
