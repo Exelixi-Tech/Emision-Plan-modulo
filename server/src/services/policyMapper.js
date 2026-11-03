@@ -321,14 +321,19 @@ function resolveVigenciaExtranjera(state, fdesdeYmd) {
 
 /** Ramo RCV nacional=18; binacional=28 en maplanes (LAMUNDIAL_RAMO_BINACIONAL). */
 function resolveRcvCramo(v, metadata = {}) {
-  if (resolveIplaca(v) === 'B') {
-    return parseInt(process.env.LAMUNDIAL_RAMO_BINACIONAL || '28', 10);
-  }
+  const ramoNacional = parseInt(process.env.LAMUNDIAL_RAMO || '18', 10);
+  const ramoBinacional = parseInt(process.env.LAMUNDIAL_RAMO_BINACIONAL || '28', 10);
+  if (resolveIplaca(v) === 'B') return ramoBinacional;
   if (metadata.cramo !== undefined && metadata.cramo !== null && String(metadata.cramo).trim() !== '') {
     const n = parseInt(String(metadata.cramo), 10);
-    if (Number.isFinite(n) && n > 0) return n;
+    // El token del canal puede traer el ramo de otro producto (ej. 9 de funerario): los planes RCV
+    // solo existen en el ramo nacional/binacional y con otro ramo sp_calculo_auto_nexus no cotiza.
+    if (n === ramoNacional || n === ramoBinacional) return n;
+    if (Number.isFinite(n)) {
+      console.warn(`[policyMapper] metadataCanal.cramo=${n} no es RCV (product=${metadata.product ?? '?'}); se usa ${ramoNacional}`);
+    }
   }
-  return parseInt(process.env.LAMUNDIAL_RAMO || '18', 10);
+  return ramoNacional;
 }
 
 // ---------- mappers principales ----------
@@ -922,5 +927,6 @@ module.exports = {
     upperPlate,
     todayYmd,
     genInternalPolicyId,
+    resolveRcvCramo,
   },
 };
