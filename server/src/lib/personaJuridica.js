@@ -82,6 +82,37 @@ function esPasaporteAlfanumerico(tipo, identificacion) {
   return id !== '' && !/^\d+$/.test(id);
 }
 
+/**
+ * Pasaporte alfanumérico de titular/tomador (personas): como SysIP, maclient.cid guarda el
+ * string completo ('P-EM2849387') y cci_rif solo los dígitos (2849387).
+ * Límites: 13 alfanuméricos (cid char(15) con 'P-') y 5–9 dígitos (numeric(9) del SP de personas).
+ * RCV no lo usa: su bloqueo del pasaporte alfanumérico se mantiene.
+ */
+const PASAPORTE_ALFA_MAX = 13;
+const PASAPORTE_DIGITOS_MIN = 5;
+const PASAPORTE_DIGITOS_MAX = 9;
+
+/** 'em-2849387' → 'P-EM2849387'. */
+function cidPasaporte(numero) {
+  const raw = cleanString(numero).toUpperCase().replace(/^P\s*-\s*/, '');
+  return `P-${raw.replace(/[^A-Z0-9]/g, '')}`;
+}
+
+/** Error del pasaporte alfanumérico de titular/tomador, o null si es válido. */
+function errorPasaporteAlfanumerico(identificacion) {
+  const alnum = cidPasaporte(identificacion).slice(2);
+  const dig = alnum.replace(/\D/g, '');
+  if (alnum.length > PASAPORTE_ALFA_MAX || dig.length < PASAPORTE_DIGITOS_MIN || dig.length > PASAPORTE_DIGITOS_MAX) {
+    return `el pasaporte debe tener máximo ${PASAPORTE_ALFA_MAX} letras o números y entre ${PASAPORTE_DIGITOS_MIN} y ${PASAPORTE_DIGITOS_MAX} dígitos.`;
+  }
+  return null;
+}
+
+/** cid para nest-api (cid_titular / cid_tomador) solo si es pasaporte alfanumérico; si no, undefined. */
+function cidSiPasaporteAlfanumerico(tipo, identificacion) {
+  return esPasaporteAlfanumerico(tipo, identificacion) ? cidPasaporte(identificacion) : undefined;
+}
+
 module.exports = {
   TIPOS_JURIDICOS,
   MSG_PASAPORTE_ALFANUMERICO,
@@ -92,4 +123,7 @@ module.exports = {
   resolveFechaPJ,
   esPasaporteNumerico,
   esPasaporteAlfanumerico,
+  cidPasaporte,
+  errorPasaporteAlfanumerico,
+  cidSiPasaporteAlfanumerico,
 };
