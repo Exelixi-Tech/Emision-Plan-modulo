@@ -11,10 +11,11 @@ test('J/G/C aceptan el RIF con dígito verificador (9 dígitos)', () => {
   assert.equal(rifValido('3131747690', 'J'), false);
 });
 
-test('V y P siguen en 8 dígitos; E en 10', () => {
+test('V sigue en 8 dígitos; P (pasaporte numérico) hasta 9; E en 10', () => {
   assert.equal(rifValido('19529692', 'V'), true);
   assert.equal(rifValido('195296920', 'V'), false);
-  assert.equal(rifValido('123456789', 'P'), false);
+  assert.equal(rifValido('123456789', 'P'), true);
+  assert.equal(rifValido('1234567890', 'P'), false);
   assert.equal(rifValido('1234567890', 'E'), true);
   assert.equal(rifValido('12345678901', 'E'), false);
 });

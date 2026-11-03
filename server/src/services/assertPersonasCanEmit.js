@@ -22,6 +22,10 @@ async function assertPersonasCanEmit(state, overrides = {}) {
   if (!state || !state.tomador) {
     throw httpError('MISSING_STATE', 'state.tomador requerido.');
   }
+  const identidadErrors = personasMapper.validatePersonasIdentidades(state);
+  if (identidadErrors.length) {
+    throw httpError('INVALID_IDENTIDAD', identidadErrors.join(' '));
+  }
   const cplan = overrides.plan || state.selectedPlan?.cplan;
   if (!cplan) {
     throw httpError('MISSING_PLAN', 'cplan es obligatorio.');
