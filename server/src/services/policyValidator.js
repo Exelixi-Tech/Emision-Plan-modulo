@@ -35,6 +35,17 @@ function rifValido(rif, tipo) {
 }
 
 /**
+ * Año del vehículo: el SP RCV exige > 1900 y el catálogo INMA (VInma) llega hasta el año actual + 2
+ * (en QA, 1950-2028). Sis2000 ya tiene emisiones RCV de vehículos anteriores a 1980.
+ */
+const FANO_MIN = 1901;
+const FANO_MAX_ADELANTO = 2;
+
+function fanoValido(fano) {
+  return Number.isInteger(fano) && fano >= FANO_MIN && fano <= new Date().getFullYear() + FANO_MAX_ADELANTO;
+}
+
+/**
  * @param {object} p Payload de createEmissionAuto ya construido por mapper.
  * @returns {string[]} Lista de errores (vacia = OK).
  */
@@ -98,9 +109,8 @@ function validateEmissionPayload(p) {
   // Vehiculo
   if (!/^[A-Z0-9]{6,8}$/.test(p.placa || '')) errors.push('placa invalida (6-8 alfanumericos en mayusculas)');
   if (!p.serial_carroceria?.trim()) errors.push('serial_carroceria requerido');
-  const yearNow = new Date().getFullYear();
-  if (!Number.isInteger(p.fano) || p.fano < 1980 || p.fano > yearNow + 1) {
-    errors.push(`fano fuera de rango (1980-${yearNow + 1})`);
+  if (!fanoValido(p.fano)) {
+    errors.push(`fano fuera de rango (${FANO_MIN}-${new Date().getFullYear() + FANO_MAX_ADELANTO})`);
   }
 
   // Economicos (vienen de cotizacion)
@@ -115,4 +125,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears, rifMaxDigitos, rifValido } };
+module.exports = { validateEmissionPayload, _internal: { ageInYears, fanoValido, rifMaxDigitos, rifValido } };
