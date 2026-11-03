@@ -26,6 +26,9 @@ function ageInYears(yyyymmdd) {
  */
 const RIF_MAX_DIGITOS = { E: 10, J: 9, G: 9, C: 9 };
 
+/** Año mínimo del vehículo: mismo piso que el Formulario (EmissionStep: "no puede ser menor a 1900"). */
+const FANO_MIN = 1900;
+
 function rifMaxDigitos(tipo) {
   return RIF_MAX_DIGITOS[String(tipo || '').trim().toUpperCase()] ?? 8;
 }
@@ -98,9 +101,13 @@ function validateEmissionPayload(p) {
   // Vehiculo
   if (!/^[A-Z0-9]{6,8}$/.test(p.placa || '')) errors.push('placa invalida (6-8 alfanumericos en mayusculas)');
   if (!p.serial_carroceria?.trim()) errors.push('serial_carroceria requerido');
+  // Piso alineado al catálogo INMA/Formulario (MIN(cano) de VInma baja de 1980;
+  // Formulario admite desde 1900). Antes 1980 rechazaba vehículos ya cotizados
+  // y pagados (p.ej. 1979) después de cobrar.
   const yearNow = new Date().getFullYear();
-  if (!Number.isInteger(p.fano) || p.fano < 1980 || p.fano > yearNow + 1) {
-    errors.push(`fano fuera de rango (1980-${yearNow + 1})`);
+  const fano = Number(p.fano);
+  if (!Number.isInteger(fano) || fano < FANO_MIN || fano > yearNow + 1) {
+    errors.push(`fano fuera de rango (${FANO_MIN}-${yearNow + 1})`);
   }
 
   // Economicos (vienen de cotizacion)
@@ -115,4 +122,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears, rifMaxDigitos, rifValido } };
+module.exports = { validateEmissionPayload, FANO_MIN, _internal: { ageInYears, rifMaxDigitos, rifValido } };
