@@ -13,6 +13,7 @@
  */
 const express = require('express');
 const policyService = require('../services/policyService');
+const { validateStateForEmit } = require('../services/policyPrevalidate');
 const { clasificarDiligencia } = require('../services/diligenciaService');
 const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
@@ -252,6 +253,26 @@ router.post('/policies/clasificar-diligencia', async (req, res) => {
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
     return _send(res, err, 'clasificar-diligencia');
+  }
+});
+
+/**
+ * Prevalidación RCV antes de cobrar: mismo mapeo y mismo validador que /policies/emit
+ * (validateEmissionPayload) pero SIN cotizar ni emitir ni tocar Sis2000.
+ * Responde { ok, errors } con el mismo shape de errores que INVALID_PAYLOAD.details.
+ */
+router.post('/policies/validate', (req, res) => {
+  try {
+    const { state, plan, frecuencia, ndias } = req.body || {};
+    if (!state || !state.vehicle || !state.tomador) {
+      return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'Datos incompletos. Envia { state }.' });
+    }
+    const mergedState = withNexusMetadata(state, req.nexusMetadata);
+    const errors = validateStateForEmit(mergedState, { plan, frecuencia, ndias });
+    console.log(`[policies/validate] ${errors.length ? `errores=${errors.join('; ')}` : 'ok'}`);
+    return res.status(200).json({ success: true, ok: errors.length === 0, errors });
+  } catch (err) {
+    return _send(res, err, 'validate');
   }
 });
 
