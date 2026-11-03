@@ -109,6 +109,7 @@ function computeHealthScore(questions, answers, rulesRaw) {
 
     breakdown.push({
       questionId: q.id,
+      type: q.type,
       label: q.label,
       answer,
       points,
