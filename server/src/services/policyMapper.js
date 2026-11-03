@@ -154,9 +154,10 @@ function resolveBirthDate(person) {
 function normalizeTipoCedula(v) {
   const s = cleanString(v).toUpperCase();
   if (['V', 'E', 'J', 'P', 'G'].includes(s)) {
-    // V/E/J son los que documenta La Mundial; si llega P o G los respetamos
-    // por si en el futuro los aceptan.
-    return s === 'P' || s === 'G' ? 'V' : s;
+    // V/E/J son los que documenta La Mundial. G (gobierno) es RIF jurídico de 9 dígitos:
+    // va como J; como V el validador lo cortaría en 8. P sigue como V.
+    if (s === 'G') return 'J';
+    return s === 'P' ? 'V' : s;
   }
   return 'V';
 }
