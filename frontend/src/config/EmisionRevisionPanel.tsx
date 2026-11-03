@@ -17,6 +17,7 @@ const EMPRESA_ID = PANEL.empresaId;
 
 type ScoreLine = {
   questionId: string;
+  type?: 'boolean' | 'text' | 'select' | 'multi_select';
   label: string;
   answer: unknown;
   points: number;
@@ -530,6 +531,17 @@ function ReviewerEmailsBox({ onClose }: { onClose: () => void }) {
   return createPortal(modal, document.body);
 }
 
+/** Cajón de texto (detalle "Especifique"): por tipo o, en solicitudes viejas sin `type`, por la etiqueta. */
+function isTextLine(line: ScoreLine): boolean {
+  if (line.type) return line.type === 'text';
+  return /^(detalle de:|especifique)/i.test(String(line.label ?? '').trim());
+}
+
+function formatDetailText(v: unknown): string {
+  const t = v == null ? '' : String(v).trim();
+  return t ? `«${t}»` : '(sin texto)';
+}
+
 function formatAnswer(v: unknown): string {
   if (v === true) return 'Sí';
   if (v === false) return 'No';
@@ -675,7 +687,13 @@ function ScoringCard({ total, breakdown }: { total: number; breakdown: ScoreLine
                   {line.insuredLabel ? `${line.insuredLabel} · ` : ''}
                   {line.label}
                 </p>
-                <p className="text-[10px] text-slate-500">Resp: {formatAnswer(line.answer)}</p>
+                {isTextLine(line) ? (
+                  <p className="text-[10px] text-slate-600 whitespace-pre-wrap break-words">
+                    Detalle: {formatDetailText(line.answer)}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-500">Resp: {formatAnswer(line.answer)}</p>
+                )}
               </div>
               <span className="font-bold text-indigo-700 shrink-0 tabular-nums">
                 {formatHealthScoreSigned(Number(line.points))}%
