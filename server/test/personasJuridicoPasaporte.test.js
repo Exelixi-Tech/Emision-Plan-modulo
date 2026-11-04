@@ -1,6 +1,6 @@
 /**
  * Personas: tomador persona jurídica (RIF J) y pasaporte (P).
- * RCV: pasaporte numérico viaja como 'P'; alfanumérico se rechaza (cci_rif NUMERIC).
+ * RCV: sin cambios respecto a main (pasaporte viaja como 'V' con solo los dígitos).
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -119,24 +119,23 @@ function estadoRcv(tomador) {
 
 const cot = { mprima: 100, mprimaext: 2.5, ptasa: 40 };
 
-test('RCV: pasaporte numérico viaja como P (antes se convertía a V)', () => {
+test('RCV: pasaporte numérico sigue como en main (V con dígitos)', () => {
   const p = buildEmissionRequest(estadoRcv({
-    tipoDoc: 'P', identificacion: '123456789', nombre: 'JOHN', apellido: 'DOE', sexo: 'M', fechaNac: '1980-01-01',
+    tipoDoc: 'P', identificacion: '12345678', nombre: 'JOHN', apellido: 'DOE', sexo: 'M', fechaNac: '1980-01-01',
   }), cot).payload;
-  assert.equal(p.tipo_cedula_tomador, 'P');
-  assert.equal(p.tipo_cedula_titular, 'P');
-  assert.equal(p.rif_tomador, '123456789');
+  assert.equal(p.tipo_cedula_tomador, 'V');
+  assert.equal(p.tipo_cedula_titular, 'V');
+  assert.equal(p.rif_tomador, '12345678');
   const errs = validateEmissionPayload(p);
   assert.ok(!errs.some((e) => /rif_tomador|tipo_cedula/.test(e)), errs.join('; '));
 });
 
-test('RCV: pasaporte alfanumérico → error claro (no se quitan letras)', () => {
+test('RCV: pasaporte alfanumérico sigue como en main (V con solo los dígitos)', () => {
   const p = buildEmissionRequest(estadoRcv({
     tipoDoc: 'P', identificacion: 'EM2849387', nombre: 'ZHIZHONG', apellido: 'HUANG', sexo: 'M', fechaNac: '1988-02-24',
   }), cot).payload;
-  assert.equal(p.rif_tomador, 'EM2849387');
-  const errs = validateEmissionPayload(p);
-  assert.ok(errs.some((e) => /rif_tomador: Sis2000 solo admite identificación numérica/.test(e)), errs.join('; '));
+  assert.equal(p.tipo_cedula_tomador, 'V');
+  assert.equal(p.rif_tomador, '2849387');
 });
 
 test('RCV: V sin cambios', () => {
