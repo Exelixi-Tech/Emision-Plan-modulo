@@ -897,6 +897,7 @@ module.exports = {
   resolvePrimaryCoberAdicional,
   resolveTasasForCober,
   resolveIplaca,
+  resolveRcvCramo,
   resolveVigenciaExtranjera,
   // Helpers expuestos para tests:
   _internal: {
