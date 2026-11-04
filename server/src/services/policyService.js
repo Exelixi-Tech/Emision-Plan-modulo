@@ -40,6 +40,7 @@ const {
   resolveSelectedCoberturas,
   resolvePrimaryCoberAdicional,
   resolveIplaca,
+  resolveRcvCramo,
 } = require('./policyMapper');
 const { resolveCategoriaUsoFromVinma, resolveUsageCategory } = require('./catalogs');
 const { validateEmissionPayload } = require('./policyValidator');
