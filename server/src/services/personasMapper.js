@@ -1,4 +1,14 @@
 const { resolvePersonasCramo } = require('../lib/funerarioPlan');
+const {
+  MSG_PASAPORTE_ALFANUMERICO,
+  esTipoJuridico,
+  esPasaporteAlfanumerico,
+  errorPasaporteAlfanumerico,
+  cidSiPasaporteAlfanumerico,
+  ocrRifDe,
+  nombresPJ,
+  resolveFechaPJ,
+} = require('../lib/personaJuridica');
 
 /**
  * Mapper del producto Funerario (personas): estado del wizard (frontend) ->
@@ -53,10 +63,67 @@ function normalizeDate(v) {
   return '';
 }
 
-/** Tipo de cédula/RIF: V|E|J|G. Default V. */
-function normalizeTipoCedula(v) {
+/**
+ * Tipo de cédula/RIF: V|E|J|G|C. Default V.
+ * P (pasaporte) con identificación solo numérica viaja como 'P' (sp_create_maclient_nexus: persona
+ * natural, cid 'P-<num>'). Pasaporte alfanumérico también viaja como 'P' (titular/tomador con
+ * cid_*; en asegurados adicionales y beneficiarios lo bloquea validatePersonasIdentidades).
+ * Sin identificación conserva el comportamiento previo (V).
+ */
+function normalizeTipoCedula(v, identificacion) {
   const s = cleanString(v).toUpperCase().charAt(0);
-  return ['V', 'E', 'J', 'G', 'P'].includes(s) ? (s === 'P' ? 'V' : s) : 'V';
+  if (s === 'P') {
+    return /^[A-Za-z0-9]+$/.test(cleanString(identificacion).replace(/[\s.-]/g, '')) ? 'P' : 'V';
+  }
+  return ['V', 'E', 'J', 'G', 'C'].includes(s) ? s : 'V';
+}
+
+/**
+ * Reglas de identidad de personas (antes de cotizar/validar/emitir). Lista de errores (vacía = OK).
+ *  - Persona jurídica (J/G/C) solo como tomador: nunca titular, asegurado ni beneficiario.
+ *  - Pasaporte alfanumérico: Sis2000 guarda la identificación en cci_rif NUMERIC (no cabe).
+ */
+function validatePersonasIdentidades(state = {}) {
+  const errors = [];
+  const tomador = state.tomador || {};
+  const funeral = state.funeral || {};
+  const asegurados = Array.isArray(funeral.asegurados) ? funeral.asegurados : [];
+  const beneficiarios = Array.isArray(funeral.beneficiarios) ? funeral.beneficiarios : [];
+  const titular = asegurados[0] || tomador;
+
+  if (esTipoJuridico(titular.tipoDoc)) {
+    errors.push('Una persona jurídica (RIF J/G/C) solo puede ser tomador; el titular debe ser persona natural.');
+  }
+  asegurados.slice(1).forEach((a, i) => {
+    if (esTipoJuridico(a.tipoDoc)) errors.push(`Asegurado ${i + 2}: una persona jurídica (RIF J/G/C) no puede ser asegurado.`);
+  });
+  beneficiarios.forEach((b, i) => {
+    if (esTipoJuridico(b.tipoDoc)) errors.push(`Beneficiario ${i + 1}: una persona jurídica (RIF J/G/C) no puede ser beneficiario.`);
+  });
+  const conPasaporte = [['Tomador', tomador], ...asegurados.map((a, i) => [i === 0 ? 'Titular' : `Asegurado ${i + 1}`, a]),
+    ...beneficiarios.map((b, i) => [`Beneficiario ${i + 1}`, b])];
+  for (const [rol, per] of conPasaporte) {
+    if (!esPasaporteAlfanumerico(per?.tipoDoc, per?.identificacion)) continue;
+    // Titular y tomador: se admite (cid = 'P-' + pasaporte completo, cci_rif = dígitos) si cumple el formato.
+    if (rol === 'Tomador' || rol === 'Titular') {
+      const err = errorPasaporteAlfanumerico(per.identificacion);
+      if (err) errors.push(`${rol}: ${err}`);
+    } else {
+      errors.push(`${rol}: ${MSG_PASAPORTE_ALFANUMERICO}`);
+    }
+  }
+  return errors;
+}
+
+/** Tomador persona jurídica: razón social sin apellido (el SP arma xcliente = nombre + apellido). */
+function tomadorPJ(state) {
+  const tomador = state.tomador || {};
+  if (!esTipoJuridico(tomador.tipoDoc)) return null;
+  const ocr = ocrRifDe(state, 'cedula');
+  const { nombre } = nombresPJ(tomador, ocr, 'vacio');
+  // fnac = constitución (fechaNac/fechaConstitucion del formulario) → inscripción del RIF → null. Nunca ''.
+  const fnac = normalizeDate(tomador.fechaConstitucion || tomador.fechaNac) || resolveFechaPJ(tomador, ocr, null) || null;
+  return { nombre, apellido: '', fnac };
 }
 
 function normalizeSexo(v) {
@@ -184,6 +251,7 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
   const titular = asegurados[0] || {};
 
   const metadata = state.metadataCanal || {};
+  const pjTomador = tomadorPJ(state);
 
   const cramo = resolvePersonasCramo({
     selectedPlan: state.selectedPlan,
@@ -222,13 +290,16 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
       ? Number(state.selectedPlan.sumaAsegurada) : null,
 
     // ── Tomador ──────────────────────────────────────────────────────────────
-    tipo_cedula_tomador: normalizeTipoCedula(tomador.tipoDoc),
+    // Persona jurídica (J/G/C): razón social, apellido vacío, sin sexo/estado civil, fnac = constitución o null.
+    tipo_cedula_tomador: normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion),
     rif_tomador: digitsToNumber(tomador.identificacion),
-    nombre_tomador: cleanString(tomador.nombre),
-    apellido_tomador: cleanString(tomador.apellido),
-    sexo_tomador: normalizeSexo(tomador.sexo),
-    estado_civil_tomador: normalizeEstadoCivil(tomador.estadoCivil),
-    fnac_tomador: normalizeDate(tomador.fechaNac),
+    // Pasaporte alfanumérico: maclient.cid completo ('P-EM2849387'); rif_* van solo con los dígitos.
+    ...cidField('cid_tomador', tomador),
+    nombre_tomador: pjTomador ? pjTomador.nombre : cleanString(tomador.nombre),
+    apellido_tomador: pjTomador ? pjTomador.apellido : cleanString(tomador.apellido),
+    sexo_tomador: pjTomador ? null : normalizeSexo(tomador.sexo),
+    estado_civil_tomador: pjTomador ? null : normalizeEstadoCivil(tomador.estadoCivil),
+    fnac_tomador: pjTomador ? pjTomador.fnac : normalizeDate(tomador.fechaNac),
     estado_tomador,
     ciudad_tomador,
     direccion_tomador: cleanString(tomador.direccion),
@@ -236,14 +307,15 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     correo_tomador: cleanString(tomador.email),
 
     // ── Titular (1er asegurado; si es nulo se pasa nulo para que BD lo asigne) ─
-    tipo_cedula_titular: titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null,
+    tipo_cedula_titular: titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc, titular.identificacion) : null,
     rif_titular: titular.identificacion ? digitsToNumber(titular.identificacion) : null,
+    ...cidField('cid_titular', titular),
     nombre_titular: titular.nombre ? cleanString(titular.nombre) : null,
     apellido_titular: titular.apellido ? cleanString(titular.apellido) : null,
     sexo_titular: titular.sexo ? normalizeSexo(titular.sexo) : null,
     estado_civil_titular: titular.estadoCivil
       ? normalizeEstadoCivil(titular.estadoCivil)
-      : normalizeEstadoCivil(tomador.estadoCivil),
+      : (pjTomador ? null : normalizeEstadoCivil(tomador.estadoCivil)),
     fnac_titular: titular.fechaNac ? normalizeDate(titular.fechaNac) : null,
     estado_titular: geoCode(titular, 'cestado', 'estado') ?? estado_tomador,
     ciudad_titular: geoCode(titular, 'cciudad', 'ciudad') ?? ciudad_tomador,
@@ -269,7 +341,7 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
       const estadoAseg = geoCode(a, 'cestado', 'estado') ?? (idx === 0 ? estado_tomador : null);
       const ciudadAseg = geoCode(a, 'cciudad', 'ciudad') ?? (idx === 0 ? ciudad_tomador : null);
       return {
-        icedula_asegurado: normalizeTipoCedula(a.tipoDoc),
+        icedula_asegurado: normalizeTipoCedula(a.tipoDoc, a.identificacion),
         xrif_asegurado: digitsToNumber(a.identificacion),
         xnombre_asegurado: cleanString(a.nombre),
         xapellido_asegurado: cleanString(a.apellido),
@@ -293,7 +365,7 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
 
     // ── Beneficiarios (para el trigger de Sis2000) ──────────────────────────────
     beneficiarios: (Array.isArray(funeral.beneficiarios) ? funeral.beneficiarios : []).map(b => ({
-      icedula_beneficiario: normalizeTipoCedula(b.tipoDoc),
+      icedula_beneficiario: normalizeTipoCedula(b.tipoDoc, b.identificacion),
       xrif_beneficiario: digitsToNumber(b.identificacion),
       xnombre_beneficiario: cleanString(b.nombre),
       xapellido_beneficiario: cleanString(b.apellido),
@@ -343,6 +415,7 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
   const fnac_titular = titular.fechaNac
     ? normalizeDate(titular.fechaNac)
     : normalizeDate(tomador.fechaNac);
+  const pjTomador = tomadorPJ(state);
 
   return {
     cramo,
@@ -351,17 +424,28 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
     rif_titular,
     fnac_titular,
     rif_tomador: digitsToNumber(tomador.identificacion),
-    fnac_tomador: normalizeDate(tomador.fechaNac),
+    fnac_tomador: pjTomador ? pjTomador.fnac : normalizeDate(tomador.fechaNac),
     tipo_cedula_titular: titular.tipoDoc
-      ? normalizeTipoCedula(titular.tipoDoc)
-      : normalizeTipoCedula(tomador.tipoDoc),
+      ? normalizeTipoCedula(titular.tipoDoc, titular.identificacion)
+      : normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion),
+    tipo_cedula_tomador: normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion),
+    // nest-api revisa antes de pagar que el pasaporte no choque con otro cliente de Sis2000.
+    ...cidField('cid_titular', titular.identificacion ? titular : tomador),
+    ...cidField('cid_tomador', tomador),
   };
+}
+
+/** { [key]: 'P-EM2849387' } si la persona trae pasaporte alfanumérico; {} si no. */
+function cidField(key, persona) {
+  const cid = cidSiPasaporteAlfanumerico(persona?.tipoDoc, persona?.identificacion);
+  return cid ? { [key]: cid } : {};
 }
 
 module.exports = {
   buildAseguradosForQuote,
   buildEmissionPersonRequest,
   buildValidateEmissionPersonRequest,
+  validatePersonasIdentidades,
   edadDesdeFecha,
   resolveNedadAsegurado,
   _internal: {

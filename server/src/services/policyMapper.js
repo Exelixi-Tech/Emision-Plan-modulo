@@ -19,6 +19,11 @@ const {
   resolveCityCode,
 } = require('./catalogs');
 const { resolveCusuarioCoberturas } = require('./planesClient');
+const {
+  ocrRifDe,
+  nombresPJ,
+  resolveFechaPJ,
+} = require('../lib/personaJuridica');
 
 // ---------- helpers ----------
 
@@ -162,28 +167,6 @@ function normalizeTipoCedula(v) {
 }
 
 /**
- * RCV persona jurídica: cómo se manda el apellido al SP (env RCV_PJ_APELLIDO_MODO).
- *  - razon_social (default): apellido = razón social, igual que SysIP (seguro si alguna tabla lo exige NOT NULL).
- *  - vacio: apellido = '' (el SP sp_pre_emision_automovil_rcv_nexus no lo exige para J/G/C).
- */
-function rcvPjApellidoModo() {
-  const v = String(process.env.RCV_PJ_APELLIDO_MODO || '').trim().toLowerCase();
-  return v === 'vacio' ? 'vacio' : 'razon_social';
-}
-
-/** OCR del RIF (slot cédula) si el estado de la sesión lo trae. */
-function ocrRifDe(state, slot) {
-  const ocr = state?.documents?.[slot]?.ocr;
-  return ocr && typeof ocr === 'object' ? ocr : {};
-}
-
-/** Persona jurídica: nombre = razón social; apellido según RCV_PJ_APELLIDO_MODO. */
-function nombresPJ(person, ocr) {
-  const razon = cleanString(person?.nombre || person?.razonSocial || ocr?.razonSocial || ocr?.nombre);
-  return { nombre: razon, apellido: rcvPjApellidoModo() === 'vacio' ? '' : razon };
-}
-
-/**
  * Titular persona natural sin fecha: la toma del OCR de su cédula (cedula_titular) o de la
  * licencia cuando la licencia está a nombre de la misma cédula del titular.
  */
@@ -198,11 +181,6 @@ function resolveFnacTitularOcr(state, titular) {
     return normalizeDate(lic.fechaNacimiento);
   }
   return null;
-}
-
-/** Persona jurídica: fecha de constitución → inscripción del RIF → fecha de emisión. */
-function resolveFechaPJ(person, ocr, fechaEmision) {
-  return normalizeDate(person?.fechaInscripcion || ocr?.fechaInscripcion || '') || fechaEmision;
 }
 
 function normalizeSexo(v) {
@@ -497,7 +475,9 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const coberAdicional = resolvePrimaryCoberAdicional(selectedCoberturas);
 
   const tipo_cedula_tomador = normalizeTipoCedula(tomador.tipoDoc);
-  const tipo_cedula_titular = sameInsured ? tipo_cedula_tomador : (titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null);
+  const tipo_cedula_titular = sameInsured
+    ? tipo_cedula_tomador
+    : (titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null);
 
   const fnacTomador = resolveBirthDate(tomador);
   const fnacTitularRaw = sameInsured ? fnacTomador : resolveBirthDate(titular);
