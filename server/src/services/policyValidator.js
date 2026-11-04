@@ -20,11 +20,11 @@ function ageInYears(yyyymmdd) {
 }
 
 /**
- * V: cédula venezolana (1-8 dígitos). P: pasaporte numérico (1-9; el SP recibe xrif numeric(9)).
+ * V/P: cédula venezolana o pasaporte (1-8 dígitos).
  * J/G/C: RIF de persona jurídica con dígito verificador, ej. J-31317476-9 (1-9), como lo guarda Sis2000.
  * E: documento extranjero, ej. C.C. Colombia (1-10).
  */
-const RIF_MAX_DIGITOS = { E: 10, J: 9, G: 9, C: 9, P: 9 };
+const RIF_MAX_DIGITOS = { E: 10, J: 9, G: 9, C: 9 };
 
 /** Año mínimo del vehículo: mismo piso que el Formulario (EmissionStep: "no puede ser menor a 1900"). */
 const FANO_MIN = 1900;
@@ -41,16 +41,6 @@ function rifValido(rif, tipo) {
  * @param {object} p Payload de createEmissionAuto ya construido por mapper.
  * @returns {string[]} Lista de errores (vacia = OK).
  */
-const { MSG_PASAPORTE_ALFANUMERICO } = require('../lib/personaJuridica');
-
-function validarRif(errors, campo, rif, tipo) {
-  if (tipo === 'P' && !/^\d+$/.test(String(rif || ''))) {
-    errors.push(`${campo}: ${MSG_PASAPORTE_ALFANUMERICO}`);
-  } else if (!rifValido(rif, tipo)) {
-    errors.push(`${campo} invalido (solo digitos, 1-${rifMaxDigitos(tipo)})`);
-  }
-}
-
 function validateEmissionPayload(p) {
   const errors = [];
 
@@ -71,8 +61,10 @@ function validateEmissionPayload(p) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fecha_emision || '')) errors.push('fecha_emision formato YYYY-MM-DD');
 
   // Tomador — cédula/RIF: 1–8 dígitos (alineado con formulario Exélixi)
-  if (!/^[VEJP]$/.test(p.tipo_cedula_tomador || '')) errors.push('tipo_cedula_tomador invalido (V|E|J|P)');
-  validarRif(errors, 'rif_tomador', p.rif_tomador, p.tipo_cedula_tomador);
+  if (!/^[VEJ]$/.test(p.tipo_cedula_tomador || '')) errors.push('tipo_cedula_tomador invalido (V|E|J)');
+  if (!rifValido(p.rif_tomador, p.tipo_cedula_tomador)) {
+    errors.push(`rif_tomador invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_tomador)})`);
+  }
   if (!p.nombre_tomador?.trim()) errors.push('nombre_tomador requerido');
   // Persona jurídica (J): apellido y fecha de nacimiento no aplican (el SP RCV no exige apellido a J/G/C).
   const tomadorPJ = p.tipo_cedula_tomador === 'J';
@@ -92,8 +84,10 @@ function validateEmissionPayload(p) {
   if (!p.direccion_tomador?.trim()) errors.push('direccion_tomador requerida');
 
   // Titular (si distinto al tomador, mismas reglas basicas)
-  if (!/^[VEJP]$/.test(p.tipo_cedula_titular || '')) errors.push('tipo_cedula_titular invalido (V|E|J|P)');
-  validarRif(errors, 'rif_titular', p.rif_titular, p.tipo_cedula_titular);
+  if (!/^[VEJ]$/.test(p.tipo_cedula_titular || '')) errors.push('tipo_cedula_titular invalido (V|E|J)');
+  if (!rifValido(p.rif_titular, p.tipo_cedula_titular)) {
+    errors.push(`rif_titular invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_titular)})`);
+  }
   if (!p.nombre_titular?.trim()) errors.push('nombre_titular requerido');
   if (!titularPJ && !p.apellido_titular?.trim()) errors.push('apellido_titular requerido');
   if (titularPJ) {

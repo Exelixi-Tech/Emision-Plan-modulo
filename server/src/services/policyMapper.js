@@ -24,7 +24,6 @@ const {
   ocrRifDe,
   nombresPJ,
   resolveFechaPJ,
-  esPasaporteAlfanumerico,
 } = require('../lib/personaJuridica');
 
 // ---------- helpers ----------
@@ -158,24 +157,14 @@ function resolveBirthDate(person) {
 /**
  * Tipo de cedula: V|E|J. Si llega texto raro lo mapeamos al mas probable.
  */
-function normalizeTipoCedula(v, identificacion) {
+function normalizeTipoCedula(v) {
   const s = cleanString(v).toUpperCase();
   if (['V', 'E', 'J', 'P', 'G'].includes(s)) {
-    // Pasaporte del tomador/titular (se pasa la identificación): va como 'P' (sp_create_maclient_nexus
-    // lo guarda como persona natural, cid 'P-<num>'). Si el número es alfanumérico lo rechaza el validador.
-    if (s === 'P' && identificacion !== undefined) return 'P';
-    // V/E/J son los que documenta La Mundial; G (y P sin identificación: conductor/beneficiario) → V.
+    // V/E/J son los que documenta La Mundial; si llega P o G los respetamos
+    // por si en el futuro los aceptan.
     return s === 'P' || s === 'G' ? 'V' : s;
   }
   return 'V';
-}
-
-/** rif del tomador/titular: dígitos; pasaporte alfanumérico se deja tal cual para que el validador lo rechace. */
-function rifPersona(person, tipo) {
-  if (tipo === 'P' && esPasaporteAlfanumerico('P', person?.identificacion)) {
-    return cleanString(person.identificacion).replace(/[\s.-]/g, '').toUpperCase();
-  }
-  return onlyDigits(person?.identificacion);
 }
 
 /**
@@ -490,10 +479,10 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const selectedCoberturas = resolveSelectedCoberturas(rcv, overrides);
   const coberAdicional = resolvePrimaryCoberAdicional(selectedCoberturas);
 
-  const tipo_cedula_tomador = normalizeTipoCedula(tomador.tipoDoc, tomador.identificacion);
+  const tipo_cedula_tomador = normalizeTipoCedula(tomador.tipoDoc);
   const tipo_cedula_titular = sameInsured
     ? tipo_cedula_tomador
-    : (titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc, titular.identificacion) : null);
+    : (titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null);
 
   const fnacTomador = resolveBirthDate(tomador);
   const fnacTitularRaw = sameInsured ? fnacTomador : resolveBirthDate(titular);
@@ -553,7 +542,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
 
     // Tomador
     tipo_cedula_tomador,
-    rif_tomador: rifPersona(tomador, tipo_cedula_tomador),
+    rif_tomador: onlyDigits(tomador.identificacion),
     nombre_tomador: pjTomador ? pjTomador.nombre : cleanString(tomador.nombre),
     apellido_tomador: pjTomador ? pjTomador.apellido : cleanString(tomador.apellido),
     telefono_tomador: cleanPhone(tomador.telefono),
@@ -574,7 +563,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
 
     // Titular del vehiculo
     tipo_cedula_titular,
-    rif_titular: sameInsured ? rifPersona(tomador, tipo_cedula_tomador) : rifPersona(titular, tipo_cedula_titular),
+    rif_titular: sameInsured ? onlyDigits(tomador.identificacion) : onlyDigits(titular.identificacion),
     nombre_titular: pjTitular ? pjTitular.nombre : (sameInsured ? cleanString(tomador.nombre) : cleanString(titular.nombre)),
     apellido_titular: pjTitular ? pjTitular.apellido : (sameInsured ? cleanString(tomador.apellido) : cleanString(titular.apellido)),
     sexo_titular: sameInsured ? normalizeSexo(tomador.sexo) : (titular.sexo || titularPJ ? normalizeSexo(titular.sexo) : ''),
