@@ -251,6 +251,8 @@ function composeGestorCsubitem(meta = {}) {
 /**
  * Código gestor para exclusión mausuplan (itipouso=E).
  * Solo se envía cuando hay contexto de actor marketplace; sin match → null (sin filtro).
+ * En centidad C va el canal: mausuplan.citem es ccanalalt y no distingue subcanal (el subcanal 55 de
+ * un canal no es el canal 55). Las exclusiones por subcanal no existen en la tabla.
  * @param {Record<string, unknown>} meta
  * @returns {string|null}
  */
@@ -262,11 +264,6 @@ function resolveCsubitemForExclusion(meta = {}) {
     ? String(meta.centidad).trim().toUpperCase()
     : '';
   if (!centidad || centidad === 'G') return null;
-
-  const cscanalalt = parseCscanalalt(meta);
-  if (centidad === 'C' && cscanalalt != null) {
-    return String(cscanalalt);
-  }
 
   if (centidad === 'C') {
     const raw = meta.citem ?? meta.ccanalalt_in ?? meta.ccanalalt;

@@ -743,7 +743,7 @@ export function PlansStep() {
               ? 'Cargando planes disponibles para tu vehículo...'
               : apiPlans.length > 0
                 ? 'Elige un plan en el selector para ver la cotización.'
-                : 'Selecciona primero el vehículo para ver los planes disponibles.'}
+                : (plansEmptyMessage ?? 'Selecciona primero el vehículo para ver los planes disponibles.')}
           </p>
         </div>
       )}
