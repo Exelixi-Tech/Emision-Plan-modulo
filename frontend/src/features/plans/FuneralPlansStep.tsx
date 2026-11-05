@@ -17,7 +17,14 @@ import {
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
-import { AGE_OUT_OF_RANGE_MESSAGE, AGE_OUT_OF_RANGE_TITLE, isAgeOutOfRangeError } from '../../lib/personas-age';
+import {
+  AGE_OUT_OF_RANGE_MESSAGE,
+  AGE_OUT_OF_RANGE_TITLE,
+  PLAN_UNAVAILABLE_MESSAGE,
+  PLAN_UNAVAILABLE_TITLE,
+  isAgeOutOfRangeError,
+  isPlanUnavailableError,
+} from '../../lib/personas-age';
 import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDepDelPlan } from '../../lib/funeralPlanParentescos';
 import { resolveTitularSource, syncTitularFromTomador } from '../../lib/funeral-sync';
 import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
@@ -417,10 +424,10 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
       .then((r) => {
         if (activeSigRef.current !== quoteSig) return;
         if (!(Number(r.data.mprimaext) > 0)) {
-          // Sin tarifa en Sis2000 para este plan/edad: no se puede cobrar ni emitir.
+          // Sin tarifa en Sis2000 para este plan: no se puede cobrar ni emitir.
           useWizardStore.getState().clearQuote();
-          useWizardStore.getState().setQuoteState('error', AGE_OUT_OF_RANGE_MESSAGE);
-          toast.warning(AGE_OUT_OF_RANGE_TITLE, AGE_OUT_OF_RANGE_MESSAGE, 9000);
+          useWizardStore.getState().setQuoteState('error', PLAN_UNAVAILABLE_MESSAGE);
+          toast.warning(PLAN_UNAVAILABLE_TITLE, PLAN_UNAVAILABLE_MESSAGE, 9000);
           return;
         }
         useWizardStore.getState().setQuote(
@@ -441,9 +448,12 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
           || ax.message
           || 'No pudimos obtener la tarifa.';
         const ageIssue = isAgeOutOfRangeError(ax.response?.data?.code) || isAgeOutOfRangeError(raw);
-        const message = ageIssue ? AGE_OUT_OF_RANGE_MESSAGE : raw;
+        const planIssue = !ageIssue
+          && (isPlanUnavailableError(ax.response?.data?.code) || isPlanUnavailableError(raw));
+        const message = ageIssue ? AGE_OUT_OF_RANGE_MESSAGE : planIssue ? PLAN_UNAVAILABLE_MESSAGE : raw;
+        const title = ageIssue ? AGE_OUT_OF_RANGE_TITLE : planIssue ? PLAN_UNAVAILABLE_TITLE : 'Cotización no disponible';
         useWizardStore.getState().setQuoteState('error', message);
-        toast.warning(ageIssue ? AGE_OUT_OF_RANGE_TITLE : 'Cotización no disponible', message, 9000);
+        toast.warning(title, message, 9000);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteSig]);
@@ -742,7 +752,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                 {quoteState === 'error' && (
                   <p className="mt-3 text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-2 rounded-md border border-rose-200 leading-relaxed normal-case">
                     <AlertTriangle size={12} strokeWidth={2.4} className="inline mr-1 -mt-0.5" />
-                    {quoteError || 'Este plan no admite la edad o el parentesco del asegurado.'}
+                    {quoteError || PLAN_UNAVAILABLE_MESSAGE}
                   </p>
                 )}
               </div>

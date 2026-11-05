@@ -27,13 +27,7 @@ const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
-
-/** Edad fuera del rango de la tarifa del plan: mismo mensaje para cotizar y emitir. */
-const AGE_OUT_OF_RANGE_MESSAGE =
-  'La edad indicada del titular no está permitida en el rango del plan. Elige otro plan.';
-function isAgeOutOfRange(msg) {
-  return /criterios de edad|edad fuera|fuera de rango|prima del recibo en 0|sin tarifa/i.test(String(msg || ''));
-}
+const { classifyPersonasError } = require('../lib/personasErrorClass');
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -310,14 +304,13 @@ router.post('/cotizacion', async (req, res) => {
       .map((a) => `${a.xrif_asegurado || '?'} (${a.nedad_asegurado} años, parentesco ${a.cparen})`)
       .join('; ');
     console.error('[personas/cotizacion]', msg, edades);
-    const isAge = isAgeOutOfRange(msg);
-    res.status(isAge ? 422 : 502).json({
+    const known = classifyPersonasError(msg);
+    res.status(known ? 422 : 502).json({
       success: false,
-      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
-      message: isAge
-        ? AGE_OUT_OF_RANGE_MESSAGE
-        : `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
-      ...(isAge && edades ? { detail: `Edad calculada: ${edades}.` } : {}),
+      code: known?.code ?? (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: known?.message
+        ?? `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
+      ...(known && edades ? { detail: `Edad calculada: ${edades}.` } : {}),
     });
   }
 });
@@ -644,7 +637,7 @@ router.post('/emision', async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     const httpStatus = err.httpStatus || 502;
     console.error('[personas/emision]', err.code || '', msg);
-    const isAge = isAgeOutOfRange(msg);
+    const known = classifyPersonasError(msg);
     // Pago verificado y falló la emisión (timeout: el SP pudo emitir igual) o
     // "póliza vigente" en un reintento: registrar pendiente y, solo lectura,
     // buscar el número de la póliza ya existente para mostrarlo al operador.
@@ -675,10 +668,10 @@ router.post('/emision', async (req, res) => {
       });
       if (rec) postEmision = { pendiente: true, step: rec.step, paymentReference: rec.paymentReference };
     }
-    return res.status(isAge ? 422 : httpStatus).json({
+    return res.status(known ? 422 : httpStatus).json({
       success: false,
-      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
-      message: isAge ? AGE_OUT_OF_RANGE_MESSAGE : msg,
+      code: known?.code ?? (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: known?.message ?? msg,
       ...(err.endpoint ? { endpoint: err.endpoint } : {}),
       ...(emitInternalId ? { internalPolicyId: emitInternalId } : {}),
       ...(postEmision ? { postEmision } : {}),
