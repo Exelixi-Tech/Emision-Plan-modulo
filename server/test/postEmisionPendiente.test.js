@@ -153,6 +153,6 @@ test('listarPendientes: carpeta inexistente devuelve lista vacía', () => {
   }
 });
 
-test('flag de reintento documentada pero sin uso en fase 1', () => {
+test('expone el nombre de la flag de reintento (fase 2 en postEmisionReintento.js)', () => {
   assert.equal(REINTENTO_FLAG, 'POST_EMISION_REINTENTO');
 });
