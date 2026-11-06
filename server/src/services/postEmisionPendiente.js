@@ -17,10 +17,10 @@
  * Flags:
  *   POST_EMISION_DIR        carpeta de los .jsonl
  *   POST_EMISION_TOKEN      token para GET /api/internal/post-emision
- *   POST_EMISION_REINTENTO  (documentado, NO usado todavía) — fase 2: reintentar
- *                           cobro/activación desde los pendientes. Hoy se ignora;
- *                           el comportamiento es idéntico con o sin la variable.
- *                           TODO(fase 2): leer esta flag y reintentar cobro.
+ *   POST_EMISION_REINTENTO  (fase 2, implementada en `postEmisionReintento.js`)
+ *                           true = un barrido periódico reintenta el cobro de los
+ *                           pendientes `cobro_error` (verifica antes en Sis2000 que
+ *                           el recibo siga sin cobrar). Sin la flag, no reintenta.
  */
 const fs = require('fs');
 const path = require('path');
@@ -154,19 +154,53 @@ function filterDesde(records, desde) {
  * Persiste un registro. Nunca lanza: cualquier fallo de disco solo se loguea.
  * @returns {object|null} el registro escrito (o null si el input era inválido)
  */
+function _appendRecord(record) {
+  const line = serializeRecord(record);
+  console.error(`${TAG} ${line}`);
+  const dir = getDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFile(path.join(dir, fileNameFor(record.timestamp)), `${line}\n`, (err) => {
+    if (err) console.error(`${TAG} no se pudo escribir en disco:`, err.message);
+  });
+}
+
 function registrarPendiente(input) {
   let record = null;
   try {
     record = buildRecord(input);
-    const line = serializeRecord(record);
-    console.error(`${TAG} ${line}`);
-    const dir = getDir();
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFile(path.join(dir, fileNameFor(record.timestamp)), `${line}\n`, (err) => {
-      if (err) console.error(`${TAG} no se pudo escribir en disco:`, err.message);
-    });
+    _appendRecord(record);
   } catch (err) {
     console.error(`${TAG} error registrando:`, err && err.message ? err.message : err);
+  }
+  return record;
+}
+
+/**
+ * Anexa una línea de RESOLUCIÓN de un reintento (fase 2) al mismo store JSONL.
+ * No necesita wizardState: recibe cnrecibo/cnpoliza/referencia explícitos. El
+ * barrido lee estas líneas para saltar los recibos ya resueltos o agotados.
+ * @param {{ step: string, cnrecibo?: string, cnpoliza?: string,
+ *   paymentReference?: string, flujo?: string, extra?: object, now?: Date }} input
+ * @returns {object|null} el registro escrito
+ */
+function registrarResolucion({ step, cnrecibo, cnpoliza, paymentReference, flujo = 'rcv', extra, now } = {}) {
+  let record = null;
+  try {
+    record = {
+      timestamp: (now instanceof Date ? now : new Date()).toISOString(),
+      flujo: flujo || 'rcv',
+      step: step || 'cobro_reintento',
+      cnrecibo: cnrecibo != null ? String(cnrecibo) : null,
+      cnpoliza: cnpoliza != null ? String(cnpoliza) : null,
+      paymentReference: paymentReference != null ? String(paymentReference) : null,
+      reintento: true,
+    };
+    if (extra && typeof extra === 'object') {
+      for (const [k, v] of Object.entries(extra)) if (v !== undefined) record[k] = v;
+    }
+    _appendRecord(record);
+  } catch (err) {
+    console.error(`${TAG} error registrando resolución:`, err && err.message ? err.message : err);
   }
   return record;
 }
@@ -210,5 +244,6 @@ module.exports = {
   filterDesde,
   fileNameFor,
   registrarPendiente,
+  registrarResolucion,
   listarPendientes,
 };

@@ -11,6 +11,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { listarPendientes, getDir, REINTENTO_FLAG } = require('../services/postEmisionPendiente');
+const { runReintentoSweep, reintentoHabilitado } = require('../services/postEmisionReintento');
 
 const router = express.Router();
 
@@ -43,12 +44,28 @@ router.get('/', requireToken, (req, res) => {
       dir: getDir(),
       desde: desde || null,
       total: items.length,
-      reintentoAutomatico: false, // fase 2: flag POST_EMISION_REINTENTO (sin uso todavía)
+      reintentoAutomatico: reintentoHabilitado(),
       reintentoFlag: REINTENTO_FLAG,
       items,
     });
   } catch (err) {
     res.status(500).json({ success: false, code: 'POST_EMISION_READ_ERROR', message: err.message });
+  }
+});
+
+/**
+ * POST /api/internal/post-emision/reintento?desde=YYYY-MM-DD&limite=500
+ * Dispara un barrido de reintento de cobro bajo demanda (mismo token).
+ * Requiere POST_EMISION_REINTENTO habilitado; si no, responde enabled:false.
+ */
+router.post('/reintento', requireToken, async (req, res) => {
+  try {
+    const desde = String(req.query.desde || '').trim() || undefined;
+    const limite = parseInt(req.query.limite, 10) || 500;
+    const resumen = await runReintentoSweep({ desde, limite });
+    res.json({ success: true, ...resumen });
+  } catch (err) {
+    res.status(500).json({ success: false, code: 'POST_EMISION_REINTENTO_ERROR', message: err.message });
   }
 });
 
