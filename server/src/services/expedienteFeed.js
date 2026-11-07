@@ -1,5 +1,5 @@
 /**
- * Monitor de expedientes Marketplace (contrato v1, 7-nov-2026).
+ * Monitor de expedientes Marketplace (contrato v1, 7-nov-2026; v1.3: documentos[tipo].ocrLeido).
  *
  * Arma el campo opcional `expediente` que viaja dentro del registro que Emisión ya envía a Nexus
  * (POST /api/emisiones, ver nexusEmisionFeed.js). Solo arma datos:
@@ -155,6 +155,73 @@ function resolveCarpetaExpediente(state, emission, empresaId, empresaNombre) {
   return `${empresa}/${cedula}/${nomenclatura}`;
 }
 
+/** Primer valor no vacío entre varias claves (el OCR no siempre usa el mismo nombre). */
+function pickOcr(ocr, ...keys) {
+  for (const key of keys) {
+    const v = str(ocr?.[key]);
+    if (v != null && !/^(null|n\/a|na|none|undefined)$/i.test(v)) return v;
+  }
+  return null;
+}
+
+/** Placa / serial: mayúsculas, sin espacios, puntos ni guiones (viajan completos). */
+function cleanCodigo(v) {
+  const s = str(v);
+  if (s == null) return null;
+  return s.replace(/[\s.-]/g, '').toUpperCase() || null;
+}
+
+/** Cédula o RIF leídos: tipo (V/E/J/G/P/C) y número sin separadores. */
+function ocrDocumento(ocr, slot) {
+  let tipoDoc = pickOcr(ocr, 'tipoDoc')?.toUpperCase() ?? null;
+  let raw = slot === 'rif'
+    ? pickOcr(ocr, 'rif', 'identificacion')
+    : pickOcr(ocr, 'identificacion', 'rif');
+  if (raw) {
+    const m = /^\s*([VEJGPC])\s*[-.\s]?\s*(\d.*)$/i.exec(raw);
+    if (m) {
+      if (!tipoDoc) tipoDoc = m[1].toUpperCase();
+      raw = m[2];
+    }
+  }
+  if (tipoDoc && !/^[VEJGPC]$/.test(tipoDoc)) tipoDoc = null;
+  return { tipoDoc, documento: cleanDocumento(tipoDoc, raw) };
+}
+
+/**
+ * v1.3: lo que el OCR leyó del documento al emitir (state.documents[slot].ocr), solo campos clave y
+ * normalizados, para que Nexus distinga «el documento no coincide» de «el dato se cambió a mano en el
+ * formulario». Sin imágenes ni payload crudo. Sin lectura → null (el campo no se envía). Nunca lanza.
+ */
+function resolveOcrLeido(ocr, slot) {
+  try {
+    if (!ocr || typeof ocr !== 'object' || Array.isArray(ocr)) return null;
+    const { tipoDoc, documento } = ocrDocumento(ocr, slot);
+    const anioRaw = pickOcr(ocr, 'año', 'ano', 'anio');
+    const anioNum = anioRaw != null ? Number(String(anioRaw).replace(/\D/g, '').slice(0, 4)) : NaN;
+    const campos = {
+      tipoDoc: documento ? tipoDoc : null,
+      documento,
+      nombre: pickOcr(ocr, 'nombre', ...(slot === 'rif' ? ['razonSocial'] : [])),
+      apellido: pickOcr(ocr, 'apellido'),
+      placa: cleanCodigo(pickOcr(ocr, 'placa')),
+      serial: cleanCodigo(pickOcr(ocr, 'serial', 'serialCarroceria', 'vin')),
+      serialMotor: cleanCodigo(pickOcr(ocr, 'serialMotor', 'numeroMotor')),
+      marca: pickOcr(ocr, 'marca'),
+      modelo: pickOcr(ocr, 'modelo', 'linea'),
+      anio: Number.isFinite(anioNum) && anioNum >= 1900 && anioNum <= 2100 ? anioNum : null,
+      vencimiento: slot === 'licencia' ? pickOcr(ocr, 'vencimiento', 'fechaVencimiento') : null,
+    };
+    const out = {};
+    for (const [k, v] of Object.entries(campos)) {
+      if (v != null) out[k] = v;
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 function extensionOf(url) {
   try {
     const pathname = new URL(String(url), 'http://local').pathname;
@@ -178,9 +245,13 @@ function resolveDocumentos(state, carpeta) {
   const out = {};
   for (const slot of SLOTS_WIZARD) {
     const url = str(docs?.[slot]?.file?.url);
-    out[slot] = url
+    const entry = url
       ? { recibido: true, ref: carpeta ? `${carpeta}/${slot}${extensionOf(url)}` : url, url }
       : { recibido: false };
+    // v1.3: lo que el OCR leyó al emitir (solo si hubo lectura).
+    const ocrLeido = resolveOcrLeido(docs?.[slot]?.ocr, slot);
+    if (ocrLeido) entry.ocrLeido = ocrLeido;
+    out[slot] = entry;
   }
   return out;
 }
@@ -299,5 +370,6 @@ module.exports = {
     resolveTitular,
     sanitizeFolderName,
     cleanDocumento,
+    resolveOcrLeido,
   },
 };

@@ -169,6 +169,76 @@ test('state roto: no lanza, devuelve undefined y no loguea datos personales', wi
   assert.ok(!logs.join('\n').includes('ana@example.test'));
 }));
 
+// ── v1.3: ocrLeido (lo que el OCR leyó al emitir) ─────────────────────────────
+
+test('ocrLeido: campos clave normalizados por documento, sin imágenes ni payload crudo', withEnabled(() => {
+  const state = rcvState({
+    // El usuario cambió placa y serial a mano en el formulario (caso real QA, expediente 417).
+    vehicle: { placa: 'WDSFG3G3', marca: 'Toyota', modelo: '4Runner', año: '2016', serial: '3G34G23FRWDV2EV53G23' },
+    documents: {
+      cedula: {
+        file: { url: '/files/x/cedula.webp' },
+        ocr: {
+          tipoDoc: 'V', identificacion: '12.345.678', nombre: 'Ana', apellido: 'Pérez',
+          fechaNacimiento: '1990-01-01', sexo: 'F', imagenBase64: 'AAAA', raw: { texto: 'x' },
+        },
+      },
+      licencia: {
+        file: { url: '/files/x/licencia.pdf' },
+        ocr: { identificacion: 'V-12345678', nombre: 'Ana', apellido: 'Pérez', vencimiento: '2030-05-01', categoria: '3' },
+      },
+      certificado: {
+        file: { url: '/files/x/certificado.jpg' },
+        ocr: {
+          placa: 'ac 124-kb', serial: 'jtebu5jrxg5303643', numeroMotor: '1gr-1234567', marca: 'Toyota',
+          modelo: '4Runner', año: '2016', color: 'Negro', vencimiento: '2020-01-01',
+        },
+      },
+      rif: { file: { url: '/files/x/rif.pdf' }, ocr: { rif: 'J-12345678-9', razonSocial: 'Transporte ABC' } },
+    },
+  });
+  const exp = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION });
+  assert.deepEqual(exp.documentos.cedula.ocrLeido, {
+    tipoDoc: 'V', documento: '12345678', nombre: 'Ana', apellido: 'Pérez',
+  });
+  assert.deepEqual(exp.documentos.licencia.ocrLeido, {
+    tipoDoc: 'V', documento: '12345678', nombre: 'Ana', apellido: 'Pérez', vencimiento: '2030-05-01',
+  });
+  assert.deepEqual(exp.documentos.certificado.ocrLeido, {
+    placa: 'AC124KB', serial: 'JTEBU5JRXG5303643', serialMotor: '1GR1234567',
+    marca: 'Toyota', modelo: '4Runner', anio: 2016,
+  });
+  assert.deepEqual(exp.documentos.rif.ocrLeido, { tipoDoc: 'J', documento: '123456789', nombre: 'Transporte ABC' });
+  // La póliza sigue saliendo con lo del formulario; ocrLeido no la toca.
+  assert.equal(exp.snapshot.vehiculo.placa, 'WDSFG3G3');
+  assert.equal(exp.snapshot.vehiculo.serial, '3G34G23FRWDV2EV53G23');
+  // Nada de imágenes ni del payload crudo.
+  const json = JSON.stringify(exp);
+  assert.ok(!json.includes('AAAA'));
+  assert.ok(!json.includes('imagenBase64'));
+  assert.ok(!json.includes('fechaNacimiento'));
+  assert.ok(!json.includes('"raw"'));
+}));
+
+test('ocrLeido: sin lectura OCR (o vacía) el campo no va', withEnabled(() => {
+  const state = rcvState();
+  state.documents.licencia.ocr = {};
+  state.documents.certificado = { file: { url: '/files/x/certificado.jpg' }, ocr: { placa: 'NULL', serial: '  ' } };
+  const exp = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION });
+  assert.ok(Object.values(exp.documentos).every((d) => !('ocrLeido' in d)));
+}));
+
+test('ocrLeido: una lectura rara no rompe el campo expediente', withEnabled(() => {
+  const state = rcvState();
+  const ocr = {};
+  Object.defineProperty(ocr, 'placa', { enumerable: true, get() { throw new Error('boom'); } });
+  state.documents.certificado = { file: { url: '/files/x/certificado.jpg' }, ocr };
+  const exp = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION });
+  assert.ok(exp, 'el campo expediente se arma igual');
+  assert.equal(exp.documentos.certificado.recibido, true);
+  assert.ok(!('ocrLeido' in exp.documentos.certificado));
+}));
+
 // ── registerIssuedPolicy ──────────────────────────────────────────────────────
 
 function mockFetch(impl) {
