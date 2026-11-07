@@ -298,6 +298,7 @@ router.post('/policies/emit', async (req, res) => {
         state: mergedState,
         planNombre: plan || mergedState?.selectedPlan?.name,
         frecuencia: frecuencia || mergedState?.rcv?.frecuencia,
+        expedienteCtx: { producto: 'rcv', nexusMetadata: req.nexusMetadata, empresaNombre: req.empresa?.nombre },
       });
     } catch (feedErr) {
       console.warn('[modulo-emision/emit] feed Nexus:', feedErr?.message || feedErr);

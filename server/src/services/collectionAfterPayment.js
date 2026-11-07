@@ -88,4 +88,4 @@ async function resolveIngresoCajaAfterPayment(state, { cnrecibo, mpagoFallback, 
   return undefined;
 }
 
-module.exports = { resolveIngresoCajaAfterPayment };
+module.exports = { resolveIngresoCajaAfterPayment, isTarjetaFarmaciaPayment };
