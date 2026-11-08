@@ -108,7 +108,7 @@ const USAGE_CATEGORIES = {
   MOTOS:                5,
 };
 
-// Estados venezolanos → código La Mundial. Default Distrito Capital.
+// Estados venezolanos → código La Mundial (solo para textos sin código del selector).
 const STATE_CODES = {
   'DISTRITO CAPITAL': 1,
   CARACAS:   1, AMAZONAS: 2, ANZOATEGUI: 3, APURE: 4, ARAGUA: 5,
@@ -219,14 +219,18 @@ async function resolveCategoriaUsoFromVinma(fano, cmarca, cmodelo, cversion) {
   return null;
 }
 
+/**
+ * Sin coincidencia devuelve null: antes caía en Distrito Capital (1) / ciudad 128 y el cliente quedaba
+ * en Sis2000 con una dirección inventada. El validador rechaza el estado/ciudad vacío.
+ */
 function resolveStateCode(estadoTexto) {
   const k = norm(estadoTexto);
-  if (STATE_CODES[k] != null) return STATE_CODES[k];
-  return DEFAULT_STATE_CODE;
+  return STATE_CODES[k] ?? null;
 }
 
+/** No hay tabla texto → código de ciudad: solo vale el código del selector (cciudad). */
 function resolveCityCode(_ciudadTexto, _stateCode) {
-  return DEFAULT_CITY_CODE;
+  return null;
 }
 
 module.exports = {
