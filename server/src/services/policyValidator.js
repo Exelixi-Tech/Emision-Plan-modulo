@@ -46,6 +46,15 @@ function codigoGeoValido(codigo) {
   return Number.isInteger(n) && n > 0;
 }
 
+/** Titular = tomador: mismo tipo de documento y mismo número. */
+function titularEsTomador(p) {
+  const tipo = (v) => String(v || '').trim().toUpperCase();
+  const num = (v) => String(v ?? '').replace(/\D/g, '');
+  return tipo(p.tipo_cedula_titular) === tipo(p.tipo_cedula_tomador)
+    && num(p.rif_titular) !== ''
+    && num(p.rif_titular) === num(p.rif_tomador);
+}
+
 function fanoValido(fano) {
   return Number.isInteger(fano) && fano >= FANO_MIN && fano <= new Date().getFullYear() + FANO_MAX_ADELANTO;
 }
@@ -113,7 +122,9 @@ function validateEmissionPayload(p) {
 
   // Estado y ciudad (códigos Sis2000 > 0). Sin ellos el cliente queda sin dirección y la membresía
   // Arys falla ("Estado no encontrado"); el Core también rechaza la emisión.
-  for (const rol of ['tomador', 'titular']) {
+  // Si el titular es el tomador, sus datos son los del tomador: solo se exigen una vez.
+  const roles = titularEsTomador(p) ? ['tomador'] : ['tomador', 'titular'];
+  for (const rol of roles) {
     if (!codigoGeoValido(p[`estado_${rol}`])) errors.push(`estado_${rol} requerido (código de estado)`);
     if (!codigoGeoValido(p[`ciudad_${rol}`])) errors.push(`ciudad_${rol} requerida (código de ciudad)`);
   }
@@ -137,4 +148,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears, codigoGeoValido, fanoValido, rifMaxDigitos, rifValido } };
+module.exports = { validateEmissionPayload, _internal: { ageInYears, codigoGeoValido, fanoValido, rifMaxDigitos, rifValido, titularEsTomador } };
