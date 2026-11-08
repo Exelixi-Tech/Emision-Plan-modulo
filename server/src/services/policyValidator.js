@@ -41,6 +41,11 @@ function rifValido(rif, tipo) {
 const FANO_MIN = 1901;
 const FANO_MAX_ADELANTO = 2;
 
+function codigoGeoValido(codigo) {
+  const n = Number(codigo);
+  return Number.isInteger(n) && n > 0;
+}
+
 function fanoValido(fano) {
   return Number.isInteger(fano) && fano >= FANO_MIN && fano <= new Date().getFullYear() + FANO_MAX_ADELANTO;
 }
@@ -106,6 +111,13 @@ function validateEmissionPayload(p) {
     errors.push('titular debe ser mayor de edad (18+)');
   }
 
+  // Estado y ciudad (códigos Sis2000 > 0). Sin ellos el cliente queda sin dirección y la membresía
+  // Arys falla ("Estado no encontrado"); el Core también rechaza la emisión.
+  for (const rol of ['tomador', 'titular']) {
+    if (!codigoGeoValido(p[`estado_${rol}`])) errors.push(`estado_${rol} requerido (código de estado)`);
+    if (!codigoGeoValido(p[`ciudad_${rol}`])) errors.push(`ciudad_${rol} requerida (código de ciudad)`);
+  }
+
   // Vehiculo
   if (!/^[A-Z0-9]{6,8}$/.test(p.placa || '')) errors.push('placa invalida (6-8 alfanumericos en mayusculas)');
   if (!p.serial_carroceria?.trim()) errors.push('serial_carroceria requerido');
@@ -125,4 +137,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears, fanoValido, rifMaxDigitos, rifValido } };
+module.exports = { validateEmissionPayload, _internal: { ageInYears, codigoGeoValido, fanoValido, rifMaxDigitos, rifValido } };
