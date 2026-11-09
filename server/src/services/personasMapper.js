@@ -470,6 +470,11 @@ function buildValidateEmissionPersonRequest(state, overrides = {}) {
     // nest-api revisa antes de pagar que el pasaporte no choque con otro cliente de Sis2000.
     ...cidField('cid_titular', titular.identificacion ? titular : tomador),
     ...cidField('cid_tomador', tomador),
+    // Con nombre y apellido, nest-api reconoce a la misma persona ya registrada con E/V y no frena.
+    nombre_titular: String((titular.identificacion ? titular : tomador).nombre || '').trim(),
+    apellido_titular: String((titular.identificacion ? titular : tomador).apellido || '').trim(),
+    nombre_tomador: String(tomador.nombre || '').trim(),
+    apellido_tomador: String(tomador.apellido || '').trim(),
   };
 }
 
