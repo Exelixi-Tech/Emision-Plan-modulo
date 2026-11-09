@@ -92,6 +92,10 @@ test('personas: pasaporte numérico → P; alfanumérico (caso EM2849387) titula
   const v = personasMapper.buildValidateEmissionPersonRequest(st, { plan: 'FUN01' });
   assert.equal(v.cid_titular, 'P-EM2849387');
   assert.equal(v.rif_titular, 2849387);
+  // nest-api compara nombre y apellido con el cliente registrado (misma persona con E/V).
+  assert.equal(v.nombre_titular, String(pasAlfa.nombre || '').trim());
+  assert.equal(v.apellido_titular, String(pasAlfa.apellido || '').trim());
+  assert.ok(v.nombre_titular.length > 0);
 
   // Menos de 5 dígitos o más de 13 caracteres → error claro.
   const corto = { ...pasAlfa, identificacion: 'EMX1234' };
