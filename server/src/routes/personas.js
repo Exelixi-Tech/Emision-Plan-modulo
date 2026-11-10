@@ -582,6 +582,7 @@ router.post('/emision', async (req, res) => {
         state,
         planNombre: cplan,
         frecuencia: ifrecuencia,
+        expedienteCtx: { producto: 'personas', cramo, nexusMetadata: req.nexusMetadata, empresaNombre: req.empresa?.nombre },
         extra: {
           flujo: 'personas',
           cproducto: trafficMeta.cproducto ?? null,
