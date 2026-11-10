@@ -113,7 +113,7 @@ function resolveEstadoPago(state) {
   return 'pendiente';
 }
 
-/** Área y vendedor desde la metadata SSO (ya fusionada con el JWT verificado). */
+/** Área y «emitida por» desde la metadata SSO (ya fusionada con el JWT verificado). */
 function resolveActor(state, nexusMetadata) {
   const sources = [
     state?.metadataCanal && typeof state.metadataCanal === 'object' ? state.metadataCanal : {},
