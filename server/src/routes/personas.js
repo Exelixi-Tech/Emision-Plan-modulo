@@ -15,6 +15,7 @@ const personasMapper = require('../services/personasMapper');
 const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
+const { registrarPendiente } = require('../services/postEmisionPendiente');
 const { activateTarjetaAfterEmit, isRcvTarjetaFlow: isTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 const {
   recordFuneralEmissionFlexible,
