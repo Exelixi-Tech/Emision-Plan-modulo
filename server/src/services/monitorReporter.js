@@ -24,6 +24,7 @@ function reportRuntimeError(payload) {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
+  
   void fetch(url, {
     method: 'POST',
     headers: {
