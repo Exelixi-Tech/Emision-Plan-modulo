@@ -1,5 +1,6 @@
 /**
- * Monitor de expedientes Marketplace (contrato v1, 7-nov-2026; v1.3: documentos[tipo].ocrLeido).
+ * Monitor de expedientes Marketplace (contrato v1, 7-nov-2026; v1.3: documentos[tipo].ocrLeido;
+ * v1.4: `correos` = correo del tomador y del asegurado/titular, sin repetidos).
  *
  * Arma el campo opcional `expediente` que viaja dentro del registro que Emisión ya envía a Nexus
  * (POST /api/emisiones, ver nexusEmisionFeed.js). Solo arma datos:
@@ -75,6 +76,27 @@ function persona(p) {
     nombre: str(p.nombre ?? p.razonSocial),
     apellido: str(p.apellido),
   };
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Correo en minúsculas si es válido; si no, null. */
+function emailValido(v) {
+  const s = str(v)?.toLowerCase() ?? null;
+  return s && s.length <= 200 && EMAIL_RE.test(s) ? s : null;
+}
+
+/**
+ * v1.4: correos de contacto de la póliza para los avisos del monitor: tomador y asegurado/titular
+ * (si son personas distintas, los dos). Sin repetidos, el del tomador primero. Vacía si no hay.
+ */
+function resolveCorreos(tomador, titular) {
+  const out = [];
+  for (const v of [tomador?.email, titular?.email]) {
+    const e = emailValido(v);
+    if (e && !out.includes(e)) out.push(e);
+  }
+  return out;
 }
 
 /** Titular: personas = 1er asegurado; RCV = asegurado si es distinto del tomador. */
@@ -330,6 +352,8 @@ function buildExpedienteFeed(ctx) {
       cramo: resolveCramo(ctx, state, producto),
       estadoPago: resolveEstadoPago(state),
       asegurado,
+      // v1.4: tomador y asegurado/titular (aditivo; `asegurado.email` sigue igual que antes).
+      correos: resolveCorreos(tomador, titular),
       snapshot: {
         tomador: persona(tomador),
         asegurado: aseguradoBase,
@@ -371,5 +395,6 @@ module.exports = {
     sanitizeFolderName,
     cleanDocumento,
     resolveOcrLeido,
+    resolveCorreos,
   },
 };

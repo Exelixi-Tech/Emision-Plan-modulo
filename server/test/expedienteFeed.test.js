@@ -106,6 +106,43 @@ test('RCV pagada: forma del contrato v1', withEnabled(() => {
   assert.ok(JSON.stringify(exp).length < 10000, 'el campo debe ser liviano');
 }));
 
+test('v1.4 correos: RCV mismo asegurado → solo el del tomador', withEnabled(() => {
+  const exp = buildExpedienteFeed({ producto: 'rcv', state: rcvState(), emission: EMISION });
+  assert.deepEqual(exp.correos, ['ana@example.test']);
+}));
+
+test('v1.4 correos: RCV asegurado distinto → tomador y asegurado; asegurado.email sin cambios', withEnabled(() => {
+  const state = rcvState({
+    sameInsured: false,
+    asegurado: { tipoDoc: 'V', identificacion: '9876543', nombre: 'Beto', apellido: 'Gil', email: ' Beto@Example.TEST ' },
+  });
+  const exp = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION });
+  assert.equal(exp.asegurado.email, 'Beto@Example.TEST');
+  assert.deepEqual(exp.correos, ['ana@example.test', 'beto@example.test']);
+}));
+
+test('v1.4 correos: personas con titular con correo propio → los dos; repetidos e inválidos fuera', withEnabled(() => {
+  const base = {
+    tomador: { tipoDoc: 'V', identificacion: '11111111', nombre: 'Tom', email: 't@example.test' },
+    funeral: { asegurados: [{ tipoDoc: 'V', identificacion: '22222222', nombre: 'Titu', email: 'titu@example.test' }] },
+  };
+  const exp = buildExpedienteFeed({ producto: 'personas', state: base, emission: EMISION });
+  assert.equal(exp.asegurado.email, 'titu@example.test');
+  assert.deepEqual(exp.correos, ['t@example.test', 'titu@example.test']);
+  const igual = buildExpedienteFeed({
+    producto: 'personas',
+    state: { ...base, funeral: { asegurados: [{ ...base.funeral.asegurados[0], email: 'T@example.test' }] } },
+    emission: EMISION,
+  });
+  assert.deepEqual(igual.correos, ['t@example.test']);
+  const invalido = buildExpedienteFeed({
+    producto: 'personas',
+    state: { ...base, tomador: { ...base.tomador, email: 'no-es-correo' } },
+    emission: EMISION,
+  });
+  assert.deepEqual(invalido.correos, ['titu@example.test']);
+}));
+
 test('RCV emitida como pendiente de cobro → estadoPago pendiente', withEnabled(() => {
   const exp = buildExpedienteFeed({ producto: 'rcv', state: rcvState({ paymentVerified: false }), emission: EMISION });
   assert.equal(exp.estadoPago, 'pendiente');
