@@ -15,21 +15,27 @@ const personasMapper = require('../services/personasMapper');
 const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
-const { activateTarjetaAfterEmit, isRcvTarjetaFlow: isTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
+const { registrarPendiente } = require('../services/postEmisionPendiente');
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
 const { registerIssuedPolicy } = require('../services/nexusEmisionFeed');
-const { archiveExpedienteAfterEmit, pickFacturaLink } = require('../services/expedienteArchive');
-const { rechazoSinFotoFactura, alertarSiFaltaFactura } = require('../services/tarjetaFacturaGuard');
+const { archiveExpedienteAfterEmit } = require('../services/expedienteArchive');
 const { resolveEntityContext } = require('../services/canalClient');
 const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan');
 const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
+const { reportRuntimeError } = require('../services/monitorReporter');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
-const { classifyPersonasError } = require('../lib/personasErrorClass');
+
+/** Edad fuera del rango de la tarifa del plan: mismo mensaje para cotizar y emitir. */
+const AGE_OUT_OF_RANGE_MESSAGE =
+  'La edad indicada del titular no está permitida en el rango del plan. Elige otro plan.';
+function isAgeOutOfRange(msg) {
+  return /criterios de edad|edad fuera|fuera de rango|prima del recibo en 0|sin tarifa/i.test(String(msg || ''));
+}
 
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
@@ -68,6 +74,42 @@ function withNexusMetadata(state, nexusMetadata) {
     ...state,
     metadataCanal: { ...(state.metadataCanal || {}), ...nexusMetadata },
   };
+}
+
+/**
+ * La póliza quedó emitida (y normalmente cobrada) pero sin proveedor en adproveedor.
+ * Deja un pendiente post-emisión (JSONL + log grepeable) y avisa al monitor para mesa técnica.
+ * Nunca lanza.
+ */
+function notificarProveedorNoRegistrado({ req, state, emitted, internalPolicyId, proveedorError, proveedorPayload }) {
+  try {
+    registrarPendiente({
+      flujo: 'personas',
+      step: 'proveedor_no_registrado',
+      error: `${proveedorError.code}: ${proveedorError.message}`,
+      state,
+      internalPolicyId,
+      cnpoliza: emitted?.cnpoliza,
+      cnrecibo: emitted?.cnrecibo,
+      extra: {
+        cci_rif: proveedorPayload?.cci_rif ?? null,
+        cclave_num: proveedorPayload?.cclave_num ?? null,
+        itiposerv: proveedorPayload?.itiposerv ?? null,
+        cplan_proveedor: proveedorPayload?.cplan ?? null,
+        cramo_proveedor: proveedorPayload?.cramo ?? null,
+      },
+    });
+    reportRuntimeError({
+      method: 'POST',
+      path: (req?.originalUrl || '/api/personas/emision').split('?')[0],
+      statusCode: 500,
+      errorName: proveedorError.code,
+      message: `Póliza ${emitted?.cnpoliza ?? '-'} emitida sin proveedor en adproveedor: ${proveedorError.message}`.slice(0, 1000),
+      blocksUser: false,
+    });
+  } catch (err) {
+    console.error('[personas/emision] no se pudo notificar proveedor no registrado:', err?.message || err);
+  }
 }
 
 const router = express.Router();
@@ -306,13 +348,14 @@ router.post('/cotizacion', async (req, res) => {
       .map((a) => `${a.xrif_asegurado || '?'} (${a.nedad_asegurado} años, parentesco ${a.cparen})`)
       .join('; ');
     console.error('[personas/cotizacion]', msg, edades);
-    const known = classifyPersonasError(msg);
-    res.status(known ? 422 : 502).json({
+    const isAge = isAgeOutOfRange(msg);
+    res.status(isAge ? 422 : 502).json({
       success: false,
-      code: known?.code ?? (err.code || 'LAMUNDIAL_PERSON_ERROR'),
-      message: known?.message
-        ?? `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
-      ...(known && edades ? { detail: `Edad calculada: ${edades}.` } : {}),
+      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: isAge
+        ? AGE_OUT_OF_RANGE_MESSAGE
+        : `No se pudo cotizar: ${msg}${edades ? ` Edad calculada: ${edades}.` : ''}`,
+      ...(isAge && edades ? { detail: `Edad calculada: ${edades}.` } : {}),
     });
   }
 });
@@ -385,16 +428,6 @@ router.post('/emision', async (req, res) => {
   const { state: rawState, frecuencia } = req.body || {};
   const state = withNexusMetadata(rawState, req.nexusMetadata);
   const funeral = state?.funeral || {};
-  // Tarjeta de personas: sin aceptar mecanismos/términos y la declaración de salud no se emite.
-  const sinFactura = rechazoSinFotoFactura(state);
-  if (sinFactura) return res.status(sinFactura.status).json(sinFactura.body);
-  if (isTarjetaFlow(state) && (funeral.aceptaTerminos !== true || funeral.diagnosticoEnfermedad === true)) {
-    return res.status(422).json({
-      success: false,
-      code: 'TARJETA_DECLARACIONES',
-      message: 'Para emitir debes aceptar los mecanismos electrónicos, los términos y la declaración de salud.',
-    });
-  }
   const cplan = state?.selectedPlan?.cplan;
   const cramo = resolvePersonasCramo({
     selectedPlan: state?.selectedPlan,
@@ -439,19 +472,6 @@ router.post('/emision', async (req, res) => {
   if (asegurados.length === 0) {
     return res.status(400).json({ success: false, code: 'MISSING_INSURED', message: 'Debe registrar al menos un asegurado.' });
   }
-  // Tarjeta de personas: el plan es el de la tarjeta, pago anual y solo el titular (sin dependientes).
-  if (isTarjetaFlow(state)) {
-    const planTarjeta = String(state?.metadataCanal?.cplan ?? '').trim();
-    let rechazo = null;
-    if (planTarjeta && String(cplan).trim() !== planTarjeta) {
-      rechazo = { code: 'TARJETA_PLAN', message: `La tarjeta corresponde al plan ${planTarjeta}; no se puede emitir con otro plan.` };
-    } else if (ifrecuencia !== 'A') {
-      rechazo = { code: 'TARJETA_FRECUENCIA', message: 'Con la tarjeta la póliza se emite con pago anual.' };
-    } else if (asegurados.length > 1) {
-      rechazo = { code: 'TARJETA_SOLO_TITULAR', message: 'Con la tarjeta la póliza cubre solo al titular, sin dependientes.' };
-    }
-    if (rechazo) return res.status(422).json({ success: false, ...rechazo });
-  }
   const invalid = asegurados.find((a) => !a.xrif_asegurado || a.nedad_asegurado == null);
   if (invalid) {
     return res.status(400).json({
@@ -460,6 +480,11 @@ router.post('/emision', async (req, res) => {
       message: 'Cada asegurado requiere identificación y fecha de nacimiento válidas.',
     });
   }
+
+  // Trazabilidad post-emisión: en qué paso falló y con qué id interno (solo con pago verificado).
+  let emitStep = 'cotizar';
+  let emitInternalId = null;
+  let rifTitularPendiente = null;
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
@@ -505,6 +530,8 @@ router.post('/emision', async (req, res) => {
         stage: 'validate',
       });
     }
+    emitStep = 'validar';
+    rifTitularPendiente = validatePayload.rif_titular;
     await personasClient.validateEmissionPerson(validatePayload);
 
     // 3. Construye el payload de emisión y emite.
@@ -513,6 +540,7 @@ router.post('/emision', async (req, res) => {
       cotizacionBase,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    emitInternalId = metadata.internalPolicyId;
     if (vigencia) {
       payload.fdesde = vigencia.fdesde;
       payload.fhasta = vigencia.fhasta;
@@ -535,10 +563,15 @@ router.post('/emision', async (req, res) => {
       `[personas/emision] metadataCanal cproductor=${meta.cproductor ?? 'default'} cusuario=${meta.cusuario ?? 'default'} canal=${meta.canal ?? 'default'} cgestor_in=${meta.cgestor_in ?? 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'}`,
     );
 
+    emitStep = 'emitir';
     const emitted = await personasClient.createEmissionPerson(payload);
+    emitStep = 'post_emision';
 
-    // Registro de proveedor en póliza si vino en el estado
+    // Registro de proveedor en póliza si vino en el estado. Si falla, la póliza ya quedó emitida y
+    // cobrada: no se revierte, pero se devuelve proveedorError y se deja alerta (pendiente + monitor)
+    // para que mesa técnica registre el proveedor en adproveedor.
     let proveedorResult = null;
+    let proveedorError = null;
     if (state?.proveedor || state?.selectedProveedor || state?.cproveedor) {
       const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
         state,
@@ -551,9 +584,7 @@ router.post('/emision', async (req, res) => {
       );
       const faltantes = personasMapper.faltantesRegistroProveedor(proveedorPayload);
       if (faltantes.length) {
-        console.warn(
-          `[personas/emision] Proveedor NO registrado en poliza ${emitted.cnpoliza}: faltan ${faltantes.join(', ')}`,
-        );
+        proveedorError = { code: 'PROVEEDOR_DATOS_INCOMPLETOS', message: `Faltan datos: ${faltantes.join(', ')}` };
       } else {
         try {
           proveedorResult = await registerPolicyProveedorViaNestApi(proveedorPayload);
@@ -562,19 +593,31 @@ router.post('/emision', async (req, res) => {
             proveedorResult,
           );
         } catch (provErr) {
-          console.warn(
-            '[personas/emision] Error al registrar proveedor en póliza:',
-            provErr?.message || provErr,
-          );
+          proveedorError = {
+            code: 'PROVEEDOR_REGISTRO_FALLIDO',
+            message: String(provErr?.message || provErr).slice(0, 500),
+          };
         }
+      }
+      if (proveedorError) {
+        console.error(
+          `[personas/emision] Proveedor NO registrado en póliza ${emitted.cnpoliza}: ${proveedorError.message}`,
+        );
+        notificarProveedorNoRegistrado({
+          req,
+          state,
+          emitted,
+          internalPolicyId: metadata.internalPolicyId,
+          proveedorError,
+          proveedorPayload,
+        });
       }
     }
 
-    const expediente = await archiveExpedienteAfterEmit({
+    await archiveExpedienteAfterEmit({
       state,
       emission: emitted,
       empresaNombre: req.empresa?.nombre,
-      empresaId: req.empresa?.id,
       authToken: req.nexusToken,
     });
 
@@ -587,24 +630,16 @@ router.post('/emision', async (req, res) => {
     });
     if (url_ingreso_caja) {
       console.log(`[personas/emision] URL ingreso caja: ${url_ingreso_caja}`);
-    }
-
-    // Flujo tarjeta: activa la tarjeta en La Mundial (fail-open, igual que RCV).
-    // casegurado = titular si nest-api no lo devuelve.
-    if (isTarjetaFlow(state)) {
-      const facturaLink = pickFacturaLink(expediente);
-      alertarSiFaltaFactura(state, emitted, facturaLink, emitMetadata);
-      await activateTarjetaAfterEmit(
+    } else if (state.paymentVerified && (emitMetadata.collectionError || emitMetadata.collectionSkipped === 'sin_referencia_bancaria')) {
+      registrarPendiente({
+        flujo: 'personas',
+        step: emitMetadata.collectionError ? 'cobro_error' : 'cobro_omitido_sin_referencia',
+        error: emitMetadata.collectionError || 'pago verificado sin referencia bancaria',
         state,
-        {
-          ...emitted,
-          casegurado: emitted.casegurado
-            ?? (Number(String(validatePayload.rif_titular ?? '').replace(/\D/g, '')) || undefined),
-        },
-        emitMetadata,
-        // xfoto_factura = URL final de la factura archivada (la de pendiente/ ya no existe).
-        { xfotoFactura: facturaLink },
-      );
+        internalPolicyId: metadata.internalPolicyId,
+        cnpoliza: emitted.cnpoliza,
+        cnrecibo: emitted.cnrecibo,
+      });
     }
 
     const emissionRecord = {
@@ -619,6 +654,7 @@ router.post('/emision', async (req, res) => {
         ptasa: cotizacion.ptasa,
       },
       ...(proveedorResult ? { proveedor: proveedorResult } : {}),
+      ...(proveedorError ? { proveedorError } : {}),
       /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
       ...(premiumAdjust ? { premiumAdjust } : {}),
     };
@@ -642,6 +678,17 @@ router.post('/emision', async (req, res) => {
       });
     } catch (feedErr) {
       console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);
+      if (state.paymentVerified) {
+        registrarPendiente({
+          flujo: 'personas',
+          step: 'record_emission_error',
+          error: feedErr?.message || feedErr,
+          state,
+          internalPolicyId: metadata.internalPolicyId,
+          cnpoliza: emitted.cnpoliza,
+          cnrecibo: emitted.cnrecibo,
+        });
+      }
     }
     try {
       const saved = await recordFuneralEmissionFlexible(funeralRefs, emissionRecord);
@@ -679,6 +726,7 @@ router.post('/emision', async (req, res) => {
           ptasa: cotizacion.ptasa,
         },
         ...(proveedorResult ? { proveedor: proveedorResult } : {}),
+        ...(proveedorError ? { proveedorError } : {}),
         metadata: emitMetadata,
       },
     });
@@ -686,15 +734,49 @@ router.post('/emision', async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     const httpStatus = err.httpStatus || 502;
     console.error('[personas/emision]', err.code || '', msg);
-    const known = classifyPersonasError(msg);
-    return res.status(known ? 422 : httpStatus).json({
+    const isAge = isAgeOutOfRange(msg);
+    // Pago verificado y falló la emisión (timeout: el SP pudo emitir igual) o
+    // "póliza vigente" en un reintento: registrar pendiente y, solo lectura,
+    // buscar el número de la póliza ya existente para mostrarlo al operador.
+    let postEmision;
+    let polizaExistente;
+    if (state.paymentVerified && (emitStep === 'emitir' || err.code === 'PERSONAS_DUPLICATE')) {
+      if (err.code === 'PERSONAS_DUPLICATE' && rifTitularPendiente) {
+        try {
+          const vig = await personasClient.checkPolizaVigente({ rif: rifTitularPendiente, cramo });
+          if (vig?.hasVigente && vig.cnpoliza) {
+            polizaExistente = { cnpoliza: vig.cnpoliza, cplan: vig.cplan, fhasta: vig.fhasta };
+          }
+        } catch (lookupErr) {
+          console.warn('[personas/emision] lookup póliza vigente falló:', lookupErr?.message || lookupErr);
+        }
+      }
+      const isTimeout = /timeout|ECONNABORTED|ETIMEDOUT/i.test(`${err.code || ''} ${msg}`);
+      const rec = registrarPendiente({
+        flujo: 'personas',
+        step: err.code === 'PERSONAS_DUPLICATE'
+          ? `${emitStep}_vigente_409`
+          : (isTimeout ? 'emit_timeout' : 'emit_error'),
+        error: msg,
+        state,
+        internalPolicyId: emitInternalId,
+        cnpoliza: polizaExistente?.cnpoliza,
+        extra: { code: err.code || null, httpStatus, cplan },
+      });
+      if (rec) postEmision = { pendiente: true, step: rec.step, paymentReference: rec.paymentReference };
+    }
+    return res.status(isAge ? 422 : httpStatus).json({
       success: false,
-      code: known?.code ?? (err.code || 'LAMUNDIAL_PERSON_ERROR'),
-      message: known?.message ?? msg,
+      code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
+      message: isAge ? AGE_OUT_OF_RANGE_MESSAGE : msg,
       ...(err.endpoint ? { endpoint: err.endpoint } : {}),
+      ...(emitInternalId ? { internalPolicyId: emitInternalId } : {}),
+      ...(postEmision ? { postEmision } : {}),
+      ...(polizaExistente ? { polizaExistente } : {}),
       stage: 'emit',
     });
   }
 });
 
 module.exports = router;
+module.exports._internal = { notificarProveedorNoRegistrado };
