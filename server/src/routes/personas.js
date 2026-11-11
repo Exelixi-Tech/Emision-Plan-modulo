@@ -15,6 +15,7 @@ const personasMapper = require('../services/personasMapper');
 const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
+const { registrarPendiente } = require('../services/postEmisionPendiente');
 const { activateTarjetaAfterEmit, isRcvTarjetaFlow: isTarjetaFlow } = require('../services/tarjetaActivateAfterEmit');
 const {
   recordFuneralEmissionFlexible,
@@ -27,6 +28,7 @@ const { isPersonasCplan, resolvePersonasCramo } = require('../lib/funerarioPlan'
 const { fetchPlanesV2 } = require('../services/planesClient');
 const { resolveQuestionsForPlan } = require('../config/funeralHealthQuestions');
 const { registerPolicyProveedorViaNestApi } = require('../services/nestApiClient');
+const { reportRuntimeError } = require('../services/monitorReporter');
 const { productLabelFromMeta } = require('../config/healthQuestionsByRamo');
 const { adjustPremiumByAnswers } = require('../lib/healthPremiumAdjust');
 const { classifyPersonasError } = require('../lib/personasErrorClass');
@@ -68,6 +70,42 @@ function withNexusMetadata(state, nexusMetadata) {
     ...state,
     metadataCanal: { ...(state.metadataCanal || {}), ...nexusMetadata },
   };
+}
+
+/**
+ * La póliza quedó emitida (y normalmente cobrada) pero sin proveedor en adproveedor.
+ * Deja un pendiente post-emisión (JSONL + log grepeable) y avisa al monitor para mesa técnica.
+ * Nunca lanza.
+ */
+function notificarProveedorNoRegistrado({ req, state, emitted, internalPolicyId, proveedorError, proveedorPayload }) {
+  try {
+    registrarPendiente({
+      flujo: 'personas',
+      step: 'proveedor_no_registrado',
+      error: `${proveedorError.code}: ${proveedorError.message}`,
+      state,
+      internalPolicyId,
+      cnpoliza: emitted?.cnpoliza,
+      cnrecibo: emitted?.cnrecibo,
+      extra: {
+        cci_rif: proveedorPayload?.cci_rif ?? null,
+        cclave_num: proveedorPayload?.cclave_num ?? null,
+        itiposerv: proveedorPayload?.itiposerv ?? null,
+        cplan_proveedor: proveedorPayload?.cplan ?? null,
+        cramo_proveedor: proveedorPayload?.cramo ?? null,
+      },
+    });
+    reportRuntimeError({
+      method: 'POST',
+      path: (req?.originalUrl || '/api/personas/emision').split('?')[0],
+      statusCode: 500,
+      errorName: proveedorError.code,
+      message: `Póliza ${emitted?.cnpoliza ?? '-'} emitida sin proveedor en adproveedor: ${proveedorError.message}`.slice(0, 1000),
+      blocksUser: false,
+    });
+  } catch (err) {
+    console.error('[personas/emision] no se pudo notificar proveedor no registrado:', err?.message || err);
+  }
 }
 
 const router = express.Router();
@@ -537,8 +575,11 @@ router.post('/emision', async (req, res) => {
 
     const emitted = await personasClient.createEmissionPerson(payload);
 
-    // Registro de proveedor en póliza si vino en el estado
+    // Registro de proveedor en póliza si vino en el estado. Si falla, la póliza ya quedó emitida y
+    // cobrada: no se revierte, pero se devuelve proveedorError y se deja alerta (pendiente + monitor)
+    // para que mesa técnica registre el proveedor en adproveedor.
     let proveedorResult = null;
+    let proveedorError = null;
     if (state?.proveedor || state?.selectedProveedor || state?.cproveedor) {
       const proveedorPayload = personasMapper.buildRegisterPolicyProveedorRequest(
         state,
@@ -551,9 +592,7 @@ router.post('/emision', async (req, res) => {
       );
       const faltantes = personasMapper.faltantesRegistroProveedor(proveedorPayload);
       if (faltantes.length) {
-        console.warn(
-          `[personas/emision] Proveedor NO registrado en poliza ${emitted.cnpoliza}: faltan ${faltantes.join(', ')}`,
-        );
+        proveedorError = { code: 'PROVEEDOR_DATOS_INCOMPLETOS', message: `Faltan datos: ${faltantes.join(', ')}` };
       } else {
         try {
           proveedorResult = await registerPolicyProveedorViaNestApi(proveedorPayload);
@@ -562,11 +601,24 @@ router.post('/emision', async (req, res) => {
             proveedorResult,
           );
         } catch (provErr) {
-          console.warn(
-            '[personas/emision] Error al registrar proveedor en póliza:',
-            provErr?.message || provErr,
-          );
+          proveedorError = {
+            code: 'PROVEEDOR_REGISTRO_FALLIDO',
+            message: String(provErr?.message || provErr).slice(0, 500),
+          };
         }
+      }
+      if (proveedorError) {
+        console.error(
+          `[personas/emision] Proveedor NO registrado en póliza ${emitted.cnpoliza}: ${proveedorError.message}`,
+        );
+        notificarProveedorNoRegistrado({
+          req,
+          state,
+          emitted,
+          internalPolicyId: metadata.internalPolicyId,
+          proveedorError,
+          proveedorPayload,
+        });
       }
     }
 
@@ -619,6 +671,7 @@ router.post('/emision', async (req, res) => {
         ptasa: cotizacion.ptasa,
       },
       ...(proveedorResult ? { proveedor: proveedorResult } : {}),
+      ...(proveedorError ? { proveedorError } : {}),
       /** Detalle interno: prima base, % por asegurado y preguntas que lo generaron. */
       ...(premiumAdjust ? { premiumAdjust } : {}),
     };
@@ -679,6 +732,7 @@ router.post('/emision', async (req, res) => {
           ptasa: cotizacion.ptasa,
         },
         ...(proveedorResult ? { proveedor: proveedorResult } : {}),
+        ...(proveedorError ? { proveedorError } : {}),
         metadata: emitMetadata,
       },
     });
@@ -698,3 +752,4 @@ router.post('/emision', async (req, res) => {
 });
 
 module.exports = router;
+module.exports._internal = { notificarProveedorNoRegistrado };

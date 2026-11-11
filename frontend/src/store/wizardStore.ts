@@ -325,23 +325,25 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
 
   setCanalVisibility: (canalVisibility) => set({ canalVisibility }),
 
+  // Reemplaza el proveedor completo: cplan/cramo/clave/tipo salen solo de `extra`, nunca del
+  // proveedor anterior (si no, se registraba en adproveedor una mezcla de dos proveedores).
   setCproveedor: (cproveedor, xproveedor, extra) =>
-    set((s) => ({
+    set(() => ({
       cproveedor,
       xproveedor,
-      cplan_proveedor: extra?.cplan ?? s.cplan_proveedor,
-      cramo_proveedor: extra?.cramo ?? s.cramo_proveedor,
-      cclave_num: extra?.cclave_num ?? s.cclave_num,
-      itiposerv: extra?.itiposerv ?? s.itiposerv,
+      cplan_proveedor: cproveedor ? extra?.cplan : undefined,
+      cramo_proveedor: cproveedor ? extra?.cramo : undefined,
+      cclave_num: cproveedor ? extra?.cclave_num : undefined,
+      itiposerv: cproveedor ? extra?.itiposerv : undefined,
       selectedProveedor: cproveedor
         ? {
           cci_rif: cproveedor,
           xproveedor: xproveedor ?? '',
           xcliente: xproveedor ?? '',
-          cplan: extra?.cplan ?? s.cplan_proveedor,
-          cramo: extra?.cramo ?? s.cramo_proveedor,
-          cclave_num: extra?.cclave_num ?? s.cclave_num,
-          itiposerv: extra?.itiposerv ?? s.itiposerv,
+          cplan: extra?.cplan,
+          cramo: extra?.cramo,
+          cclave_num: extra?.cclave_num,
+          itiposerv: extra?.itiposerv,
         }
         : null,
     })),
