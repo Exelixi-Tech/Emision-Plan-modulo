@@ -197,6 +197,18 @@ export interface FuneralPerson {
 export interface RcvPlanData {
   frecuencia: string;
   ndias?: number | null;
+  /**
+   * Placa extranjera: vigencia corta elegida (mavigencias_PR). El servidor calcula fdesde/fhasta
+   * y Sis2000 prorratea la prima anual (nvalor = % de la prima anual).
+   */
+  vigenciaExt?: {
+    cvigencia: number;
+    xvigencia: string;
+    /** D = días, M = meses */
+    imedida: string;
+    ntiempo: number;
+    nvalor: number;
+  } | null;
   /** Cobertura opcional activa para emisión (RC = solo RCV). */
   coberAdicional?: string;
   /** Sync con coberAdicional; máximo una opción (CA, PT o PP). */
@@ -297,6 +309,11 @@ export interface PolicyQuote {
   ptasa: number;
   /** Desglose por cobertura (calculate-plan-coberturas). */
   coberturas?: PolicyCoverageLine[];
+  /**
+   * Prima anual USD de las coberturas que no se fraccionan (Daños a personas y a cosas): con frecuencia
+   * distinta a la anual van completas en la cuota inicial; el resto se divide entre las cuotas.
+   */
+  primaCuotaInicial?: number;
   /** Etiqueta legible del vehiculo cotizado (ej. "TOYOTA / COROLLA"). */
   vehicleLabel?: string;
   /** Indica si La Mundial uso el catalogo por defecto (vehiculo no encontrado). */

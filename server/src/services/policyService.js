@@ -31,6 +31,7 @@ const {
 const { resolveIngresoCajaAfterPayment } = require('./collectionAfterPayment');
 const { alignQuoteWithPaymentCapture } = require('./paymentQuoteAlign');
 const { activateTarjetaAfterEmit } = require('./tarjetaActivateAfterEmit');
+const { registrarPendiente } = require('./postEmisionPendiente');
 const {
   buildQuoteRequest,
   buildCalculatePlanCoberturasRequest,
@@ -39,6 +40,7 @@ const {
   resolveSelectedCoberturas,
   resolvePrimaryCoberAdicional,
   resolveIplaca,
+  resolveRcvCramo,
 } = require('./policyMapper');
 const { resolveCategoriaUsoFromVinma, resolveUsageCategory } = require('./catalogs');
 const { validateEmissionPayload } = require('./policyValidator');
@@ -280,6 +282,7 @@ async function quote(state, overrides = {}) {
       cramo: payload.cramo || parseInt(process.env.LAMUNDIAL_RAMO || '18', 10),
       ifrecuencia: payload.ifrecuencia,
       ndias: payload.ndias,
+      fhasta: payload.fhasta,
       sumaAsegurada: payload.sumaAsegurada,
       cusuario,
     });
@@ -370,11 +373,16 @@ async function quote(state, overrides = {}) {
       }
     }
 
+    // RCV obligatoria (Daños a personas y a cosas): se cobra completa en la cuota inicial si la frecuencia
+    // no es anual; sp_genera_coberturas_recibos_auto_rcv_nexus reparte los recibos con la misma regla.
+    const primaCuotaInicial = Number(breakdown?.primaCuotaInicial ?? 0);
+
     return {
       mprima,
       mprimaext,
       ptasa: result.ptasa,
       coberturas,
+      primaCuotaInicial: Number.isFinite(primaCuotaInicial) && primaCuotaInicial > 0 ? primaCuotaInicial : 0,
       metadata: {
         ...metadata,
         referenceSuma: result.referenceSuma,
@@ -458,9 +466,19 @@ async function quoteAndEmit(state, overrides = {}) {
     });
   } catch (err) {
     if (err.code === 'PLATE_ALREADY_INSURED') {
+      // Pago ya verificado y la placa aparece asegurada: probable reintento tras
+      // timeout/emisión previa. Se deja constancia para conciliar (no se re-emite ni cobra).
+      // nest-api no expone lookup público por placa (lookupEmissionByPlaca es privado);
+      // TODO(fase 2): consultar cnpoliza existente cuando haya endpoint de solo lectura.
+      const postEmision = registrarPostEmisionSiPagado(state, {
+        step: 'validate_placa_409',
+        error: err.message,
+        internalPolicyId: metadata.internalPolicyId,
+      });
       throw new PolicyError('LAMUNDIAL_PLATE_ALREADY_INSURED', err.message, 409, {
         stage: 'validate',
         internalPolicyId: metadata.internalPolicyId,
+        ...(postEmision ? { postEmision } : {}),
       });
     }
     throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
@@ -493,7 +511,17 @@ async function quoteAndEmit(state, overrides = {}) {
       ptasa:     quoteResult.ptasa,
     });
   } catch (err) {
-    throw mapClientError(err, 'emit', { internalPolicyId: metadata.internalPolicyId });
+    // Con pago verificado: timeout/abort (el SP puede haber emitido igual) o 409 en el SP.
+    const postEmision = registrarPostEmisionSiPagado(state, {
+      step: isTimeoutError(err) ? 'emit_timeout' : 'emit_error',
+      error: err.message,
+      internalPolicyId: metadata.internalPolicyId,
+      extra: { code: err.code || null, httpStatus: err.httpStatus || null },
+    });
+    throw mapClientError(err, 'emit', {
+      internalPolicyId: metadata.internalPolicyId,
+      ...(postEmision ? { postEmision } : {}),
+    });
   }
 
   // 5.1) Activar recibo en Sis2000 solo tras pago verificado (ref. bancaria real, monto Bs)
@@ -514,16 +542,39 @@ async function quoteAndEmit(state, overrides = {}) {
       console.warn(
         `[Policy] Cobro omitido cnrecibo=${emission.cnrecibo}: pago verificado sin referencia bancaria`,
       );
+      registrarPostEmisionSiPagado(state, {
+        step: 'cobro_omitido_sin_referencia',
+        error: 'pago verificado sin referencia bancaria',
+        internalPolicyId: metadata.internalPolicyId,
+        cnpoliza: emission.cnpoliza,
+        cnrecibo: emission.cnrecibo,
+      });
     } else if (metadata.collectionError) {
       console.error(
         `[Policy] collection/activate falló cnrecibo=${emission.cnrecibo}:`,
         metadata.collectionError,
       );
+      registrarPostEmisionSiPagado(state, {
+        step: 'cobro_error',
+        error: metadata.collectionError,
+        internalPolicyId: metadata.internalPolicyId,
+        cnpoliza: emission.cnpoliza,
+        cnrecibo: emission.cnrecibo,
+      });
     }
   }
 
   // 5.2) Activar tarjeta RCV en La Mundial (solo flujo tarjeta, post-emisión)
   await activateTarjetaAfterEmit(state, emission, metadata);
+  if (metadata.tarjetaActivateError) {
+    registrarPostEmisionSiPagado(state, {
+      step: 'tarjeta_activate_error',
+      error: metadata.tarjetaActivateError,
+      internalPolicyId: metadata.internalPolicyId,
+      cnpoliza: emission.cnpoliza,
+      cnrecibo: emission.cnrecibo,
+    });
+  }
 
   // 5.5) Generar anexo de Conductor Habitual si existe (solo RCV)
   let url_conductor_habitual = undefined;
@@ -642,6 +693,28 @@ async function quoteAndEmit(state, overrides = {}) {
       ...metadata,
     },
   };
+}
+
+function isTimeoutError(err) {
+  const code = String(err?.code || '');
+  const msg = String(err?.message || '').toLowerCase();
+  return code === 'ECONNABORTED' || code === 'ETIMEDOUT' || msg.includes('timeout');
+}
+
+/**
+ * Registra pendiente post-emisión solo si el pago ya estaba verificado
+ * (sin pago no hay nada que conciliar). Nunca lanza.
+ * @returns {{ pendiente: true, step: string, paymentReference: string|null }|null}
+ */
+function registrarPostEmisionSiPagado(state, opts) {
+  try {
+    if (!state?.paymentVerified) return null;
+    const rec = registrarPendiente({ flujo: 'rcv', state, ...opts });
+    if (!rec) return null;
+    return { pendiente: true, step: rec.step, paymentReference: rec.paymentReference };
+  } catch (_) {
+    return null;
+  }
 }
 
 /**

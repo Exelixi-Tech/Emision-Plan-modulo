@@ -19,6 +19,11 @@ const {
   resolveCityCode,
 } = require('./catalogs');
 const { resolveCusuarioCoberturas } = require('./planesClient');
+const {
+  ocrRifDe,
+  nombresPJ,
+  resolveFechaPJ,
+} = require('../lib/personaJuridica');
 
 // ---------- helpers ----------
 
@@ -161,6 +166,23 @@ function normalizeTipoCedula(v) {
   return 'V';
 }
 
+/**
+ * Titular persona natural sin fecha: la toma del OCR de su cédula (cedula_titular) o de la
+ * licencia cuando la licencia está a nombre de la misma cédula del titular.
+ */
+function resolveFnacTitularOcr(state, titular) {
+  const docs = state?.documents || {};
+  const deCedula = normalizeDate(docs.cedula_titular?.ocr?.fechaNacimiento || '');
+  if (deCedula) return deCedula;
+  const lic = docs.licencia?.ocr;
+  const idTitular = onlyDigits(titular?.identificacion);
+  const idLic = onlyDigits(lic?.identificacion);
+  if (lic?.fechaNacimiento && idTitular && idLic && idTitular === idLic) {
+    return normalizeDate(lic.fechaNacimiento);
+  }
+  return null;
+}
+
 function normalizeSexo(v) {
   const s = cleanString(v).toUpperCase().charAt(0);
   return s === 'F' ? 'F' : 'M';
@@ -249,6 +271,31 @@ function resolveIplaca(v) {
   return 'N';
 }
 
+/**
+ * Placa extranjera: vigencia corta elegida de mavigencias_PR (rcv.vigenciaExt).
+ * D = días; M = meses como DATEADD(MONTH) de SQL (31-ene + 1 mes = 28-feb).
+ * Las mismas fechas van a la cotización (sp_calculo_auto_nexus) y a la emisión
+ * (spCalculoAuto en el recibo), así la prima prorrateada coincide.
+ * null si no es placa extranjera o no hay vigencia elegida (→ vigencia anual de siempre).
+ */
+function resolveVigenciaExtranjera(state, fdesdeYmd) {
+  if (resolveIplaca(state?.vehicle) !== 'E') return null;
+  const vig = state?.rcv?.vigenciaExt;
+  const n = Number(vig?.ntiempo);
+  const medida = String(vig?.imedida ?? '').trim().toUpperCase();
+  if (!vig || !Number.isFinite(n) || n <= 0 || (medida !== 'D' && medida !== 'M')) return null;
+  const fdesde = fdesdeYmd || todayYmd();
+  const [y, m, d] = fdesde.split('-').map(Number);
+  let fin;
+  if (medida === 'D') {
+    fin = new Date(Date.UTC(y, m - 1, d + n));
+  } else {
+    const ultimoDia = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate();
+    fin = new Date(Date.UTC(y, m - 1 + n, Math.min(d, ultimoDia)));
+  }
+  return { fdesde, fhasta: fin.toISOString().slice(0, 10) };
+}
+
 /** Ramo RCV nacional=18; binacional=28 en maplanes (LAMUNDIAL_RAMO_BINACIONAL). */
 function resolveRcvCramo(v, metadata = {}) {
   if (resolveIplaca(v) === 'B') {
@@ -329,6 +376,8 @@ function buildQuoteRequest(state, overrides = {}) {
       ifrecuencia: periodQuote ? resolveRcvFrecuencia(state, overrides) : 'A',
       ndias: periodQuote ? resolveRcvNdias(state, overrides) : null,
       sumaAsegurada: sumaAsegurada ?? undefined,
+      // Placa extranjera: fin de vigencia corta → sp_calculo_auto_nexus prorratea.
+      fhasta: resolveVigenciaExtranjera(state, todayYmd())?.fhasta,
     },
     metadata: {
       vehicleLabel: codes.label,
@@ -347,6 +396,12 @@ function buildQuoteRequest(state, overrides = {}) {
  * @param {{ plan?:string, frecuencia?:string, ndias?:number,
  *   internalPolicyId?:string, fechaEmision?:string, quoteMeta?:object }} [overrides]
  */
+/** País de la dirección (mapaises.cpais) o undefined si no viene / no es válido. */
+function resolveCpais(v) {
+  const n = parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const tomador = state.tomador || {};
   const v = state.vehicle || {};
@@ -409,9 +464,10 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const fecha_emision = overrides.fechaEmision || todayYmd();
   const iplaca = resolveIplaca(v);
   const vigencia =
-    (frecuencia === 'D' || iplaca === 'B') && ndias != null
+    resolveVigenciaExtranjera(state, fecha_emision)
+    || ((frecuencia === 'D' || iplaca === 'B') && ndias != null
       ? resolveVigencia(fecha_emision, ndias)
-      : resolveVigenciaAnual(fecha_emision);
+      : resolveVigenciaAnual(fecha_emision));
   const msumaaseg = resolveMsumaaseg(state, quoteMeta);
   const internalId = overrides.internalPolicyId || genInternalPolicyId();
   const rcv = state.rcv || {};
@@ -419,13 +475,33 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const coberAdicional = resolvePrimaryCoberAdicional(selectedCoberturas);
 
   const tipo_cedula_tomador = normalizeTipoCedula(tomador.tipoDoc);
-  const tipo_cedula_titular = sameInsured ? tipo_cedula_tomador : (titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null);
+  const tipo_cedula_titular = sameInsured
+    ? tipo_cedula_tomador
+    : (titular.tipoDoc ? normalizeTipoCedula(titular.tipoDoc) : null);
 
   const fnacTomador = resolveBirthDate(tomador);
   const fnacTitularRaw = sameInsured ? fnacTomador : resolveBirthDate(titular);
   // Paridad SysIP sp_pre_emision: si falta una, hereda de la otra.
-  const fnac_tomador = fnacTomador || fnacTitularRaw;
-  const fnac_titular = fnacTitularRaw || fnacTomador;
+  // Persona jurídica (J) sin fecha: fecha de constitución → inscripción del RIF (OCR) → fecha de emisión.
+  const tomadorPJ = tipo_cedula_tomador === 'J';
+  const titularPJ = tipo_cedula_titular === 'J';
+  // La excepción PJ aplica SOLO a la persona con tipoDoc J: una persona natural (V/E) jamás
+  // hereda la fecha de inscripción del RIF de la otra parte (daría 0 años → "menor de edad").
+  // Titular natural sin fecha: OCR de su cédula → OCR de la licencia si es la misma cédula.
+  const fnac_tomador = tomadorPJ
+    ? (fnacTomador || resolveFechaPJ(tomador, ocrRifDe(state, 'cedula'), fecha_emision))
+    : (fnacTomador || (titularPJ ? null : fnacTitularRaw));
+  const fnac_titular = sameInsured
+    ? fnac_tomador
+    : titularPJ
+      ? (fnacTitularRaw || resolveFechaPJ(titular, ocrRifDe(state, 'cedula_titular'), fecha_emision))
+      : (fnacTitularRaw || resolveFnacTitularOcr(state, titular) || (tomadorPJ ? null : fnac_tomador));
+  const pjTomador = tomadorPJ ? nombresPJ(tomador, ocrRifDe(state, 'cedula')) : null;
+  // Titular distinto y persona natural: null (antes caía en pjTomador y recibía la razón social del tomador J).
+  const pjTitular = sameInsured
+    ? pjTomador
+    : (titularPJ ? nombresPJ(titular, ocrRifDe(state, 'cedula_titular')) : null);
+  const itipoDiligencia = state.diligencia?.itipoDiligencia || tomador.itipoDiligencia || null;
 
   // Prioridad: código real del selector (cestado/cciudad) → fallback al mapa estático por texto
   const stateCodeTomador = tomador.cestado   ? parseInt(tomador.cestado, 10)  : resolveStateCode(tomador.estado);
@@ -461,8 +537,8 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     // Tomador
     tipo_cedula_tomador,
     rif_tomador: onlyDigits(tomador.identificacion),
-    nombre_tomador: cleanString(tomador.nombre),
-    apellido_tomador: cleanString(tomador.apellido),
+    nombre_tomador: pjTomador ? pjTomador.nombre : cleanString(tomador.nombre),
+    apellido_tomador: pjTomador ? pjTomador.apellido : cleanString(tomador.apellido),
     telefono_tomador: cleanPhone(tomador.telefono),
     correo_tomador: cleanString(tomador.email),
     sexo_tomador: normalizeSexo(tomador.sexo),
@@ -472,17 +548,21 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     direccion_tomador: cleanString(tomador.direccion),
     cprofesion_tomador: parseOptionalCode(tomador.cprofesion),
     cactividad_tomador: parseOptionalCode(tomador.cactividad),
-    itipo_diligencia: state.diligencia?.itipoDiligencia || tomador.itipoDiligencia || null,
+    // SP RCV: persona jurídica no admite diligencia simplificada (THROW 99011) → 'C'.
+    itipo_diligencia: tomadorPJ ? 'C' : itipoDiligencia,
 
     // Titular del vehiculo
     tipo_cedula_titular,
     rif_titular: sameInsured ? onlyDigits(tomador.identificacion) : onlyDigits(titular.identificacion),
-    nombre_titular: sameInsured ? cleanString(tomador.nombre) : cleanString(titular.nombre),
-    apellido_titular: sameInsured ? cleanString(tomador.apellido) : cleanString(titular.apellido),
-    sexo_titular: sameInsured ? normalizeSexo(tomador.sexo) : (titular.sexo ? normalizeSexo(titular.sexo) : ''),
+    nombre_titular: pjTitular ? pjTitular.nombre : (sameInsured ? cleanString(tomador.nombre) : cleanString(titular.nombre)),
+    apellido_titular: pjTitular ? pjTitular.apellido : (sameInsured ? cleanString(tomador.apellido) : cleanString(titular.apellido)),
+    sexo_titular: sameInsured ? normalizeSexo(tomador.sexo) : (titular.sexo || titularPJ ? normalizeSexo(titular.sexo) : ''),
     fnac_titular,
     estado_titular: stateCodeTitular,
     ciudad_titular: cityCodeTitular,
+    // Placa extranjera: país de la dirección (57 Colombia). Nacional/binacional no envían país.
+    pais_tomador: iplaca === 'E' ? resolveCpais(tomador.cpais) : undefined,
+    pais_titular: iplaca === 'E' ? resolveCpais(sameInsured ? tomador.cpais : titular.cpais) : undefined,
     direccion_titular: sameInsured ? cleanString(tomador.direccion) : cleanString(titular.direccion),
     cprofesion_titular: sameInsured ? parseOptionalCode(tomador.cprofesion) : parseOptionalCode(titular.cprofesion),
     cactividad_titular: sameInsured ? parseOptionalCode(tomador.cactividad) : parseOptionalCode(titular.cactividad),
@@ -561,7 +641,9 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     // Declaraciones legales
     // dec_persona_politica: NOT NULL en La Mundial → 1 si PPE, 0 si no
     dec_persona_politica: (tomador.personaPoliticamenteExpuesta === true) ? '1' : '0',
-    dec_term_y_cod: '1',
+    // dec_term_y_cod → cterm_y_cod (Sis2000): aceptación real del Formulario (Términos y
+    // Condiciones + declaración de fe). Sin el dato (sesión vieja / API) se conserva '1'.
+    dec_term_y_cod: (tomador.aceptaTerminos === false || tomador.declaraVeracidad === false) ? '0' : '1',
     dec_diagnos_enferm: null,
     dec_descrip_enferm: null,
     expediente: Array.isArray(state.expediente)
@@ -626,6 +708,8 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     fnac_titular: p.fnac_titular,
     cestado_titular: p.estado_titular,
     cciudad_titular: p.ciudad_titular,
+    ...(p.pais_tomador != null ? { cpais_tomador: p.pais_tomador } : {}),
+    ...(p.pais_titular != null ? { cpais_titular: p.pais_titular } : {}),
     xdireccion_titular: p.direccion_titular,
     xtelefono_titular: p.telefono_titular || p.telefono_tomador,
     xcorreo_titular: p.correo_titular || p.correo_tomador,
@@ -744,7 +828,8 @@ function buildCalculatePlanCoberturasRequest(state, overrides = {}, quoteMeta = 
   const ndiasQuote = periodQuote
     ? (payload.ndias ?? resolveRcvNdias(state, overrides))
     : null;
-  const { fdesde, fhasta } = resolveVigencia(todayYmd(), ndiasQuote);
+  const { fdesde, fhasta } =
+    resolveVigenciaExtranjera(state, todayYmd()) || resolveVigencia(todayYmd(), ndiasQuote);
   const rcv = state.rcv || {};
   const selected = resolveSelectedCoberturas(rcv, overrides);
   const coberAdicional = resolvePrimaryCoberAdicional(selected);
@@ -796,6 +881,8 @@ module.exports = {
   resolvePrimaryCoberAdicional,
   resolveTasasForCober,
   resolveIplaca,
+  resolveRcvCramo,
+  resolveVigenciaExtranjera,
   // Helpers expuestos para tests:
   _internal: {
     onlyDigits,

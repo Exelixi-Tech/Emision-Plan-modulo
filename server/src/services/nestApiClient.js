@@ -238,6 +238,8 @@ async function calculatePlanCoberturasViaNestApi(payload) {
     return {
       mount,
       pa: Number(body.pa ?? 0),
+      /** Prima anual USD de Daños a personas y a cosas: completa en la cuota inicial si no es anual. */
+      primaCuotaInicial: Number(body.primaCuotaInicial ?? 0),
       ca: Number(body.ca ?? 0),
       pt: Number(body.pt ?? 0),
       ap: Number(body.ap ?? 0),
@@ -524,6 +526,18 @@ async function getRecargosRcv(cramo = 18) {
     throw new Error(data?.message || 'No se pudo cargar recargos RCV');
   }
   return data?.recargos ?? data?.data?.recargos ?? [];
+}
+
+/** Vigencias por tipo de placa (mavigencias_PR). E = extranjera: 15 días a 12 meses con % de prima anual. */
+async function getValrepVigencias(iplaca = 'E') {
+  const { data } = await axios.get(
+    `${getBaseUrl()}/api/v1/valrep/vigencias?iplaca=${encodeURIComponent(iplaca)}`,
+    await axiosOpts({ validateStatus: () => true }),
+  );
+  if (data?.status === false || data?.success === false) {
+    throw new Error(data?.message || 'No se pudieron cargar las vigencias');
+  }
+  return data?.data?.vigencias ?? data?.vigencias ?? [];
 }
 
 // ── Valrep (estados, ciudades, listas, frecuencias) ─────────────────────────
@@ -845,6 +859,7 @@ module.exports = {
   getInmaVersiones,
   getCategoriasUso,
   getRecargosRcv,
+  getValrepVigencias,
   getValrepStates,
   getValrepCities,
   getValrepList,

@@ -468,6 +468,8 @@ export interface QuotePolicyResponse {
   mprimaext: number;
   ptasa: number;
   coberturas?: PolicyCoverageLine[];
+  /** Prima anual USD de Daños a personas y a cosas (completa en la cuota inicial si no es anual). */
+  primaCuotaInicial?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -749,6 +751,19 @@ export interface PlanRcv {
   coberturasAdicionales?: { value: string; text: string }[];
 }
 
+/** Vigencia por tipo de placa (mavigencias_PR). */
+export interface VigenciaPlaca {
+  cvigencia: number;
+  xvigencia: string;
+  /** D = días, M = meses */
+  imedida_tiempo: string;
+  ntiempo: number;
+  /** P = porcentaje */
+  itipovalor: string;
+  /** % de la prima anual (0.2 … 1) */
+  nvalor: number;
+}
+
 export const catalogoApi = {
   anios: () =>
     api.get<{ success: boolean; min: number; max: number }>('/catalogo/anios'),
@@ -766,6 +781,9 @@ export const catalogoApi = {
   /** Resuelve texto libre (de OCR) → cmarca + cmodelo + versiones en una sola llamada */
   resolver: (fano: number, marca: string, modelo: string) =>
     api.get<ResolverResult>(`/catalogo/resolver?fano=${fano}&marca=${encodeURIComponent(marca)}&modelo=${encodeURIComponent(modelo)}`),
+  /** Vigencias de placa extranjera (mavigencias_PR): 15 días a 12 meses con % de la prima anual. */
+  vigencias: (iplaca: 'N' | 'E' | 'B' = 'E') =>
+    api.get<{ success: boolean; data: VigenciaPlaca[] }>(`/catalogo/vigencias?iplaca=${iplaca}`),
   /**
    * Planes RCV — La Mundial valrep/planes/v2 filtrados por cproductor del token SSO.
    * ctipo: 1=particular, 4=moto, 3=pick-up, etc.
@@ -875,9 +893,23 @@ export const patrimonialApi = {
     ifrecuencia?: string;
     pdescuento?: number;
     precargo?: number;
+    cproductor?: string | number;
+    centidad?: string;
+    citem?: string | number;
   }) => {
+    const canal = readSsoCanalMeta();
     const cramo = resolveSsoCramo() ?? payload.cramo;
-    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', { ...payload, cramo });
+    // citem puede ser un canal alterno (centidad C): solo cproductor identifica al productor.
+    const effectiveProductor = payload.cproductor ?? canal.cproductor;
+    const effectiveCentidad = payload.centidad ?? canal.centidad ?? (effectiveProductor ? 'P' : undefined);
+    const effectiveCitem = payload.citem ?? (effectiveProductor ? String(effectiveProductor) : canal.citem);
+    return api.post<QuotePolicyResponse>('/patrimonial/cotizacion', {
+      ...payload,
+      cramo,
+      ...(effectiveProductor ? { cproductor: String(effectiveProductor) } : {}),
+      ...(effectiveCentidad ? { centidad: String(effectiveCentidad) } : {}),
+      ...(effectiveCitem ? { citem: String(effectiveCitem) } : {}),
+    });
   },
 };
 

@@ -25,8 +25,10 @@ const funeralSubmissionRoutes = require('./routes/funeralSubmission');
 const patrimonialRoutes = require('./routes/patrimonial');
 const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
 const revisionPanelRoutes = require('./routes/revisionPanel');
+const postEmisionRoutes = require('./routes/postEmision');
 const nexusAuth      = require('./middleware/nexusAuth');
 const { reportExpressError } = require('./services/monitorReporter');
+const { runReintentoSweep, reintentoHabilitado } = require('./services/postEmisionReintento');
 
 const app = express();
 
@@ -59,6 +61,8 @@ app.get('/api/health', (_req, res) => {
 
 // Mesa/config: mint JWT revision-panel sin nexus_token (iframe SysIP con token viejo).
 app.use('/api/revision', revisionPanelRoutes);
+// Operadores: pendientes post-emisión (solo lectura, token POST_EMISION_TOKEN; sin nexus_token).
+app.use('/api/internal/post-emision', postEmisionRoutes);
 
 // Multi-tenant: todas las rutas /api requieren nexus_token
 // Catálogos (valrep + INMA) consultados directamente desde Sis2000.
@@ -89,4 +93,28 @@ app.listen(PORT, () => {
   console.log(`[modulo-emision] LAMUNDIAL_EMISSION_APIKEY=${(process.env.LAMUNDIAL_EMISSION_APIKEY || process.env.LAMUNDIAL_APIKEY) ? 'configurada' : 'NO CONFIGURADA'}`);
   console.log(`[modulo-emision] LAMUNDIAL_BASIC_AUTH=${process.env.LAMUNDIAL_BASIC_AUTH ? 'configurada' : 'NO CONFIGURADA'}`);
   console.log(`[modulo-emision] Swagger UI → http://localhost:${PORT}/docs`);
+
+  // Fase 2: reintento automático del cobro de recibos pendientes (step cobro_error).
+  // Gate POST_EMISION_REINTENTO; intervalo POST_EMISION_REINTENTO_INTERVAL_MS (def. 5 min).
+  if (reintentoHabilitado()) {
+    const intervalMs = parseInt(process.env.POST_EMISION_REINTENTO_INTERVAL_MS, 10) || 5 * 60 * 1000;
+    console.log(`[modulo-emision] reintento de cobro ACTIVO (cada ${Math.round(intervalMs / 1000)}s)`);
+    let corriendo = false;
+    const tick = async () => {
+      if (corriendo) return; // evita solapar barridos
+      corriendo = true;
+      try {
+        await runReintentoSweep({});
+      } catch (err) {
+        console.error('[post-emision-reintento] barrido falló:', err && err.message);
+      } finally {
+        corriendo = false;
+      }
+    };
+    const timer = setInterval(tick, intervalMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    setTimeout(tick, 15 * 1000).unref?.(); // primer barrido a los 15s del arranque
+  } else {
+    console.log('[modulo-emision] reintento de cobro inactivo (POST_EMISION_REINTENTO no habilitado)');
+  }
 });

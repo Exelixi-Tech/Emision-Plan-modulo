@@ -2,6 +2,7 @@
  * Registra póliza emitida en Nexus (admin Tráfico).
  * No debe tumbar la emisión si Nexus falla.
  */
+const { buildExpedienteFeed } = require('./expedienteFeed');
 
 function nexusBases() {
   const primary = (process.env.NEXUS_API_URL || 'http://127.0.0.1:3092').replace(/\/$/, '');
@@ -36,6 +37,8 @@ function tomadorIdentificacion(state) {
  * @param {string} [opts.planNombre]
  * @param {string} [opts.frecuencia]
  * @param {Record<string, unknown>} [opts.extra]  datos adicionales para jsonData (flujo, cproducto, cramo)
+ * @param {{ producto: string, cramo?: unknown, nexusMetadata?: object, empresaNombre?: string }} [opts.expedienteCtx]
+ *   Monitor de expedientes: datos para el campo opcional `expediente` (solo con EXPEDIENTES_ENABLED=true).
  */
 async function registerIssuedPolicy(opts) {
   const empresaId = Number(opts.empresaId);
@@ -70,6 +73,24 @@ async function registerIssuedPolicy(opts) {
       urlpoliza: opts.emission?.urlpoliza ?? null,
     },
   };
+
+  // Monitor de expedientes: campo opcional. buildExpedienteFeed no lanza; si no se puede armar,
+  // el registro sale igual que siempre (sin el campo).
+  if (opts.expedienteCtx) {
+    try {
+      const expediente = buildExpedienteFeed({
+        ...opts.expedienteCtx,
+        state: opts.state,
+        emission: opts.emission,
+        empresaId,
+        planNombre: payload.planNombre,
+        frecuencia: payload.frecuencia,
+      });
+      if (expediente) payload.expediente = expediente;
+    } catch {
+      /* nunca afecta el registro ni la emisión */
+    }
+  }
 
   let lastErr = '';
   for (const base of nexusBases()) {

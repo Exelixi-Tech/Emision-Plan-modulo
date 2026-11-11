@@ -20,6 +20,46 @@ function ageInYears(yyyymmdd) {
 }
 
 /**
+ * V/P: cédula venezolana o pasaporte (1-8 dígitos).
+ * J/G/C: RIF de persona jurídica con dígito verificador, ej. J-31317476-9 (1-9), como lo guarda Sis2000.
+ * E: documento extranjero, ej. C.C. Colombia (1-10).
+ */
+const RIF_MAX_DIGITOS = { E: 10, J: 9, G: 9, C: 9 };
+
+function rifMaxDigitos(tipo) {
+  return RIF_MAX_DIGITOS[String(tipo || '').trim().toUpperCase()] ?? 8;
+}
+
+function rifValido(rif, tipo) {
+  return new RegExp(`^\\d{1,${rifMaxDigitos(tipo)}}$`).test(String(rif || ''));
+}
+
+/**
+ * Año del vehículo: el SP RCV exige > 1900 y el catálogo INMA (VInma) llega hasta el año actual + 2
+ * (en QA, 1950-2028). Sis2000 ya tiene emisiones RCV de vehículos anteriores a 1980.
+ */
+const FANO_MIN = 1901;
+const FANO_MAX_ADELANTO = 2;
+
+function codigoGeoValido(codigo) {
+  const n = Number(codigo);
+  return Number.isInteger(n) && n > 0;
+}
+
+/** Titular = tomador: mismo tipo de documento y mismo número. */
+function titularEsTomador(p) {
+  const tipo = (v) => String(v || '').trim().toUpperCase();
+  const num = (v) => String(v ?? '').replace(/\D/g, '');
+  return tipo(p.tipo_cedula_titular) === tipo(p.tipo_cedula_tomador)
+    && num(p.rif_titular) !== ''
+    && num(p.rif_titular) === num(p.rif_tomador);
+}
+
+function fanoValido(fano) {
+  return Number.isInteger(fano) && fano >= FANO_MIN && fano <= new Date().getFullYear() + FANO_MAX_ADELANTO;
+}
+
+/**
  * @param {object} p Payload de createEmissionAuto ya construido por mapper.
  * @returns {string[]} Lista de errores (vacia = OK).
  */
@@ -44,14 +84,21 @@ function validateEmissionPayload(p) {
 
   // Tomador — cédula/RIF: 1–8 dígitos (alineado con formulario Exélixi)
   if (!/^[VEJ]$/.test(p.tipo_cedula_tomador || '')) errors.push('tipo_cedula_tomador invalido (V|E|J)');
-  if (!/^\d{1,8}$/.test(p.rif_tomador || '')) errors.push('rif_tomador invalido (solo digitos, 1-8)');
+  if (!rifValido(p.rif_tomador, p.tipo_cedula_tomador)) {
+    errors.push(`rif_tomador invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_tomador)})`);
+  }
   if (!p.nombre_tomador?.trim()) errors.push('nombre_tomador requerido');
-  if (!p.apellido_tomador?.trim()) errors.push('apellido_tomador requerido');
+  // Persona jurídica (J): apellido y fecha de nacimiento no aplican (el SP RCV no exige apellido a J/G/C).
+  const tomadorPJ = p.tipo_cedula_tomador === 'J';
+  const titularPJ = p.tipo_cedula_titular === 'J';
+  if (!tomadorPJ && !p.apellido_tomador?.trim()) errors.push('apellido_tomador requerido');
   if (!/^[+]?\d{8,15}$/.test(String(p.telefono_tomador || '').replace(/\s+/g, ''))) {
     errors.push('telefono_tomador invalido (8-15 digitos, opcional +)');
   }
   if (!/.+@.+\..+/.test(p.correo_tomador || '')) errors.push('correo_tomador invalido');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_tomador || '')) {
+  if (tomadorPJ) {
+    if (p.fnac_tomador && !/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_tomador)) errors.push('fnac_tomador formato YYYY-MM-DD');
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_tomador || '')) {
     errors.push('fnac_tomador formato YYYY-MM-DD');
   } else if (ageInYears(p.fnac_tomador) < 18) {
     errors.push('tomador debe ser mayor de edad (18+)');
@@ -60,21 +107,33 @@ function validateEmissionPayload(p) {
 
   // Titular (si distinto al tomador, mismas reglas basicas)
   if (!/^[VEJ]$/.test(p.tipo_cedula_titular || '')) errors.push('tipo_cedula_titular invalido (V|E|J)');
-  if (!/^\d{1,8}$/.test(p.rif_titular || '')) errors.push('rif_titular invalido (solo digitos, 1-8)');
+  if (!rifValido(p.rif_titular, p.tipo_cedula_titular)) {
+    errors.push(`rif_titular invalido (solo digitos, 1-${rifMaxDigitos(p.tipo_cedula_titular)})`);
+  }
   if (!p.nombre_titular?.trim()) errors.push('nombre_titular requerido');
-  if (!p.apellido_titular?.trim()) errors.push('apellido_titular requerido');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular || '')) {
+  if (!titularPJ && !p.apellido_titular?.trim()) errors.push('apellido_titular requerido');
+  if (titularPJ) {
+    if (p.fnac_titular && !/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular)) errors.push('fnac_titular formato YYYY-MM-DD');
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(p.fnac_titular || '')) {
     errors.push('fnac_titular formato YYYY-MM-DD (fecha nacimiento titular/asegurado)');
   } else if (ageInYears(p.fnac_titular) < 18) {
     errors.push('titular debe ser mayor de edad (18+)');
   }
 
+  // Estado y ciudad (códigos Sis2000 > 0). Sin ellos el cliente queda sin dirección y la membresía
+  // Arys falla ("Estado no encontrado"); el Core también rechaza la emisión.
+  // Si el titular es el tomador, sus datos son los del tomador: solo se exigen una vez.
+  const roles = titularEsTomador(p) ? ['tomador'] : ['tomador', 'titular'];
+  for (const rol of roles) {
+    if (!codigoGeoValido(p[`estado_${rol}`])) errors.push(`estado_${rol} requerido (código de estado)`);
+    if (!codigoGeoValido(p[`ciudad_${rol}`])) errors.push(`ciudad_${rol} requerida (código de ciudad)`);
+  }
+
   // Vehiculo
   if (!/^[A-Z0-9]{6,8}$/.test(p.placa || '')) errors.push('placa invalida (6-8 alfanumericos en mayusculas)');
   if (!p.serial_carroceria?.trim()) errors.push('serial_carroceria requerido');
-  const yearNow = new Date().getFullYear();
-  if (!Number.isInteger(p.fano) || p.fano < 1980 || p.fano > yearNow + 1) {
-    errors.push(`fano fuera de rango (1980-${yearNow + 1})`);
+  if (!fanoValido(p.fano)) {
+    errors.push(`fano fuera de rango (${FANO_MIN}-${new Date().getFullYear() + FANO_MAX_ADELANTO})`);
   }
 
   // Economicos (vienen de cotizacion)
@@ -89,4 +148,4 @@ function validateEmissionPayload(p) {
   return errors;
 }
 
-module.exports = { validateEmissionPayload, _internal: { ageInYears } };
+module.exports = { validateEmissionPayload, _internal: { ageInYears, codigoGeoValido, fanoValido, rifMaxDigitos, rifValido, titularEsTomador } };

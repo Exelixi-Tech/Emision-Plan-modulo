@@ -15,6 +15,7 @@ const personasMapper = require('../services/personasMapper');
 const { resolveNedadAsegurado } = personasMapper;
 const { assertPersonasCanEmit } = require('../services/assertPersonasCanEmit');
 const { resolveIngresoCajaAfterPayment } = require('../services/collectionAfterPayment');
+const { registrarPendiente } = require('../services/postEmisionPendiente');
 const {
   recordFuneralEmissionFlexible,
 } = require('../services/nexusFuneralSubmission');
@@ -410,6 +411,17 @@ router.post('/emision', async (req, res) => {
       message: `El plan ${cplan} no es válido para el producto personas.`,
     });
   }
+  // Persona jurídica solo como tomador; pasaporte alfanumérico no cabe en cci_rif (NUMERIC).
+  const identidadErrors = personasMapper.validatePersonasIdentidades(state);
+  if (identidadErrors.length) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_IDENTIDAD',
+      message: identidadErrors.join(' '),
+      errors: identidadErrors,
+      stage: 'validate',
+    });
+  }
 
   const ifrecuencia = personasIfrecuencia(frecuencia || funeral.frecuencia);
   const ifrecuenciaCotiza = personasIfrecuenciaCotiza(ifrecuencia);
@@ -431,6 +443,11 @@ router.post('/emision', async (req, res) => {
       message: 'Cada asegurado requiere identificación y fecha de nacimiento válidas.',
     });
   }
+
+  // Trazabilidad post-emisión: en qué paso falló y con qué id interno (solo con pago verificado).
+  let emitStep = 'cotizar';
+  let emitInternalId = null;
+  let rifTitularPendiente = null;
 
   try {
     // 1. Cotiza para obtener la prima autoritativa.
@@ -476,6 +493,8 @@ router.post('/emision', async (req, res) => {
         stage: 'validate',
       });
     }
+    emitStep = 'validar';
+    rifTitularPendiente = validatePayload.rif_titular;
     await personasClient.validateEmissionPerson(validatePayload);
 
     // 3. Construye el payload de emisión y emite.
@@ -484,6 +503,7 @@ router.post('/emision', async (req, res) => {
       cotizacionBase,
       { plan: cplan, frecuencia: ifrecuencia },
     );
+    emitInternalId = metadata.internalPolicyId;
     if (vigencia) {
       payload.fdesde = vigencia.fdesde;
       payload.fhasta = vigencia.fhasta;
@@ -506,7 +526,9 @@ router.post('/emision', async (req, res) => {
       `[personas/emision] metadataCanal cproductor=${meta.cproductor ?? 'default'} cusuario=${meta.cusuario ?? 'default'} canal=${meta.canal ?? 'default'} cgestor_in=${meta.cgestor_in ?? 'none'} jwtKeys=${Object.keys(req.nexusMetadata || {}).join(',') || 'none'}`,
     );
 
+    emitStep = 'emitir';
     const emitted = await personasClient.createEmissionPerson(payload);
+    emitStep = 'post_emision';
 
     // Registro de proveedor en póliza si vino en el estado
     let proveedorResult = null;
@@ -557,6 +579,16 @@ router.post('/emision', async (req, res) => {
     });
     if (url_ingreso_caja) {
       console.log(`[personas/emision] URL ingreso caja: ${url_ingreso_caja}`);
+    } else if (state.paymentVerified && (emitMetadata.collectionError || emitMetadata.collectionSkipped === 'sin_referencia_bancaria')) {
+      registrarPendiente({
+        flujo: 'personas',
+        step: emitMetadata.collectionError ? 'cobro_error' : 'cobro_omitido_sin_referencia',
+        error: emitMetadata.collectionError || 'pago verificado sin referencia bancaria',
+        state,
+        internalPolicyId: metadata.internalPolicyId,
+        cnpoliza: emitted.cnpoliza,
+        cnrecibo: emitted.cnrecibo,
+      });
     }
 
     const emissionRecord = {
@@ -585,6 +617,7 @@ router.post('/emision', async (req, res) => {
         state,
         planNombre: cplan,
         frecuencia: ifrecuencia,
+        expedienteCtx: { producto: 'personas', cramo, nexusMetadata: req.nexusMetadata, empresaNombre: req.empresa?.nombre },
         extra: {
           flujo: 'personas',
           cproducto: trafficMeta.cproducto ?? null,
@@ -593,6 +626,17 @@ router.post('/emision', async (req, res) => {
       });
     } catch (feedErr) {
       console.warn('[personas/emision] feed Nexus:', feedErr?.message || feedErr);
+      if (state.paymentVerified) {
+        registrarPendiente({
+          flujo: 'personas',
+          step: 'record_emission_error',
+          error: feedErr?.message || feedErr,
+          state,
+          internalPolicyId: metadata.internalPolicyId,
+          cnpoliza: emitted.cnpoliza,
+          cnrecibo: emitted.cnrecibo,
+        });
+      }
     }
     try {
       const saved = await recordFuneralEmissionFlexible(funeralRefs, emissionRecord);
@@ -638,11 +682,44 @@ router.post('/emision', async (req, res) => {
     const httpStatus = err.httpStatus || 502;
     console.error('[personas/emision]', err.code || '', msg);
     const isAge = isAgeOutOfRange(msg);
+    // Pago verificado y falló la emisión (timeout: el SP pudo emitir igual) o
+    // "póliza vigente" en un reintento: registrar pendiente y, solo lectura,
+    // buscar el número de la póliza ya existente para mostrarlo al operador.
+    let postEmision;
+    let polizaExistente;
+    if (state.paymentVerified && (emitStep === 'emitir' || err.code === 'PERSONAS_DUPLICATE')) {
+      if (err.code === 'PERSONAS_DUPLICATE' && rifTitularPendiente) {
+        try {
+          const vig = await personasClient.checkPolizaVigente({ rif: rifTitularPendiente, cramo });
+          if (vig?.hasVigente && vig.cnpoliza) {
+            polizaExistente = { cnpoliza: vig.cnpoliza, cplan: vig.cplan, fhasta: vig.fhasta };
+          }
+        } catch (lookupErr) {
+          console.warn('[personas/emision] lookup póliza vigente falló:', lookupErr?.message || lookupErr);
+        }
+      }
+      const isTimeout = /timeout|ECONNABORTED|ETIMEDOUT/i.test(`${err.code || ''} ${msg}`);
+      const rec = registrarPendiente({
+        flujo: 'personas',
+        step: err.code === 'PERSONAS_DUPLICATE'
+          ? `${emitStep}_vigente_409`
+          : (isTimeout ? 'emit_timeout' : 'emit_error'),
+        error: msg,
+        state,
+        internalPolicyId: emitInternalId,
+        cnpoliza: polizaExistente?.cnpoliza,
+        extra: { code: err.code || null, httpStatus, cplan },
+      });
+      if (rec) postEmision = { pendiente: true, step: rec.step, paymentReference: rec.paymentReference };
+    }
     return res.status(isAge ? 422 : httpStatus).json({
       success: false,
       code: isAge ? 'PERSONAS_AGE' : (err.code || 'LAMUNDIAL_PERSON_ERROR'),
       message: isAge ? AGE_OUT_OF_RANGE_MESSAGE : msg,
       ...(err.endpoint ? { endpoint: err.endpoint } : {}),
+      ...(emitInternalId ? { internalPolicyId: emitInternalId } : {}),
+      ...(postEmision ? { postEmision } : {}),
+      ...(polizaExistente ? { polizaExistente } : {}),
       stage: 'emit',
     });
   }
