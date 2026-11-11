@@ -1162,15 +1162,20 @@ export interface RegisterPolicyProveedorDto {
  */
 export async function getProveedores(params: {
   cplan: string;
-  cramo?: number | string;
+  /** Ramo del plan: obligatorio (sin valor por defecto, para no consultar proveedores de otro ramo). */
+  cramo: number | string;
   centidad?: string;
   citem?: string;
   cci_rif?: string | number;
   cclave_num?: number;
 }): Promise<ProveedorItem[]> {
+  const cramo = Number(params.cramo);
+  if (!params.cplan || !Number.isFinite(cramo) || cramo <= 0) {
+    throw new Error('getProveedores: cplan y cramo son obligatorios');
+  }
   const qs = new URLSearchParams({
     cplan: params.cplan,
-    cramo: String(params.cramo ?? 28),
+    cramo: String(cramo),
   });
   if (params.centidad) qs.set('centidad', params.centidad);
   if (params.citem) qs.set('citem', params.citem);

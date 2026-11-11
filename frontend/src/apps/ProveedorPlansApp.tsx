@@ -31,13 +31,33 @@ export default function ProveedorPlansApp() {
       return;
     }
 
+    const snap = useWizardStore.getState();
+    // Sin cotización lista (o de otro plan) no se avanza: Pagos cobraría una prima que no corresponde.
+    const quoteMatchesPlan = String(snap.quoteVehicleSignature ?? '').includes(`:${selectedPlan.cplan}|`);
+    if (snap.quoteState === 'loading') {
+      toast.warning('Cotización en proceso', 'Por favor espera mientras calculamos la prima...', 3000);
+      return;
+    }
+    if (snap.quoteState !== 'ready' || !snap.quote || !quoteMatchesPlan) {
+      toast.warning(
+        'Cotización no disponible',
+        snap.quoteError?.trim() || 'No pudimos obtener la tarifa de este plan. Revisa los datos de los asegurados.',
+        6000,
+      );
+      return;
+    }
+
+    if (!snap.funeral.aceptaTerminos) {
+      toast.warning('Términos y condiciones', 'Debes aceptar los términos y condiciones para continuar.');
+      return;
+    }
+
     toast.success(
       '¡Plan y Proveedor listos!',
-      `Plan: ${selectedPlan.name} · Proveedor: ${xproveedor || cproveedor} (cproveedor: ${cproveedor})`,
+      `Plan: ${selectedPlan.name} · Proveedor: ${xproveedor || 'Proveedor de servicio'}`,
       6000,
     );
 
-    const snap = useWizardStore.getState();
     if (typeof window !== 'undefined' && window.__bridgeAdvance) {
       void window.__bridgeAdvance({
         cproveedor: String(cproveedor),

@@ -162,23 +162,31 @@ export function ProveedorStep() {
       ''
     ).trim();
 
+    const cramoProveedores = resolveQuoteCramo(selectedPlan?.cramo, product.cramo);
+    if (!(cramoProveedores > 0)) {
+      setProveedores([]);
+      setProveedoresError(true);
+      setSelectedProveedor(null);
+      setLoadingProveedores(false);
+      return;
+    }
+
     getProveedores({
       cplan: planCode,
-      cramo: resolveQuoteCramo(selectedPlan?.cramo, product.cramo),
+      cramo: cramoProveedores,
       centidad: centidad || undefined,
       citem: citem || undefined,
     })
       .then((items) => {
         if (cancelled) return;
         setProveedores(items);
-        if (items.length > 0) {
-          const currentMatch = items.find((p) => String(p.cci_rif) === String(cproveedor));
-          if (!currentMatch) {
-            const first = items[0];
-            setSelectedProveedor(first);
-          } else {
-            setSelectedProveedor(currentMatch);
-          }
+        // Se conserva la elección previa si sigue disponible. Solo se autoselecciona cuando hay un
+        // único proveedor; con varios, el cliente debe elegir (no se asigna items[0] por su cuenta).
+        const currentMatch = items.find((p) => String(p.cci_rif) === String(cproveedor));
+        if (currentMatch) {
+          setSelectedProveedor(currentMatch);
+        } else if (items.length === 1) {
+          setSelectedProveedor(items[0]);
         } else {
           setSelectedProveedor(null);
         }
@@ -309,14 +317,15 @@ export function ProveedorStep() {
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
                 if (found) {
-                  // Plan Proveedor no tiene cuestionario de salud (Sis2000 sin preguntas para el producto):
-                  // no dejar Pagos bloqueado por cuestionario/términos que nunca se muestran.
+                  // Plan Proveedor no tiene cuestionario de salud (Sis2000 sin preguntas para el producto),
+                  // así que el cuestionario se da por resuelto. Los términos NO se marcan aquí: el cliente
+                  // los acepta explícitamente con la casilla del proveedor (al cambiar de plan se vuelven a pedir).
                   setFuneral({
                     healthQuestionnaireDone: true,
                     healthAnswers: {},
                     diagnosticoEnfermedad: false,
                     descripcionEnfermedad: '',
-                    aceptaTerminos: true,
+                    aceptaTerminos: false,
                   });
                 }
               }}
@@ -423,7 +432,7 @@ export function ProveedorStep() {
                   setSelectedProveedor(found);
                   toast.success(
                     'Proveedor seleccionado',
-                    `${found.xproveedor || found.xcliente} (RIF: ${found.cci_rif} · Clave: ${found.cclave_num ?? 'N/A'})`,
+                    found.xproveedor || found.xcliente || 'Proveedor de servicio',
                   );
                 } else {
                   setSelectedProveedor(null);
@@ -452,6 +461,18 @@ export function ProveedorStep() {
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
 
+          <label className="mt-4 flex items-start gap-2.5 text-xs text-slate-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={Boolean(funeral.aceptaTerminos)}
+              onChange={(e) => setFuneral({ aceptaTerminos: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="leading-relaxed">
+              Declaro que la información suministrada es verdadera y acepto los términos y condiciones
+              del plan y del proveedor de servicio seleccionado.
+            </span>
+          </label>
         </div>
       )}
 
