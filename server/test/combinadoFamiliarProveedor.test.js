@@ -91,3 +91,18 @@ test('Combinado Familiar: buildRegisterPolicyProveedorRequest funciona cuando el
   assert.equal(req.cplan, 'CF-02');
   assert.equal(req.cramo, 51);
 });
+
+test('Combinado Familiar: fanopol/fmespol salen de fdesde (vigencia), no de la fecha de hoy', () => {
+  const state = {
+    selectedPlan: { cplan: 'CF-01', cramo: 51 },
+    selectedProveedor: { cci_rif: 301234567, cclave_num: 105, itiposerv: 'MED', cplan: 'CF-01', cramo: 51 },
+    metadataCanal: { cusuario: '4' },
+  };
+  const p = buildRegisterPolicyProveedorRequest(state, { cnpoliza: 'P-1' }, {
+    cotizacion: { mprima: 100, mprimaext: 1, ptasa: 100 },
+    fdesde: '2027-02-15',
+    fhasta: '2028-02-15',
+  });
+  assert.equal(p.fanopol, 2027);
+  assert.equal(p.fmespol, 2);
+});

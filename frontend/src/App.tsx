@@ -27,13 +27,17 @@ const PROVEEDOR_CPRODUCTOS = new Set(
     .filter(Boolean),
 );
 
-/** Plan Proveedor / Combinado Familiar: cproducto SSO 51, producto proveedor/combinado familiar o `?flow=proveedor`. */
+/**
+ * Plan Proveedor / Combinado Familiar: cproducto SSO 51 o producto proveedor/combinado familiar.
+ * `?flow=proveedor` solo vale en desarrollo local: en QA/producción abriría el flujo con cualquier producto.
+ */
 function isProveedorFlow(): boolean {
   // Desactivado (variable vacia): ni el cproducto, ni el producto, ni ?flow= abren el flujo nuevo.
   if (PROVEEDOR_CPRODUCTOS.size === 0) return false;
   if (PROVEEDOR_CPRODUCTOS.has(resolveSsoCproducto())) return true;
   if (PROVEEDOR_PRODUCTS.has(getProductId())) return true;
   if (isCombinadoFamiliar()) return true;
+  if (!import.meta.env.DEV) return false;
   try {
     const flow = (new URLSearchParams(window.location.search).get('flow') || '').toLowerCase();
     return flow === 'proveedor' || flow === 'plan-proveedor' || flow === 'proveedores' || flow === 'combinado_familiar';

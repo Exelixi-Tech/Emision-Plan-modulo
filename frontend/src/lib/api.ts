@@ -1189,7 +1189,7 @@ export async function getProveedores(params: {
     xproveedor: String(item.xproveedor || item.xcliente || '').trim(),
     xcliente: String(item.xcliente || item.xproveedor || '').trim(),
     cplan: item.cplan || params.cplan,
-    cramo: item.cramo ?? (params.cramo ? Number(params.cramo) : 28),
+    cramo: item.cramo ?? cramo,
     itiposerv: item.itiposerv,
   }));
 }

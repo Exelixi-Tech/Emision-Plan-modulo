@@ -499,6 +499,8 @@ function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
     cproducto: metadata.cproducto,
   }));
   const usuario = metadata.cusuario ? parseInt(metadata.cusuario, 10) : 0;
+  // PENDIENTE DE NEGOCIO: mcosto/mcostoext se llenan con la prima de la poliza. Si el costo del
+  // proveedor no es igual a la prima, hay que tomarlo de otra fuente (p. ej. valrep/proveedores).
   // Montos de la cotizacion autoritativa de la emision (overrides.cotizacion); si no viene, la del
   // state (quote), y por ultimo la raiz del state. Sin valores inventados: si falta, queda en 0 y
   // faltantesRegistroProveedor() impide escribir en adproveedor.
@@ -509,12 +511,16 @@ function buildRegisterPolicyProveedorRequest(state, emitted, overrides = {}) {
 
   const fdesde = overrides.fdesde || todayYmd();
   const fhasta = overrides.fhasta || nextYear.toISOString().slice(0, 10);
+  // Año/mes de la póliza: los de la vigencia (fdesde), no los de hoy.
+  const [anioDesde, mesDesde] = String(fdesde).slice(0, 10).split('-').map(Number);
+  const fanopol = anioDesde > 0 ? anioDesde : now.getFullYear();
+  const fmespol = mesDesde >= 1 && mesDesde <= 12 ? mesDesde : now.getMonth() + 1;
 
   return {
     cpoliza: poliza,
     cnpoliza: emitted?.cnpoliza,
-    fanopol: now.getFullYear(),
-    fmespol: now.getMonth() + 1,
+    fanopol,
+    fmespol,
     cramo: ramo,
     ccerti: 1,
     cplan: plan,

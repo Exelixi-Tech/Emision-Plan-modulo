@@ -99,6 +99,12 @@ function notificarProveedorNoRegistrado({ req, state, emitted, internalPolicyId,
         cramo_proveedor: proveedorPayload?.cramo ?? null,
       },
     });
+    if (process.env.MONITOR_REPORT_ENABLED !== 'true') {
+      console.error(
+        '[personas/emision] MONITOR_REPORT_ENABLED no está activo: la alerta de proveedor no registrado'
+        + ' solo queda en el pendiente post-emisión (proveedor_no_registrado).',
+      );
+    }
     reportRuntimeError({
       method: 'POST',
       path: (req?.originalUrl || '/api/personas/emision').split('?')[0],
