@@ -123,6 +123,8 @@ interface WizardActions {
   setMetadataCanal: (data: Record<string, any> | null) => void;
   setDiligencia: (data: Partial<DiligenciaState> | null) => void;
   setCanalVisibility: (data: CanalVisibility | null) => void;
+  setCproveedor: (cproveedor?: number | string, xproveedor?: string, extra?: Partial<import('../types').ProveedorItem>) => void;
+  setSelectedProveedor: (proveedor?: import('../types').ProveedorItem | null) => void;
   setFuneralSubmission: (data: FuneralSubmissionLock | null) => void;
   reset: () => void;
 }
@@ -156,6 +158,14 @@ const initialState: WizardState = {
   vehicle: defaultVehicle(),
   category: '',
   selectedPlan: null,
+  cproveedor: undefined,
+  xproveedor: undefined,
+  cplan_proveedor: undefined,
+  cramo_proveedor: undefined,
+  cclave_num: undefined,
+  itiposerv: undefined,
+  // undefined (no null): no viaja por el bridge (JSON lo omite) en productos sin proveedor.
+  selectedProveedor: undefined,
   // 'mobile' (Pago MÃ³vil vÃ­a Banco Activo) es el mÃ©todo activo por defecto.
   // 'transfer' estÃ¡ oculto en la UI por ahora; se mantendrÃ¡ el tipo para compat.
   paymentMethod: 'mobile',
@@ -314,6 +324,40 @@ export const useWizardStore = create<WizardState & WizardActions>()((set) => ({
     }),
 
   setCanalVisibility: (canalVisibility) => set({ canalVisibility }),
+
+  // Reemplaza el proveedor completo: cplan/cramo/clave/tipo salen solo de `extra`, nunca del
+  // proveedor anterior (si no, se registraba en adproveedor una mezcla de dos proveedores).
+  setCproveedor: (cproveedor, xproveedor, extra) =>
+    set(() => ({
+      cproveedor,
+      xproveedor,
+      cplan_proveedor: cproveedor ? extra?.cplan : undefined,
+      cramo_proveedor: cproveedor ? extra?.cramo : undefined,
+      cclave_num: cproveedor ? extra?.cclave_num : undefined,
+      itiposerv: cproveedor ? extra?.itiposerv : undefined,
+      selectedProveedor: cproveedor
+        ? {
+          cci_rif: cproveedor,
+          xproveedor: xproveedor ?? '',
+          xcliente: xproveedor ?? '',
+          cplan: extra?.cplan,
+          cramo: extra?.cramo,
+          cclave_num: extra?.cclave_num,
+          itiposerv: extra?.itiposerv,
+        }
+        : null,
+    })),
+
+  setSelectedProveedor: (proveedor) =>
+    set({
+      selectedProveedor: proveedor ?? null,
+      cproveedor: proveedor?.cci_rif,
+      xproveedor: proveedor?.xproveedor || proveedor?.xcliente,
+      cplan_proveedor: proveedor?.cplan,
+      cramo_proveedor: proveedor?.cramo,
+      cclave_num: proveedor?.cclave_num,
+      itiposerv: proveedor?.itiposerv,
+    }),
 
   reset: () => set(initialState),
 }));

@@ -15,6 +15,7 @@ const DEFAULT_REQUIRED: DocType[] = ['cedula', 'certificado'];
 /** Documentos obligatorios por producto cuando no hay config de admin. */
 export function getDefaultRequiredDocs(productId: string): DocType[] {
   if (productId === 'funerario') return ['cedula', 'cedula_titular'];
+  if (productId === 'combinado_familiar' || productId === 'proveedor') return ['cedula', 'cedula_titular'];
   if (productId === 'patrimoniales') return ['cedula'];
   return DEFAULT_REQUIRED;
 }
