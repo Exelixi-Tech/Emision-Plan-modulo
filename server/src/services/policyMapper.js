@@ -272,6 +272,21 @@ function resolveIplaca(v) {
 }
 
 /**
+ * RCV Binacional: tripulantes elegidos en el paso de plan (rcv.tripulantes, 1–3) → puestos de la
+ * cotización y npuestos de la emisión. null si no es binacional o no hay dato: nacional y
+ * extranjera siguen como antes.
+ */
+const TRIPULANTES_BINACIONAL_MAX = 3;
+function resolveTripulantesBinacional(state) {
+  if (resolveIplaca(state?.vehicle) !== 'B') return null;
+  const raw = state?.rcv?.tripulantes;
+  if (raw == null || raw === '') return null;
+  const n = Math.trunc(Number(raw));
+  if (!Number.isFinite(n)) return null;
+  return Math.min(TRIPULANTES_BINACIONAL_MAX, Math.max(1, n));
+}
+
+/**
  * Placa extranjera: vigencia corta elegida de mavigencias_PR (rcv.vigenciaExt).
  * D = días; M = meses como DATEADD(MONTH) de SQL (31-ene + 1 mes = 28-feb).
  * Las mismas fechas van a la cotización (sp_calculo_auto_nexus) y a la emisión
@@ -469,6 +484,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
       ? resolveVigencia(fecha_emision, ndias)
       : resolveVigenciaAnual(fecha_emision));
   const msumaaseg = resolveMsumaaseg(state, quoteMeta);
+  const tripulantes = resolveTripulantesBinacional(state);
   const internalId = overrides.internalPolicyId || genInternalPolicyId();
   const rcv = state.rcv || {};
   const selectedCoberturas = resolveSelectedCoberturas(rcv, overrides);
@@ -622,6 +638,8 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     // ntoneladas / precargorcv — paridad SysIP (toneladas solo cat. 11; recargo siempre).
     ntoneladas: resolveNtoneladasForSp(v),
     precargorcv: resolvePrecargorcv(v),
+    // Binacional: tripulantes elegidos → npuestos del SP de emisión (misma base que la cotización).
+    ...(tripulantes != null ? { npuestos: tripulantes } : {}),
 
     coberAdicional,
     ...(() => {
@@ -840,6 +858,7 @@ function buildCalculatePlanCoberturasRequest(state, overrides = {}, quoteMeta = 
     quoteMeta.sumaAsegurada ??
     undefined;
   const tasasForCober = resolveTasasForCober(coberAdicional, rcv, quoteMeta.tasas || {});
+  const tripulantes = resolveTripulantesBinacional(state);
 
   return {
     payload: {
@@ -853,6 +872,8 @@ function buildCalculatePlanCoberturasRequest(state, overrides = {}, quoteMeta = 
       uso: payload.ccategoria_uso,
       iplaca: payload.iplaca,
       toneladas: payload.ntoneladas,
+      // Binacional: tripulantes elegidos; sin el campo nest-api usa los puestos del modelo (VInma).
+      ...(tripulantes != null ? { puestos: tripulantes } : {}),
       cramo: payload.cramo,
       ifrecuencia: periodQuote
         ? (payload.ifrecuencia ?? resolveRcvFrecuencia(state, overrides))
@@ -877,6 +898,7 @@ module.exports = {
   buildCalculatePlanCoberturasRequest,
   buildEmissionRequest,
   toLaMundialEmissionPayload,
+  resolveTripulantesBinacional,
   resolveSelectedCoberturas,
   resolvePrimaryCoberAdicional,
   resolveTasasForCober,
