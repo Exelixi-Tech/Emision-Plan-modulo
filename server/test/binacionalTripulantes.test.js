@@ -1,5 +1,5 @@
 /**
- * RCV Binacional: tripulantes (rcv.tripulantes, 0–3; 0 = sin tripulantes) → `puestos` al cotizar coberturas y
+ * RCV Binacional: 1 tripulante fijo (criterio La Mundial 16-nov-2026) → `puestos` al cotizar coberturas y
  * `npuestos` al emitir. Nacional y extranjera no cambian: sin `puestos` en la cotización
  * (nest-api usa los del modelo) y el mismo `npuestos` de siempre en la emisión.
  */
@@ -52,72 +52,27 @@ const emitir = (state) => {
   return { interno: payload, body: toLaMundialEmissionPayload(payload, cot) };
 };
 
-test('binacional: los tripulantes elegidos van como puestos (cotización) y npuestos (emisión)', () => {
-  for (const n of [1, 2, 3]) {
-    const state = estado('binacional', { tripulantes: n });
-    assert.equal(cotizar(state).puestos, n);
+test('binacional: siempre 1 tripulante (puestos y npuestos) y sin bpuestos_informados', () => {
+  for (const rcv of [{}, { tripulantes: 0 }, { tripulantes: 3 }]) {
+    const state = estado('binacional', rcv);
+    state.vehicle.tripulantes = 2;
+    assert.equal(resolveTripulantesBinacional(state), 1);
+    assert.equal(cotizar(state).puestos, 1);
     assert.equal(cotizar(state).iplaca, 'B');
-    assert.equal(emitir(state).body.npuestos, n);
-  }
-});
-
-test('binacional: fuera de rango se acota a 0–3 y acepta el número como texto', () => {
-  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 0 })), 0);
-  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: -2 })), 0);
-  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 9 })), 3);
-  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: '2' })), 2);
-  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 'x' })), null);
-});
-
-test('binacional: sin tripulantes (0) y bpuestos_informados en cotización y emisión', () => {
-  const state = estado('binacional', { tripulantes: 0 });
-  assert.equal(cotizar(state).puestos, 0);
-  assert.equal(cotizar(state).bpuestos_informados, true);
-  assert.equal(emitir(state).body.npuestos, 0);
-  assert.equal(emitir(state).body.bpuestos_informados, true);
-  const dos = estado('binacional', { tripulantes: 2 });
-  assert.equal(emitir(dos).body.bpuestos_informados, true);
-});
-
-test('binacional sin dato (sesión anterior al selector): se comporta como antes', () => {
-  const state = estado('binacional');
-  assert.equal('puestos' in cotizar(state), false);
-  assert.equal('npuestos' in emitir(state).interno, false);
-  assert.equal(emitir(state).body.npuestos, 5);
-});
-
-test('nacional y extranjera: nunca se envían tripulantes aunque el estado los traiga', () => {
-  for (const tipoPlaca of ['nacional', 'extranjera', undefined]) {
-    const state = estado(tipoPlaca, { tripulantes: 2 });
-    assert.equal(resolveTripulantesBinacional(state), null);
-    assert.equal('puestos' in cotizar(state), false);
-    assert.equal('npuestos' in emitir(state).interno, false);
-    assert.equal(emitir(state).body.npuestos, 5);
+    assert.equal(emitir(state).body.npuestos, 1);
     assert.equal('bpuestos_informados' in cotizar(state), false);
     assert.equal('bpuestos_informados' in emitir(state).body, false);
   }
 });
 
-test('binacional: sin rcv.tripulantes se usa el valor del Formulario (vehicle.tripulantes)', () => {
-  const state = estado('binacional');
-  state.vehicle.tripulantes = 3;
-  assert.equal(resolveTripulantesBinacional(state), 3);
-  assert.equal(cotizar(state).puestos, 3);
-  assert.equal(emitir(state).body.npuestos, 3);
-});
-
-test('binacional: rcv.tripulantes (paso de plan) tiene prioridad sobre vehicle.tripulantes', () => {
-  const state = estado('binacional', { tripulantes: 2 });
-  state.vehicle.tripulantes = 3;
-  assert.equal(resolveTripulantesBinacional(state), 2);
-  assert.equal(cotizar(state).puestos, 2);
-});
-
-test('nacional y extranjera: vehicle.tripulantes se ignora', () => {
-  for (const tipo of ['nacional', 'extranjera']) {
-    const state = estado(tipo);
+test('nacional y extranjera: nunca se envían tripulantes aunque el estado los traiga', () => {
+  for (const tipoPlaca of ['nacional', 'extranjera', undefined]) {
+    const state = estado(tipoPlaca, { tripulantes: 2 });
     state.vehicle.tripulantes = 3;
     assert.equal(resolveTripulantesBinacional(state), null);
     assert.equal('puestos' in cotizar(state), false);
+    assert.equal('npuestos' in emitir(state).interno, false);
+    assert.equal(emitir(state).body.npuestos, 5);
+    assert.equal('bpuestos_informados' in emitir(state).body, false);
   }
 });

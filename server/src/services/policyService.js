@@ -278,10 +278,6 @@ async function quote(state, overrides = {}) {
       fhasta: payload.fhasta,
       sumaAsegurada: payload.sumaAsegurada,
       cusuario,
-      // Binacional: tripulantes elegidos (0 = sin tripulantes); el APOV se cobra por ellos.
-      ...(payload.bpuestos_informados === true
-        ? { puestos: payload.puestos, bpuestos_informados: true }
-        : {}),
     });
     metadata.quoteSource = 'nest-api';
     let coberturas;
