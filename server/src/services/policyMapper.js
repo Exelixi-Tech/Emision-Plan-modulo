@@ -273,14 +273,15 @@ function resolveIplaca(v) {
 }
 
 /**
- * RCV Binacional: tripulantes elegidos en el paso de plan (rcv.tripulantes, 1–3) → puestos de la
- * cotización y npuestos de la emisión. null si no es binacional o no hay dato: nacional y
- * extranjera siguen como antes.
+ * RCV Binacional: tripulantes (1–3) → puestos de la cotización y npuestos de la emisión.
+ * Prioridad: rcv.tripulantes (paso de plan) y, si no hay, vehicle.tripulantes (Formulario).
+ * null si no es binacional o no hay dato: nacional y extranjera siguen como antes.
  */
 const TRIPULANTES_BINACIONAL_MAX = 3;
 function resolveTripulantesBinacional(state) {
   if (resolveIplaca(state?.vehicle) !== 'B') return null;
-  const raw = state?.rcv?.tripulantes;
+  const fromPlan = state?.rcv?.tripulantes;
+  const raw = fromPlan == null || fromPlan === '' ? state?.vehicle?.tripulantes : fromPlan;
   if (raw == null || raw === '') return null;
   const n = Math.trunc(Number(raw));
   if (!Number.isFinite(n)) return null;

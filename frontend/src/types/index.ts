@@ -280,6 +280,11 @@ export interface VehicleData {
   serialMotor?: string;
   /** Peso del vehículo en toneladas — solo categoría de uso 11 (>12 TM). */
   ntoneladas?: number;
+  /**
+   * RCV Binacional: tripulantes elegidos en el Formulario (1–3). Valor inicial de
+   * rcv.tripulantes en el paso de plan; nacional y extranjera no lo llevan.
+   */
+  tripulantes?: number | null;
   /** Porcentaje recargo RCV (masustac.porcenta). 0 = No aplica. */
   precargorcv?: number;
   /** Código masustac.csustanc del recargo seleccionado (auditoría). */
