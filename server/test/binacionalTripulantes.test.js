@@ -1,5 +1,5 @@
 /**
- * RCV Binacional: tripulantes (rcv.tripulantes, 1–3) → `puestos` al cotizar coberturas y
+ * RCV Binacional: tripulantes (rcv.tripulantes, 0–3; 0 = sin tripulantes) → `puestos` al cotizar coberturas y
  * `npuestos` al emitir. Nacional y extranjera no cambian: sin `puestos` en la cotización
  * (nest-api usa los del modelo) y el mismo `npuestos` de siempre en la emisión.
  */
@@ -61,11 +61,22 @@ test('binacional: los tripulantes elegidos van como puestos (cotización) y npue
   }
 });
 
-test('binacional: fuera de rango se acota a 1–3 y acepta el número como texto', () => {
-  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 0 })), 1);
+test('binacional: fuera de rango se acota a 0–3 y acepta el número como texto', () => {
+  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 0 })), 0);
+  assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: -2 })), 0);
   assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 9 })), 3);
   assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: '2' })), 2);
   assert.equal(resolveTripulantesBinacional(estado('binacional', { tripulantes: 'x' })), null);
+});
+
+test('binacional: sin tripulantes (0) y bpuestos_informados en cotización y emisión', () => {
+  const state = estado('binacional', { tripulantes: 0 });
+  assert.equal(cotizar(state).puestos, 0);
+  assert.equal(cotizar(state).bpuestos_informados, true);
+  assert.equal(emitir(state).body.npuestos, 0);
+  assert.equal(emitir(state).body.bpuestos_informados, true);
+  const dos = estado('binacional', { tripulantes: 2 });
+  assert.equal(emitir(dos).body.bpuestos_informados, true);
 });
 
 test('binacional sin dato (sesión anterior al selector): se comporta como antes', () => {
@@ -82,6 +93,8 @@ test('nacional y extranjera: nunca se envían tripulantes aunque el estado los t
     assert.equal('puestos' in cotizar(state), false);
     assert.equal('npuestos' in emitir(state).interno, false);
     assert.equal(emitir(state).body.npuestos, 5);
+    assert.equal('bpuestos_informados' in cotizar(state), false);
+    assert.equal('bpuestos_informados' in emitir(state).body, false);
   }
 });
 
