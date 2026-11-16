@@ -97,8 +97,16 @@ function validatePersonasIdentidades(state = {}) {
   asegurados.slice(1).forEach((a, i) => {
     if (esTipoJuridico(a.tipoDoc)) errors.push(`Asegurado ${i + 2}: una persona jurídica (RIF J/G/C) no puede ser asegurado.`);
   });
+  // [benef-juridico 16-nov-2026] Beneficiario de la lista J/G/C (p. ej. empresa con parentesco «Socio (a)»):
+  // se admite con RIF de 9 dígitos y razón social, como en SysIP.
   beneficiarios.forEach((b, i) => {
-    if (esTipoJuridico(b.tipoDoc)) errors.push(`Beneficiario ${i + 1}: una persona jurídica (RIF J/G/C) no puede ser beneficiario.`);
+    if (!esTipoJuridico(b.tipoDoc)) return;
+    if (onlyDigits(b.identificacion).length !== RIF_JURIDICO_DIGITOS) {
+      errors.push(`Beneficiario ${i + 1}: el RIF debe tener la letra y ${RIF_JURIDICO_DIGITOS} dígitos (p. ej. J-400849020).`);
+    }
+    if (!cleanString(b.nombre || b.razonSocial)) {
+      errors.push(`Beneficiario ${i + 1}: la razón social es obligatoria.`);
+    }
   });
   // [benef-juridico 16-nov-2026] Beneficiario preferencial (Vida): sí admite J/G/C, con RIF de 9 dígitos.
   const pref = beneficiarioPreferencialActivo(funeral);
@@ -407,19 +415,23 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     }),
 
     // ── Beneficiarios (para el trigger de Sis2000) ──────────────────────────────
-    beneficiarios: (Array.isArray(funeral.beneficiarios) ? funeral.beneficiarios : []).map(b => ({
-      icedula_beneficiario: normalizeTipoCedula(b.tipoDoc, b.identificacion),
-      xrif_beneficiario: digitsToNumber(b.identificacion),
-      xnombre_beneficiario: cleanString(b.nombre),
-      xapellido_beneficiario: cleanString(b.apellido),
-      fnac_beneficiario: normalizeDate(b.fechaNac),
-      isexo_beneficiario: normalizeSexo(b.sexo),
-      nparentesco_beneficiario: Number(b.cparen ?? b.parentesco) || 0,
-      iestado_civil_beneficiario: normalizeEstadoCivil(b.estadoCivil) || 'S',
-      xtelefono_beneficiario: cleanPhone(b.telefono),
-      xcorreo_beneficiario: cleanString(b.email),
-      pporce_beneficiario: Number(b.pporcen ?? b.pporce ?? b.pporce_beneficiario) || 0,
-    })),
+    // [benef-juridico 16-nov-2026] J/G/C: razón social, apellido vacío y sexo/fnac/estado civil en null.
+    beneficiarios: (Array.isArray(funeral.beneficiarios) ? funeral.beneficiarios : []).map(b => {
+      const pj = esTipoJuridico(b.tipoDoc);
+      return {
+        icedula_beneficiario: normalizeTipoCedula(b.tipoDoc, b.identificacion),
+        xrif_beneficiario: digitsToNumber(b.identificacion),
+        xnombre_beneficiario: cleanString(pj ? (b.nombre || b.razonSocial) : b.nombre),
+        xapellido_beneficiario: pj ? '' : cleanString(b.apellido),
+        fnac_beneficiario: pj ? null : normalizeDate(b.fechaNac),
+        isexo_beneficiario: pj ? null : normalizeSexo(b.sexo),
+        nparentesco_beneficiario: Number(b.cparen ?? b.parentesco) || 0,
+        iestado_civil_beneficiario: pj ? null : (normalizeEstadoCivil(b.estadoCivil) || 'S'),
+        xtelefono_beneficiario: cleanPhone(b.telefono),
+        xcorreo_beneficiario: cleanString(b.email),
+        pporce_beneficiario: Number(b.pporcen ?? b.pporce ?? b.pporce_beneficiario) || 0,
+      };
+    }),
   };
 
   // Beneficiario preferencial (Vida): aparte de los beneficiarios por fallecimiento; puede ser J/G/C.
