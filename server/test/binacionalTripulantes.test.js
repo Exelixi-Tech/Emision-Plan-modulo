@@ -84,3 +84,27 @@ test('nacional y extranjera: nunca se envían tripulantes aunque el estado los t
     assert.equal(emitir(state).body.npuestos, 5);
   }
 });
+
+test('binacional: sin rcv.tripulantes se usa el valor del Formulario (vehicle.tripulantes)', () => {
+  const state = estado('binacional');
+  state.vehicle.tripulantes = 3;
+  assert.equal(resolveTripulantesBinacional(state), 3);
+  assert.equal(cotizar(state).puestos, 3);
+  assert.equal(emitir(state).body.npuestos, 3);
+});
+
+test('binacional: rcv.tripulantes (paso de plan) tiene prioridad sobre vehicle.tripulantes', () => {
+  const state = estado('binacional', { tripulantes: 2 });
+  state.vehicle.tripulantes = 3;
+  assert.equal(resolveTripulantesBinacional(state), 2);
+  assert.equal(cotizar(state).puestos, 2);
+});
+
+test('nacional y extranjera: vehicle.tripulantes se ignora', () => {
+  for (const tipo of ['nacional', 'extranjera']) {
+    const state = estado(tipo);
+    state.vehicle.tripulantes = 3;
+    assert.equal(resolveTripulantesBinacional(state), null);
+    assert.equal('puestos' in cotizar(state), false);
+  }
+});

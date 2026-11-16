@@ -199,7 +199,8 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   // RCV Binacional: tripulantes (1–3, por defecto 1) = puestos con los que se cotiza y se emite.
   const isBinacional = vehicle.tipoPlaca === 'binacional' && !tarjetaFlow;
   const tripulantes = isBinacional
-    ? Math.min(TRIPULANTES_MAX, Math.max(1, Math.trunc(Number(rcv.tripulantes)) || 1))
+    // Valor inicial: el elegido en el Formulario (vehicle.tripulantes); aquí se puede ajustar.
+    ? Math.min(TRIPULANTES_MAX, Math.max(1, Math.trunc(Number(rcv.tripulantes ?? vehicle.tripulantes)) || 1))
     : null;
   useEffect(() => {
     if (isBinacional && rcv.tripulantes !== tripulantes) setRcv({ tripulantes }, { keepQuote: true });
