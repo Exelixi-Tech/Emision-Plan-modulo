@@ -87,9 +87,37 @@ test('toggle apagado o sin identificación → no se envía', () => {
   assert.equal('beneficiario_preferencial' in payload, false);
 });
 
-test('beneficiario por fallecimiento J y titular J siguen rechazados', () => {
-  const conBenJ = estado({ beneficiarios: [{ ...banco, parentesco: 3, pporcen: 100 }] });
-  assert.match(personasMapper.validatePersonasIdentidades(conBenJ).join(' '), /Beneficiario 1/);
+test('beneficiario de la lista J (Socio, 100%) → BENF con razón social, apellido vacío y sin sexo/fnac/estado civil', () => {
+  const arca = {
+    tipoDoc: 'J', identificacion: '400849020', nombre: 'ARCA FINANCE C.A.', apellido: 'X',
+    sexo: 'Masculino', estadoCivil: 'Soltero(a)', fechaNac: '2000-01-01', parentesco: '9', pporcen: 100,
+  };
+  const st = estado({ beneficiarios: [arca] });
+  assert.deepEqual(personasMapper.validatePersonasIdentidades(st), []);
+  const { payload } = personasMapper.buildEmissionPersonRequest(st, { mprimaext: 50, ptasa: 40 });
+  assert.deepEqual(
+    { ...payload.beneficiarios[0], xtelefono_beneficiario: undefined, xcorreo_beneficiario: undefined },
+    {
+      icedula_beneficiario: 'J',
+      xrif_beneficiario: 400849020,
+      xnombre_beneficiario: 'ARCA FINANCE C.A.',
+      xapellido_beneficiario: '',
+      fnac_beneficiario: null,
+      isexo_beneficiario: null,
+      nparentesco_beneficiario: 9,
+      iestado_civil_beneficiario: null,
+      xtelefono_beneficiario: undefined,
+      xcorreo_beneficiario: undefined,
+      pporce_beneficiario: 100,
+    },
+  );
+  const sinRazon = estado({ beneficiarios: [{ ...arca, nombre: '' }] });
+  assert.match(personasMapper.validatePersonasIdentidades(sinRazon).join(' '), /razón social/);
+  const ochoDigitos = estado({ beneficiarios: [{ ...arca, identificacion: '40084902' }] });
+  assert.match(personasMapper.validatePersonasIdentidades(ochoDigitos).join(' '), /9 dígitos/);
+});
+
+test('titular J sigue rechazado', () => {
   const titularJ = estado({ asegurados: [{ ...titular, tipoDoc: 'J', identificacion: '123456789' }] });
   assert.match(personasMapper.validatePersonasIdentidades(titularJ).join(' '), /titular/);
 });
