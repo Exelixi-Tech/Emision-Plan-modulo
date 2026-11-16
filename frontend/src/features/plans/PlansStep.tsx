@@ -772,6 +772,7 @@ export function PlansStep() {
           hideCategoryTag={Boolean(lockedCplan)}
           coberturasAdicionales={coberturasAdicionales}
           selectedCoberturaCode={selectedCoberturaCode}
+          mostrarAdicionalesEnQa={isBinacional}
           onSelectCobertura={(code) => {
             if (!code) {
               setRcv({ coberAdicional: 'RC', coberAdicionales: [] });
@@ -810,6 +811,7 @@ function PlanDetailCard({
   coberturasAdicionales = [],
   selectedCoberturaCode = '',
   onSelectCobertura,
+  mostrarAdicionalesEnQa = false,
 }: {
   plan: Plan;
   displayPrice: number;
@@ -833,6 +835,8 @@ function PlanDetailCard({
   coberturasAdicionales?: { value: string; text: string }[];
   selectedCoberturaCode?: string;
   onSelectCobertura?: (code: string | null) => void;
+  /** RCV Binacional: en QA se muestran las opcionales (queda solo APOV: casco ya se filtra), para cobrar los tripulantes. */
+  mostrarAdicionalesEnQa?: boolean;
 }) {
   const vesPrimary = currencyKind === 'ves';
   return (
@@ -953,7 +957,7 @@ function PlanDetailCard({
           ))}
         </ul>
 
-        {coberturasAdicionales.length > 0 && onSelectCobertura && !isQaDeploy() && (
+        {coberturasAdicionales.length > 0 && onSelectCobertura && (!isQaDeploy() || mostrarAdicionalesEnQa) && (
           <details
             className="mt-5 group rounded-xl border border-slate-200/80 bg-slate-50/50 open:bg-white open:shadow-sm transition-colors"
             open={Boolean(selectedCoberturaCode)}
