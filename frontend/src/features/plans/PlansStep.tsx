@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
-  Loader2, AlertTriangle, CalendarClock, UserCheck,
+  Loader2, AlertTriangle, CalendarClock, UserCheck, Users,
 } from 'lucide-react';
 import type { Plan, RcvPlanData } from '../../types';
 import { type PlanRcv, catalogoApi, quotePolicy, getFrecuenciasByPlan, getBrokers, type CatalogItem, type VigenciaPlaca } from '../../lib/api';
@@ -28,6 +28,9 @@ import {
   tarjetaQuoteShowsVes,
   type TarjetaPlanCurrencyKind,
 } from '../../lib/rcv-tarjeta-flow';
+
+/** RCV Binacional: máximo de tripulantes que se pueden declarar (mínimo y valor por defecto: 1). */
+const TRIPULANTES_MAX = 3;
 
 /** Beneficios estándar RCV conforme a la Ley — aplica a todos los planes */
 const RCV_BENEFITS = [
@@ -193,6 +196,14 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   const [frecLoading, setFrecLoading] = useState(false);
   // Placa extranjera: vigencia corta (mavigencias_PR) en lugar de frecuencia; Sis2000 prorratea la prima.
   const isExtranjera = vehicle.tipoPlaca === 'extranjera' && !tarjetaFlow;
+  // RCV Binacional: tripulantes (1–3, por defecto 1) = puestos con los que se cotiza y se emite.
+  const isBinacional = vehicle.tipoPlaca === 'binacional' && !tarjetaFlow;
+  const tripulantes = isBinacional
+    ? Math.min(TRIPULANTES_MAX, Math.max(1, Math.trunc(Number(rcv.tripulantes)) || 1))
+    : null;
+  useEffect(() => {
+    if (isBinacional && rcv.tripulantes !== tripulantes) setRcv({ tripulantes }, { keepQuote: true });
+  }, [isBinacional, rcv.tripulantes, tripulantes, setRcv]);
   const [vigencias, setVigencias] = useState<VigenciaPlaca[]>([]);
   const [vigLoading, setVigLoading] = useState(false);
 
@@ -375,8 +386,10 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
   const frecSig = includeFrecInQuote ? `${rcv.frecuencia ?? 'A'}|${rcv.ndias ?? ''}` : '';
   // Placa extranjera: la vigencia cambia la prima (prorrateo) → re-cotizar al cambiarla.
   const vigSig = isExtranjera ? `|vig${rcv.vigenciaExt?.cvigencia ?? ''}` : '';
+  // Binacional: los tripulantes cambian la prima → re-cotizar al cambiarlos.
+  const tripSig = isBinacional ? `|trip${tripulantes}` : '';
   const quoteSig = sig && planCode && (!isExtranjera || rcv.vigenciaExt)
-    ? `${sig}|${planCode}|${coberSig}${includeFrecInQuote ? `|${frecSig}` : ''}${vigSig}`
+    ? `${sig}|${planCode}|${coberSig}${includeFrecInQuote ? `|${frecSig}` : ''}${vigSig}${tripSig}`
     : '';
 
   // Ref para rastrear el sig activo y descartar respuestas obsoletas.
@@ -392,7 +405,12 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
     snap.setQuoteState('loading');
 
     quotePolicy({
-      state: { vehicle, rcv, selectedPlan, tomador: useWizardStore.getState().tomador },
+      state: {
+        vehicle,
+        rcv: isBinacional ? { ...rcv, tripulantes } : rcv,
+        selectedPlan,
+        tomador: useWizardStore.getState().tomador,
+      },
       plan: planCode,
     })
       .then((r) => {
@@ -754,6 +772,34 @@ export function PlansStep({ autoContinue = false, onAutoReady, onAutoFallback }:
           </div>
           <p className="mt-1.5 text-[0.7rem] text-slate-500">
             Vehículo extranjero: la prima se calcula según el tiempo de vigencia elegido.
+          </p>
+        </div>
+        )}
+
+        {/* RCV Binacional: tripulantes (puestos de la cobertura de ocupantes) */}
+        {isBinacional && (
+        <div>
+          <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
+            <Users size={11} className="text-emerald-500" />
+            Tripulantes
+          </label>
+          <div className="relative group">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]">
+              <Users size={15} strokeWidth={2.5} />
+            </div>
+            <select
+              value={String(tripulantes ?? 1)}
+              onChange={(e) => setRcv({ tripulantes: Number(e.target.value) }, { keepQuote: true })}
+              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+            >
+              {Array.from({ length: TRIPULANTES_MAX }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={String(n)}>{n}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          </div>
+          <p className="mt-1.5 text-[0.7rem] text-slate-500">
+            Vehículo binacional: la prima se calcula según el número de tripulantes (máximo {TRIPULANTES_MAX}).
           </p>
         </div>
         )}

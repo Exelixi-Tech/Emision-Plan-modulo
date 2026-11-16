@@ -219,6 +219,11 @@ export interface RcvPlanData {
     ntiempo: number;
     nvalor: number;
   } | null;
+  /**
+   * RCV Binacional: tripulantes (1–3, por defecto 1). Son los puestos con los que Sis2000
+   * cobra las coberturas de ocupantes; nacional y extranjera no lo usan (puestos del modelo).
+   */
+  tripulantes?: number | null;
   /** Cobertura opcional activa para emisión (RC = solo RCV). */
   coberAdicional?: string;
   /** Sync con coberAdicional; máximo una opción (CA, PT o PP). */
