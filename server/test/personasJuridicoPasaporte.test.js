@@ -57,7 +57,7 @@ test('personas: tomador J usa constitución o inscripción del RIF (OCR) como fn
   assert.equal(validate.tipo_cedula_titular, 'V');
 });
 
-test('personas: J/G/C como titular, asegurado o beneficiario → error (400 en la ruta)', () => {
+test('personas: J/G/C como titular o asegurado → error (400 en la ruta); beneficiario J/G/C con RIF de 9 dígitos sí', () => {
   assert.equal(personasMapper.validatePersonasIdentidades(estadoPersonas(tomadorJ, [])).length, 1);
   assert.equal(personasMapper.validatePersonasIdentidades(estadoPersonas(titularNatural, [{ ...tomadorJ, parentesco: 1 }])).length, 1);
   assert.equal(
@@ -66,6 +66,8 @@ test('personas: J/G/C como titular, asegurado o beneficiario → error (400 en l
   );
   const conBenJ = estadoPersonas(titularNatural);
   conBenJ.funeral.beneficiarios = [{ tipoDoc: 'C', identificacion: '123456789', nombre: 'X' }];
+  assert.equal(personasMapper.validatePersonasIdentidades(conBenJ).length, 0);
+  conBenJ.funeral.beneficiarios = [{ tipoDoc: 'C', identificacion: '12345678', nombre: 'X' }];
   assert.equal(personasMapper.validatePersonasIdentidades(conBenJ).length, 1);
 });
 
