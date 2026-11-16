@@ -273,20 +273,14 @@ function resolveIplaca(v) {
 }
 
 /**
- * RCV Binacional: tripulantes (0–3; 0 = sin tripulantes) → puestos de la cotización y npuestos de la emisión.
- * Van con bpuestos_informados: nest-api / Sis2000 cobran el APOV por ellos (no por BINAC_PARAM.PERSONAS).
- * Prioridad: rcv.tripulantes (paso de plan) y, si no hay, vehicle.tripulantes (Formulario).
- * null si no es binacional o no hay dato: nacional y extranjera siguen como antes.
+ * RCV Binacional (solo vehículos de carga): 1 tripulante fijo. Criterio de La Mundial (16-nov-2026): por la
+ * normativa del Ministerio de Transporte de Colombia se cobra un solo tripulante. Va como puestos de la cotización
+ * y npuestos de la emisión; Sis2000 cobra el APOV con BINAC_PARAM.PERSONAS (sin bpuestos_informados).
+ * null si no es binacional: nacional y extranjera siguen como antes.
  */
-const TRIPULANTES_BINACIONAL_MAX = 3;
+const TRIPULANTES_BINACIONAL = 1;
 function resolveTripulantesBinacional(state) {
-  if (resolveIplaca(state?.vehicle) !== 'B') return null;
-  const fromPlan = state?.rcv?.tripulantes;
-  const raw = fromPlan == null || fromPlan === '' ? state?.vehicle?.tripulantes : fromPlan;
-  if (raw == null || raw === '') return null;
-  const n = Math.trunc(Number(raw));
-  if (!Number.isFinite(n)) return null;
-  return Math.min(TRIPULANTES_BINACIONAL_MAX, Math.max(0, n));
+  return resolveIplaca(state?.vehicle) === 'B' ? TRIPULANTES_BINACIONAL : null;
 }
 
 /**
@@ -388,11 +382,6 @@ function buildQuoteRequest(state, overrides = {}) {
       iplaca: resolveIplaca(v),
       ntoneladas: resolveNtoneladasForSp(v),
       precargorcv: resolvePrecargorcv(v),
-      // Binacional: tripulantes elegidos (0 = sin tripulantes) → APOV por tripulante en valrep/cotizacion.
-      ...(() => {
-        const t = resolveTripulantesBinacional(state);
-        return t != null ? { puestos: t, bpuestos_informados: true } : {};
-      })(),
       cramo: resolveRcvCramo(v, state.metadataCanal || {}),
       // Nacional: prima anual (A); frecuencia solo define recibos en UI/emisión.
       // Binacional/D: ifrecuencia + ndias definen vigencia en sp_calculo_auto_nexus.
@@ -656,8 +645,8 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     // ntoneladas / precargorcv — paridad SysIP (toneladas solo cat. 11; recargo siempre).
     ntoneladas: resolveNtoneladasForSp(v),
     precargorcv: resolvePrecargorcv(v),
-    // Binacional: tripulantes elegidos → npuestos del SP de emisión (misma base que la cotización).
-    ...(tripulantes != null ? { npuestos: tripulantes, bpuestos_informados: true } : {}),
+    // Binacional: 1 tripulante fijo → npuestos del SP de emisión (misma base que la cotización).
+    ...(tripulantes != null ? { npuestos: tripulantes } : {}),
 
     coberAdicional,
     ...(() => {
@@ -762,7 +751,6 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     xsermot: p.serial_motor || null,
     ccategoria_uso: p.ccategoria_uso,
     npuestos: p.npuestos ?? 5,
-    ...(p.bpuestos_informados === true ? { bpuestos_informados: true } : {}),
     ntoneladas: p.ntoneladas != null ? p.ntoneladas : 0,
     iplaca: p.iplaca || 'N',
     precargorcv: p.precargorcv ?? 0,
@@ -898,8 +886,8 @@ function buildCalculatePlanCoberturasRequest(state, overrides = {}, quoteMeta = 
       uso: payload.ccategoria_uso,
       iplaca: payload.iplaca,
       toneladas: payload.ntoneladas,
-      // Binacional: tripulantes elegidos; sin el campo nest-api usa los puestos del modelo (VInma).
-      ...(tripulantes != null ? { puestos: tripulantes, bpuestos_informados: true } : {}),
+      // Binacional: 1 tripulante fijo; sin el campo nest-api usa los puestos del modelo (VInma).
+      ...(tripulantes != null ? { puestos: tripulantes } : {}),
       cramo: payload.cramo,
       ifrecuencia: periodQuote
         ? (payload.ifrecuencia ?? resolveRcvFrecuencia(state, overrides))

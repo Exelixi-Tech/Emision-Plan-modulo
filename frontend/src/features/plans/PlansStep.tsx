@@ -29,13 +29,6 @@ import {
   type TarjetaPlanCurrencyKind,
 } from '../../lib/rcv-tarjeta-flow';
 
-/** RCV Binacional: máximo de tripulantes que se pueden declarar (0 = sin tripulantes; por defecto 1). */
-const TRIPULANTES_MAX = 3;
-/** Tripulantes válidos (0–máximo); sin dato o inválido, 1. */
-function tripulantesValidos(raw: unknown): number {
-  const n = raw == null || raw === '' ? NaN : Math.trunc(Number(raw));
-  return Number.isFinite(n) ? Math.min(TRIPULANTES_MAX, Math.max(0, n)) : 1;
-}
 
 /** Beneficios estándar RCV conforme a la Ley — aplica a todos los planes */
 const RCV_BENEFITS = [
@@ -190,15 +183,8 @@ export function PlansStep() {
   const [frecLoading, setFrecLoading] = useState(false);
   // Placa extranjera: vigencia corta (mavigencias_PR) en lugar de frecuencia; Sis2000 prorratea la prima.
   const isExtranjera = vehicle.tipoPlaca === 'extranjera' && !tarjetaFlow;
-  // RCV Binacional: tripulantes (0–3, por defecto 1) = puestos con los que se cotiza y se emite el APOV.
+  // RCV Binacional: 1 tripulante fijo (criterio La Mundial, normativa de transporte de Colombia); lo envía el server.
   const isBinacional = vehicle.tipoPlaca === 'binacional' && !tarjetaFlow;
-  const tripulantes = isBinacional
-    // Valor inicial: el elegido en el Formulario (vehicle.tripulantes); aquí se puede ajustar.
-    ? tripulantesValidos(rcv.tripulantes ?? vehicle.tripulantes)
-    : null;
-  useEffect(() => {
-    if (isBinacional && rcv.tripulantes !== tripulantes) setRcv({ tripulantes }, { keepQuote: true });
-  }, [isBinacional, rcv.tripulantes, tripulantes, setRcv]);
   const [vigencias, setVigencias] = useState<VigenciaPlaca[]>([]);
   const [vigLoading, setVigLoading] = useState(false);
 
@@ -387,10 +373,8 @@ export function PlansStep() {
   const frecSig = includeFrecInQuote ? `${rcv.frecuencia ?? 'A'}|${rcv.ndias ?? ''}` : '';
   // Placa extranjera: la vigencia cambia la prima (prorrateo) → re-cotizar al cambiarla.
   const vigSig = isExtranjera ? `|vig${rcv.vigenciaExt?.cvigencia ?? ''}` : '';
-  // Binacional: los tripulantes cambian la prima → re-cotizar al cambiarlos.
-  const tripSig = isBinacional ? `|trip${tripulantes}` : '';
   const quoteSig = sig && planCode && (!isExtranjera || rcv.vigenciaExt)
-    ? `${sig}|${planCode}|${coberSig}${includeFrecInQuote ? `|${frecSig}` : ''}${vigSig}${tripSig}`
+    ? `${sig}|${planCode}|${coberSig}${includeFrecInQuote ? `|${frecSig}` : ''}${vigSig}`
     : '';
 
   // Ref para rastrear el sig activo y descartar respuestas obsoletas.
@@ -408,7 +392,7 @@ export function PlansStep() {
     quotePolicy({
       state: {
         vehicle,
-        rcv: isBinacional ? { ...rcv, tripulantes } : rcv,
+        rcv,
         selectedPlan,
         tomador: useWizardStore.getState().tomador,
       },
@@ -693,30 +677,21 @@ export function PlansStep() {
         </div>
         )}
 
-        {/* RCV Binacional: tripulantes (puestos de la cobertura de ocupantes) */}
+        {/* RCV Binacional: 1 tripulante fijo (criterio La Mundial) */}
         {isBinacional && (
         <div>
           <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
             <Users size={11} className="text-emerald-500" />
             Tripulantes
           </label>
-          <div className="relative group">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]">
+          <div className="flex items-center gap-3 pl-3 pr-4 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50">
+            <div className="w-9 h-9 rounded-lg grid place-items-center bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]">
               <Users size={15} strokeWidth={2.5} />
             </div>
-            <select
-              value={String(tripulantes ?? 1)}
-              onChange={(e) => setRcv({ tripulantes: Number(e.target.value) }, { keepQuote: true })}
-              className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
-            >
-              {Array.from({ length: TRIPULANTES_MAX + 1 }, (_, i) => i).map((n) => (
-                <option key={n} value={String(n)}>{n === 0 ? 'Sin tripulantes' : n}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            <span className="text-sm font-bold text-slate-900">1 tripulante</span>
           </div>
           <p className="mt-1.5 text-[0.7rem] text-slate-500">
-            Vehículo binacional: el APOV se cobra por tripulante (máximo {TRIPULANTES_MAX}); sin tripulantes no lleva APOV.
+            Incluye Accidentes Personales para 1 tripulante, según la normativa de transporte de Colombia.
           </p>
         </div>
         )}
