@@ -31,6 +31,13 @@ import { ageErrorForParentesco, isTitularOnlyPlan, maxAseguradosDelPlan, nmaxDep
 import { resolveTitularSource, syncTitularFromTomador } from '../../lib/funeral-sync';
 import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
 import { FuneralInsuredsEditor } from './FuneralInsuredsEditor';
+import {
+  VIAJE_SUMA_BASE_KEY,
+  isViajeSumaMayor,
+  opcionesSumaViaje,
+  planSumaMayorPorDias,
+  sumaViajeKey,
+} from '../../lib/viajeroSuma';
 
 function emptyTitular(): FuneralPerson {
   return {
@@ -66,6 +73,8 @@ function mergeTitularFromForm(
 
 /** SysIP persons-alt: si maplanes_frec no tiene el plan, al menos ANUAL. */
 const FRECUENCIAS_PERSONAS_FALLBACK: CatalogItem[] = [{ code: 'A', label: 'ANUAL' }];
+/** VIAJE5/VIAJE6 (prorrata por días): pago único mientras La Mundial no cargue maplanes_frec. */
+const FRECUENCIAS_VIAJE_PRORRATA_FALLBACK: CatalogItem[] = [{ code: 'E', label: 'ÚNICA' }];
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function parseNdiasFromLabel(text: string): number | null {
@@ -163,13 +172,18 @@ function addDaysYmd(ymd: string, days: number): string {
 }
 
 /** Días del viaje contando salida y regreso; null si las fechas no son válidas o pasan el tope. */
-function diasViaje(fdesde?: string, fhasta?: string): number | null {
+function diasViaje(
+  fdesde?: string,
+  fhasta?: string,
+  minDias: number = VIAJE_MIN_DIAS,
+  maxDias: number = VIAJE_MAX_DIAS,
+): number | null {
   if (!fdesde || !fhasta) return null;
   const desde = new Date(`${fdesde}T00:00:00Z`).getTime();
   const hasta = new Date(`${fhasta}T00:00:00Z`).getTime();
   if (!Number.isFinite(desde) || !Number.isFinite(hasta) || hasta < desde) return null;
   const n = Math.round((hasta - desde) / 86_400_000) + 1;
-  return n >= VIAJE_MIN_DIAS && n <= VIAJE_MAX_DIAS ? n : null;
+  return n >= minDias && n <= maxDias ? n : null;
 }
 
 /**
@@ -271,6 +285,10 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
 
   const [apiFrecuencias, setApiFrecuencias] = useState<CatalogItem[]>([]);
   const [frecLoading, setFrecLoading] = useState(false);
+  // Viajero: suma elegida (base = 1.500 $; si se vuelve al paso con VIAJE5/VIAJE6, se conserva).
+  const [sumaViaje, setSumaViaje] = useState<string>(() =>
+    selectedPlan && isViajeSumaMayor(selectedPlan) ? sumaViajeKey(selectedPlan) : VIAJE_SUMA_BASE_KEY,
+  );
   const setFuneral = useWizardStore((s) => s.setFuneral);
 
   // ── Carga de planes de personas (ramo 9) ──────────────────────────────────
@@ -327,10 +345,13 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
 
     let cancelled = false;
     setFrecLoading(true);
+    const frecuenciasFallback = isViajeSumaMayor(selectedPlan)
+      ? FRECUENCIAS_VIAJE_PRORRATA_FALLBACK
+      : FRECUENCIAS_PERSONAS_FALLBACK;
     getFrecuenciasByPlan(planCode, planCramo(selectedPlan, product.cramo))
       .then((items) => {
         if (cancelled) return;
-        const list = frecuenciasPersonas(items, FRECUENCIAS_PERSONAS_FALLBACK);
+        const list = frecuenciasPersonas(items, frecuenciasFallback);
         setApiFrecuencias(list);
         const currentValid = list.find((i) => String(i.code) === funeral.frecuencia);
         if (!currentValid) {
@@ -340,8 +361,9 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
       .catch((err) => {
         console.error('Error cargando frecuencias', err);
         if (cancelled) return;
-        setApiFrecuencias(FRECUENCIAS_PERSONAS_FALLBACK);
-        if (funeral.frecuencia !== 'A') setFuneral({ frecuencia: 'A' });
+        setApiFrecuencias(frecuenciasFallback);
+        const code = String(frecuenciasFallback[0].code);
+        if (funeral.frecuencia !== code) setFuneral({ frecuencia: code });
       })
       .finally(() => {
         if (!cancelled) setFrecLoading(false);
@@ -393,7 +415,17 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
     : parseNdiasFromLabel(selectedPlan?.name ?? selectedPlan?.tag ?? '');
   // Viajero por días: la vigencia son las fechas del viaje (no hoy + días del plan).
   const viajeroPorDias = isViajeroPorDias(apiPlans);
-  const viajeNdias = viajeroPorDias ? diasViaje(funeral.viajeFdesde, funeral.viajeFhasta) : null;
+  // Suma asegurada del viaje: 1.500 $ (plan por días, 3 a 15) o VIAJE5/VIAJE6 (1 a 10 días).
+  const opcionesSuma = viajeroPorDias
+    ? opcionesSumaViaje(apiPlans, { minDias: VIAJE_MIN_DIAS, maxDias: VIAJE_MAX_DIAS })
+    : [];
+  const opcionSuma = opcionesSuma.find((o) => o.key === sumaViaje) ?? opcionesSuma[0] ?? null;
+  const viajeMinDias = opcionSuma?.minDias ?? VIAJE_MIN_DIAS;
+  const viajeMaxDias = opcionSuma?.maxDias ?? VIAJE_MAX_DIAS;
+  const mostrarSumaViaje = opcionesSuma.length > 1;
+  const viajeNdias = viajeroPorDias
+    ? diasViaje(funeral.viajeFdesde, funeral.viajeFhasta, viajeMinDias, viajeMaxDias)
+    : null;
   const viajeVig = viajeNdias != null
     ? { fdesde: funeral.viajeFdesde!, fhasta: funeral.viajeFhasta!, ndias: viajeNdias }
     : null;
@@ -474,19 +506,39 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
   const dayOptions = selectedPlan ? daysForPlan(apiPlans, planBaseKey(selectedPlan)) : [];
   const showDayPicker = !viajeroPorDias && dayOptions.length > 1;
 
-  // Viajero: al cambiar las fechas, el plan se toma solo según los días del viaje.
+  // Viajero: al cambiar las fechas (o la suma), el plan se toma solo según los días del viaje.
+  // 1.500 $: plan VIAJ* de esos días; 3.000/5.000 $: VIAJE5/VIAJE6 con los días (prorrata).
   useEffect(() => {
     if (!viajeroPorDias) return;
-    const next = viajeNdias != null ? planPorDiasViaje(apiPlans, viajeNdias) : null;
+    const next = viajeNdias == null
+      ? null
+      : opcionSuma?.plan
+        ? planSumaMayorPorDias(opcionSuma.plan, viajeNdias)
+        : planPorDiasViaje(apiPlans.filter((p) => !isViajeSumaMayor(p)), viajeNdias);
     const current = useWizardStore.getState().selectedPlan;
-    if (current?.cplan === next?.cplan && current?.ndias === next?.ndias) return;
+    if (
+      current?.cplan === next?.cplan
+      && current?.cramo === next?.cramo
+      && current?.ndias === next?.ndias
+    ) return;
     applySelectedPlan(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viajeroPorDias, viajeNdias, apiPlans]);
+  }, [viajeroPorDias, viajeNdias, apiPlans, opcionSuma?.key]);
 
   const hoy = todayYmd();
-  const viajeHastaMax = funeral.viajeFdesde ? addDaysYmd(funeral.viajeFdesde, VIAJE_MAX_DIAS - 1) : undefined;
-  const viajeHastaMin = funeral.viajeFdesde ? addDaysYmd(funeral.viajeFdesde, VIAJE_MIN_DIAS - 1) : undefined;
+  const viajeHastaMax = funeral.viajeFdesde ? addDaysYmd(funeral.viajeFdesde, viajeMaxDias - 1) : undefined;
+  const viajeHastaMin = funeral.viajeFdesde ? addDaysYmd(funeral.viajeFdesde, viajeMinDias - 1) : undefined;
+
+  /** Cambia la suma del viaje; el regreso se borra si queda fuera de los días de la nueva suma. */
+  function elegirSumaViaje(key: string) {
+    setSumaViaje(key);
+    const opcion = opcionesSuma.find((o) => o.key === key);
+    const { viajeFdesde, viajeFhasta } = useWizardStore.getState().funeral;
+    if (!opcion || !viajeFdesde || !viajeFhasta) return;
+    if (diasViaje(viajeFdesde, viajeFhasta, opcion.minDias, opcion.maxDias) == null) {
+      setFuneral({ viajeFhasta: '' });
+    }
+  }
 
   function applySelectedPlan(found: Plan | null) {
     if (found) setCategory(found.name);
@@ -544,7 +596,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
       <div className="flex items-start justify-between gap-4 flex-wrap -mt-2">
         <p className="text-slate-500 text-sm leading-relaxed max-w-md">
           {viajeroPorDias
-            ? `Indica las fechas de tu viaje (de ${VIAJE_MIN_DIAS} a ${VIAJE_MAX_DIAS} días): el plan y la prima se calculan según los días.`
+            ? `${mostrarSumaViaje ? 'Elige la suma asegurada e indica' : 'Indica'} las fechas de tu viaje (de ${viajeMinDias} a ${viajeMaxDias} días): el plan y la prima se calculan según los días.`
             : isFunerarioLabel
               ? 'Selecciona el plan funerario que mejor se ajuste a tu grupo familiar.'
               : `Selecciona el plan de ${productLabel} que mejor se ajuste a tu grupo familiar.`}
@@ -556,7 +608,34 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
       </div>
 
       {/* Selectores */}
-      <div className={`grid grid-cols-1 gap-4 ${showDayPicker ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${showDayPicker || (viajeroPorDias && mostrarSumaViaje) ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+        {viajeroPorDias && mostrarSumaViaje ? (
+          /* Viajero: suma asegurada (1.500 $ por días; 3.000 / 5.000 $ con prorrata, hasta 10 días) */
+          <div>
+            <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
+              <Star size={11} className="text-violet-500" />
+              Suma asegurada
+            </label>
+            <div className="relative group">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center pointer-events-none transition-all bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_14px_rgba(46,109,191,0.3)]">
+                <Check size={15} strokeWidth={2.5} />
+              </div>
+              <select
+                value={opcionSuma?.key ?? ''}
+                onChange={(e) => elegirSumaViaje(e.target.value)}
+                disabled={plansLoading}
+                className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+              >
+                {opcionesSuma.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {`${o.label} · de ${o.minDias} a ${o.maxDias} días`}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            </div>
+          </div>
+        ) : null}
         {viajeroPorDias ? (
         /* Viajero: fechas del viaje → días → plan (regla SysIP) */
         <div>
@@ -573,8 +652,8 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
               onChange={(e) => {
                 const fdesde = e.target.value;
                 const fhasta = funeral.viajeFhasta;
-                const tope = fdesde ? addDaysYmd(fdesde, VIAJE_MAX_DIAS - 1) : undefined;
-                const minimo = fdesde ? addDaysYmd(fdesde, VIAJE_MIN_DIAS - 1) : undefined;
+                const tope = fdesde ? addDaysYmd(fdesde, viajeMaxDias - 1) : undefined;
+                const minimo = fdesde ? addDaysYmd(fdesde, viajeMinDias - 1) : undefined;
                 setFuneral({
                   viajeFdesde: fdesde,
                   viajeFhasta: fhasta && minimo && fhasta >= minimo && (!tope || fhasta <= tope) ? fhasta : '',
@@ -596,7 +675,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
           <p className="mt-1.5 text-xs text-slate-600">
             {viajeNdias != null && selectedPlan
               ? `${viajeNdias} día${viajeNdias === 1 ? '' : 's'} · ${selectedPlan.name}`
-              : `Salida y regreso: de ${VIAJE_MIN_DIAS} a ${VIAJE_MAX_DIAS} días.`}
+              : `Salida y regreso: de ${viajeMinDias} a ${viajeMaxDias} días.`}
           </p>
         </div>
         ) : (
