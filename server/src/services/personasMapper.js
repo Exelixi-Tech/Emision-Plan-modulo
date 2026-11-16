@@ -100,8 +100,14 @@ function validatePersonasIdentidades(state = {}) {
   beneficiarios.forEach((b, i) => {
     if (esTipoJuridico(b.tipoDoc)) errors.push(`Beneficiario ${i + 1}: una persona jurídica (RIF J/G/C) no puede ser beneficiario.`);
   });
+  // [benef-juridico 16-nov-2026] Beneficiario preferencial (Vida): sí admite J/G/C, con RIF de 9 dígitos.
+  const pref = beneficiarioPreferencialActivo(funeral);
+  if (pref && esTipoJuridico(pref.tipoDoc) && onlyDigits(pref.identificacion).length !== RIF_JURIDICO_DIGITOS) {
+    errors.push(`Beneficiario preferencial: el RIF debe tener la letra y ${RIF_JURIDICO_DIGITOS} dígitos (p. ej. J-123456789).`);
+  }
   const conPasaporte = [['Tomador', tomador], ...asegurados.map((a, i) => [i === 0 ? 'Titular' : `Asegurado ${i + 1}`, a]),
-    ...beneficiarios.map((b, i) => [`Beneficiario ${i + 1}`, b])];
+    ...beneficiarios.map((b, i) => [`Beneficiario ${i + 1}`, b]),
+    ...(pref ? [['Beneficiario preferencial', pref]] : [])];
   for (const [rol, per] of conPasaporte) {
     if (!esPasaporteAlfanumerico(per?.tipoDoc, per?.identificacion)) continue;
     // Titular y tomador: se admite (cid = 'P-' + pasaporte completo, cci_rif = dígitos) si cumple el formato.
@@ -113,6 +119,43 @@ function validatePersonasIdentidades(state = {}) {
     }
   }
   return errors;
+}
+
+/** RIF jurídico del beneficiario preferencial: letra + 9 dígitos. */
+const RIF_JURIDICO_DIGITOS = 9;
+
+/** Beneficiario preferencial del Formulario (Vida) si el usuario lo activó y trae identificación. */
+function beneficiarioPreferencialActivo(funeral = {}) {
+  if (!funeral || funeral.conBeneficiarioPreferencial !== true) return null;
+  const p = funeral.beneficiarioPreferencial;
+  if (!p || typeof p !== 'object' || !onlyDigits(p.identificacion)) return null;
+  return p;
+}
+
+/**
+ * [benef-juridico 16-nov-2026] `beneficiario_preferencial` para nest-api (adpoliza.cbeneficiario).
+ * Jurídico (J/G/C): nombre = razón social; apellido, sexo, estado civil y fnac en null (como el tomador J).
+ * Natural: igual que los demás datos de persona. Sin preferencial activo → undefined (no se envía).
+ */
+function buildBeneficiarioPreferencial(state = {}) {
+  const p = beneficiarioPreferencialActivo(state.funeral || {});
+  if (!p) return undefined;
+  const tipo = normalizeTipoCedula(p.tipoDoc, p.identificacion);
+  const pj = esTipoJuridico(tipo);
+  return {
+    tipo_cedula: tipo,
+    rif: digitsToNumber(p.identificacion),
+    nombre: cleanString(pj ? (p.nombre || p.razonSocial) : p.nombre),
+    apellido: pj ? null : cleanString(p.apellido),
+    sexo: pj ? null : normalizeSexo(p.sexo),
+    estado_civil: pj ? null : normalizeEstadoCivil(p.estadoCivil),
+    fnac: pj ? null : (normalizeDate(p.fechaNac) || null),
+    telefono: cleanPhone(p.telefono),
+    correo: cleanString(p.email),
+    estado: geoCode(p, 'cestado', 'estado'),
+    ciudad: geoCode(p, 'cciudad', 'ciudad'),
+    direccion: cleanString(p.direccion),
+  };
 }
 
 /** Tomador persona jurídica: razón social sin apellido (el SP arma xcliente = nombre + apellido). */
@@ -416,6 +459,10 @@ function buildEmissionPersonRequest(state, cotizacion, overrides = {}) {
     })),
   };
 
+  // Beneficiario preferencial (Vida): aparte de los beneficiarios por fallecimiento; puede ser J/G/C.
+  const beneficiarioPreferencial = buildBeneficiarioPreferencial(state);
+  if (beneficiarioPreferencial) payload.beneficiario_preferencial = beneficiarioPreferencial;
+
   return {
     payload,
     metadata: {
@@ -595,6 +642,7 @@ module.exports = {
   buildRegisterPolicyProveedorRequest,
   faltantesRegistroProveedor,
   validatePersonasIdentidades,
+  buildBeneficiarioPreferencial,
   edadDesdeFecha,
   resolveNedadAsegurado,
   _internal: {
