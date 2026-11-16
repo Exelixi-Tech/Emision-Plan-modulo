@@ -27,8 +27,13 @@ import {
   type TarjetaPlanCurrencyKind,
 } from '../../lib/rcv-tarjeta-flow';
 
-/** RCV Binacional: máximo de tripulantes que se pueden declarar (mínimo y valor por defecto: 1). */
+/** RCV Binacional: máximo de tripulantes que se pueden declarar (0 = sin tripulantes; por defecto 1). */
 const TRIPULANTES_MAX = 3;
+/** Tripulantes válidos (0–máximo); sin dato o inválido, 1. */
+function tripulantesValidos(raw: unknown): number {
+  const n = raw == null || raw === '' ? NaN : Math.trunc(Number(raw));
+  return Number.isFinite(n) ? Math.min(TRIPULANTES_MAX, Math.max(0, n)) : 1;
+}
 
 /** Beneficios estándar RCV conforme a la Ley — aplica a todos los planes */
 const RCV_BENEFITS = [
@@ -181,11 +186,11 @@ export function PlansStep() {
   const [frecLoading, setFrecLoading] = useState(false);
   // Placa extranjera: vigencia corta (mavigencias_PR) en lugar de frecuencia; Sis2000 prorratea la prima.
   const isExtranjera = vehicle.tipoPlaca === 'extranjera' && !tarjetaFlow;
-  // RCV Binacional: tripulantes (1–3, por defecto 1) = puestos con los que se cotiza y se emite.
+  // RCV Binacional: tripulantes (0–3, por defecto 1) = puestos con los que se cotiza y se emite el APOV.
   const isBinacional = vehicle.tipoPlaca === 'binacional' && !tarjetaFlow;
   const tripulantes = isBinacional
     // Valor inicial: el elegido en el Formulario (vehicle.tripulantes); aquí se puede ajustar.
-    ? Math.min(TRIPULANTES_MAX, Math.max(1, Math.trunc(Number(rcv.tripulantes ?? vehicle.tripulantes)) || 1))
+    ? tripulantesValidos(rcv.tripulantes ?? vehicle.tripulantes)
     : null;
   useEffect(() => {
     if (isBinacional && rcv.tripulantes !== tripulantes) setRcv({ tripulantes }, { keepQuote: true });
@@ -691,14 +696,14 @@ export function PlansStep() {
               onChange={(e) => setRcv({ tripulantes: Number(e.target.value) }, { keepQuote: true })}
               className="w-full pl-14 pr-10 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-900 appearance-none cursor-pointer hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
             >
-              {Array.from({ length: TRIPULANTES_MAX }, (_, i) => i + 1).map((n) => (
-                <option key={n} value={String(n)}>{n}</option>
+              {Array.from({ length: TRIPULANTES_MAX + 1 }, (_, i) => i).map((n) => (
+                <option key={n} value={String(n)}>{n === 0 ? 'Sin tripulantes' : n}</option>
               ))}
             </select>
             <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
           <p className="mt-1.5 text-[0.7rem] text-slate-500">
-            Vehículo binacional: la prima se calcula según el número de tripulantes (máximo {TRIPULANTES_MAX}).
+            Vehículo binacional: el APOV se cobra por tripulante (máximo {TRIPULANTES_MAX}); sin tripulantes no lleva APOV.
           </p>
         </div>
         )}

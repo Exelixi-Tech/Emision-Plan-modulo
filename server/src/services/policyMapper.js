@@ -272,7 +272,8 @@ function resolveIplaca(v) {
 }
 
 /**
- * RCV Binacional: tripulantes (1–3) → puestos de la cotización y npuestos de la emisión.
+ * RCV Binacional: tripulantes (0–3; 0 = sin tripulantes) → puestos de la cotización y npuestos de la emisión.
+ * Van con bpuestos_informados: nest-api / Sis2000 cobran el APOV por ellos (no por BINAC_PARAM.PERSONAS).
  * Prioridad: rcv.tripulantes (paso de plan) y, si no hay, vehicle.tripulantes (Formulario).
  * null si no es binacional o no hay dato: nacional y extranjera siguen como antes.
  */
@@ -284,7 +285,7 @@ function resolveTripulantesBinacional(state) {
   if (raw == null || raw === '') return null;
   const n = Math.trunc(Number(raw));
   if (!Number.isFinite(n)) return null;
-  return Math.min(TRIPULANTES_BINACIONAL_MAX, Math.max(1, n));
+  return Math.min(TRIPULANTES_BINACIONAL_MAX, Math.max(0, n));
 }
 
 /**
@@ -386,6 +387,11 @@ function buildQuoteRequest(state, overrides = {}) {
       iplaca: resolveIplaca(v),
       ntoneladas: resolveNtoneladasForSp(v),
       precargorcv: resolvePrecargorcv(v),
+      // Binacional: tripulantes elegidos (0 = sin tripulantes) → APOV por tripulante en valrep/cotizacion.
+      ...(() => {
+        const t = resolveTripulantesBinacional(state);
+        return t != null ? { puestos: t, bpuestos_informados: true } : {};
+      })(),
       cramo: resolveRcvCramo(v, state.metadataCanal || {}),
       // Nacional: prima anual (A); frecuencia solo define recibos en UI/emisión.
       // Binacional/D: ifrecuencia + ndias definen vigencia en sp_calculo_auto_nexus.
@@ -640,7 +646,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     ntoneladas: resolveNtoneladasForSp(v),
     precargorcv: resolvePrecargorcv(v),
     // Binacional: tripulantes elegidos → npuestos del SP de emisión (misma base que la cotización).
-    ...(tripulantes != null ? { npuestos: tripulantes } : {}),
+    ...(tripulantes != null ? { npuestos: tripulantes, bpuestos_informados: true } : {}),
 
     coberAdicional,
     ...(() => {
@@ -745,6 +751,7 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     xsermot: p.serial_motor || null,
     ccategoria_uso: p.ccategoria_uso,
     npuestos: p.npuestos ?? 5,
+    ...(p.bpuestos_informados === true ? { bpuestos_informados: true } : {}),
     ntoneladas: p.ntoneladas != null ? p.ntoneladas : 0,
     iplaca: p.iplaca || 'N',
     precargorcv: p.precargorcv ?? 0,
@@ -874,7 +881,7 @@ function buildCalculatePlanCoberturasRequest(state, overrides = {}, quoteMeta = 
       iplaca: payload.iplaca,
       toneladas: payload.ntoneladas,
       // Binacional: tripulantes elegidos; sin el campo nest-api usa los puestos del modelo (VInma).
-      ...(tripulantes != null ? { puestos: tripulantes } : {}),
+      ...(tripulantes != null ? { puestos: tripulantes, bpuestos_informados: true } : {}),
       cramo: payload.cramo,
       ifrecuencia: periodQuote
         ? (payload.ifrecuencia ?? resolveRcvFrecuencia(state, overrides))
