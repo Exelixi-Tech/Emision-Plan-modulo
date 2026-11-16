@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useWizardStore } from '../../store/wizardStore';
 import {
   Check, Star, Shield, ChevronDown, ShieldCheck,
-  Loader2, AlertTriangle, CalendarClock, UserCheck,
+  Loader2, AlertTriangle, CalendarClock, UserCheck, Users,
 } from 'lucide-react';
 import type { Plan, RcvPlanData } from '../../types';
 import { type PlanRcv, catalogoApi, quotePolicy, getFrecuenciasByPlan, getBrokers, type CatalogItem, type VigenciaPlaca } from '../../lib/api';
@@ -178,6 +178,8 @@ export function PlansStep() {
   const [frecLoading, setFrecLoading] = useState(false);
   // Placa extranjera: vigencia corta (mavigencias_PR) en lugar de frecuencia; Sis2000 prorratea la prima.
   const isExtranjera = vehicle.tipoPlaca === 'extranjera' && !tarjetaFlow;
+  // RCV Binacional: 1 tripulante fijo (criterio La Mundial, normativa de transporte de Colombia); lo envía el server.
+  const isBinacional = vehicle.tipoPlaca === 'binacional' && !tarjetaFlow;
   const [vigencias, setVigencias] = useState<VigenciaPlaca[]>([]);
   const [vigLoading, setVigLoading] = useState(false);
 
@@ -652,6 +654,25 @@ export function PlansStep() {
           </div>
           <p className="mt-1.5 text-[0.7rem] text-slate-500">
             Vehículo extranjero: la prima se calcula según el tiempo de vigencia elegido.
+          </p>
+        </div>
+        )}
+
+        {/* RCV Binacional: 1 tripulante fijo (criterio La Mundial) */}
+        {isBinacional && (
+        <div>
+          <label className="text-[0.62rem] font-black text-slate-500 uppercase tracking-widest mb-2 inline-flex items-center gap-1.5">
+            <Users size={11} className="text-emerald-500" />
+            Tripulantes
+          </label>
+          <div className="flex items-center gap-3 pl-3 pr-4 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50">
+            <div className="w-9 h-9 rounded-lg grid place-items-center bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]">
+              <Users size={15} strokeWidth={2.5} />
+            </div>
+            <span className="text-sm font-bold text-slate-900">1 tripulante</span>
+          </div>
+          <p className="mt-1.5 text-[0.7rem] text-slate-500">
+            Incluye Accidentes Personales para 1 tripulante, según la normativa de transporte de Colombia.
           </p>
         </div>
         )}
