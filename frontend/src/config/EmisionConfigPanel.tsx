@@ -36,15 +36,17 @@ const FUNERARIO_SOLO_PREGUNTAS = true;
 
 type Tab = 'general' | 'preguntas' | 'conexion' | 'mapeador';
 
-/** Ramos con cuestionario y semáforo propios: 9 Funerario, 1 Vida, 5 AP, 7 Salud. */
-type RamoCuestionario = '9' | '1' | '5' | '7';
+/** Ramos con cuestionario y semáforo propios: 9 Funerario, 1 Vida, 5 AP, 7 Salud, 51 Combinado Familiar. */
+type RamoCuestionario = '9' | '1' | '5' | '7' | '51';
 
 const RAMO_NOMBRES: Record<RamoCuestionario, string> = {
   '9': 'Funerario',
   '1': 'Vida',
   '5': 'Accidentes personales',
   '7': 'Salud',
+  '51': 'Combinado Familiar',
 };
+
 
 interface ApiMapEntry {
   internalKey: string;
@@ -277,7 +279,7 @@ export function EmisionConfigPanel() {
         | undefined;
       const ramoSeed = ramoCatalog as Partial<Record<RamoCuestionario, HealthQuestionDraft[]>>;
       const nextRamo: Record<string, HealthQuestionDraft[]> = {};
-      for (const key of ['1', '5', '9', '7'] as const) {
+      for (const key of ['1', '5', '9', '7', '51'] as const) {
         const saved = storedRamo?.[key];
         const fallback = ramoSeed[key] ?? [];
         nextRamo[key] = enrichHealthQuestionScores(
@@ -310,6 +312,7 @@ export function EmisionConfigPanel() {
     '1': cleanQuestions(byRamo['1'] || [], '1'),
     '5': cleanQuestions(byRamo['5'] || [], '5'),
     '7': cleanQuestions(byRamo['7'] || [], '7'),
+    '51': cleanQuestions(byRamo['51'] || [], '51'),
     '9': cleanQuestions(scoringRamo === '9' ? healthQuestions : (byRamo['9'] || []), '9'),
   });
 
@@ -657,6 +660,7 @@ export function EmisionConfigPanel() {
                           ['1', 'Vida'],
                           ['5', 'Accidentes personales'],
                           ['7', 'Salud'],
+                          ['51', 'Combinado Familiar'],
                         ] as const).map(([key, label]) => {
                           const rows = byRamo[key] || [];
                           const padres = rows.filter((q) => !q.showIf?.field).length;
