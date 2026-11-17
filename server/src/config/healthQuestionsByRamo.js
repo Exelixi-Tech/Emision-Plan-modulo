@@ -210,7 +210,7 @@ applyDefaultScores(AP, DEFAULT_SCORES.ap);
 function storedRamoKey(cramo) {
   const n = Number(cramo);
   if (n === 45 || n === 9) return '9';
-  if (n === 1 || n === 5 || n === 7) return String(n);
+  if (n === 1 || n === 5 || n === 7 || n === 51) return String(n);
   return '';
 }
 
@@ -250,7 +250,7 @@ function catalogForConsultedRamo(cramo) {
 }
 
 /** Ramo con el que se guarda cada cuestionario en product_config.healthQuestionsByRamo. */
-const RAMO_BY_KIND = { vida: 1, ap: 5, funerario: 9, salud: 7 };
+const RAMO_BY_KIND = { vida: 1, ap: 5, funerario: 9, salud: 7, combinado: 51 };
 
 /**
  * @param {string | undefined} raw lista separada por comas (.env)
@@ -268,9 +268,9 @@ function productosFromEnv(raw, fallback) {
 
 /**
  * Cuestionario según el producto Sis2000 que manda el SSO.
- * Vida 76 · AP 78 y 79 · Funerario 57 (configurable por .env).
+ * Vida 76 · AP 78 y 79 · Funerario 57 · Salud 14 y 15 · Combinado Familiar 51 (configurable por .env).
  * @param {unknown} cproducto
- * @returns {{ kind: 'ap'|'vida'|'funerario', questions: object[], cramo: number } | null}
+ * @returns {{ kind: 'ap'|'vida'|'funerario'|'salud'|'combinado', questions: object[], cramo: number } | null}
  */
 function catalogForProducto(cproducto) {
   const prod = String(cproducto ?? '').trim();
@@ -288,6 +288,10 @@ function catalogForProducto(cproducto) {
   // Salud (ramo 7): sin cuestionario de fábrica; solo el que se configure en el parametrizador.
   if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_SALUD, '14,15').has(prod)) {
     return { kind: 'salud', questions: [], cramo: RAMO_BY_KIND.salud };
+  }
+  // Combinado Familiar (producto 51, ramo 51): igual que Salud, solo lo que se configure en el panel.
+  if (productosFromEnv(env.LAMUNDIAL_PRODUCTOS_COMBINADO, '51').has(prod)) {
+    return { kind: 'combinado', questions: [], cramo: RAMO_BY_KIND.combinado };
   }
   return null;
 }

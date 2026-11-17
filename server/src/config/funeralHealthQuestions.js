@@ -208,14 +208,18 @@ async function resolveQuestionsForPlan(cplan, opts = {}) {
     scoringRulesStoredForRamo,
   } = require('./healthQuestionsByRamo');
   const prod = String(opts.cproducto ?? meta?.cproducto ?? '').trim();
-  // Preguntas solo por producto del SSO (76 vida, 78/79 AP, 57 funerario). Otro producto
-  // (4 en 1, salud, combinado…) no hereda el cuestionario por el ramo de su plan.
+  // Preguntas solo por producto del SSO (76 vida, 78/79 AP, 14/15 salud, 51 combinado familiar,
+  // 57 funerario). Otro producto (4 en 1…) no hereda el cuestionario por el ramo de su plan.
   // Sin producto en el SSO se usa el ramo, como antes.
   const byProducto = catalogForProducto(prod);
   const cramo = byProducto ? byProducto.cramo : resolveHealthCramo(opts, meta);
   const consulted = byProducto || (prod ? null : catalogForConsultedRamo(cramo));
   const ramoDirecto =
-    consulted && (consulted.kind === 'ap' || consulted.kind === 'vida' || consulted.kind === 'salud');
+    consulted &&
+    (consulted.kind === 'ap' ||
+      consulted.kind === 'vida' ||
+      consulted.kind === 'salud' ||
+      consulted.kind === 'combinado');
   const funerarioDeEsteProducto =
     consulted?.kind === 'funerario' && (!prod || Boolean(byProducto));
 
