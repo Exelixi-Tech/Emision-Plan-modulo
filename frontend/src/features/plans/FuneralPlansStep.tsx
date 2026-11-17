@@ -849,7 +849,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                 <div className="w-full sm:w-auto sm:max-w-[15rem] sm:shrink-0 text-left sm:text-right">
                   <p className="text-[0.62rem] font-black text-indigo-700 uppercase tracking-widest">Prima</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600 leading-relaxed">
-                    Se calcula según las respuestas del cuestionario de salud. Verás el monto al pagar.
+                    Verás el monto al pagar.
                   </p>
                 </div>
               ) : (
