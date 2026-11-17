@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Check, X, Loader2, ClipboardList, User, AlertTriangle,
   History, ExternalLink, FileDown, ArrowLeft,
-  RefreshCw, Mail, ShieldCheck, Inbox, Phone,
+  RefreshCw, Mail, ShieldCheck, Inbox, Phone, Search,
 } from 'lucide-react';
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
@@ -1003,6 +1003,13 @@ export function EmisionRevisionPanel() {
   const [acting, setActing] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [filter, setFilter] = useState<ListFilter>('pending');
+  // Búsqueda en el servidor por nombre, cédula/RIF, correo o póliza: llega a cualquier solicitud, no solo a las últimas.
+  const [busqueda, setBusqueda] = useState('');
+  const [busquedaAplicada, setBusquedaAplicada] = useState('');
+  useEffect(() => {
+    const id = window.setTimeout(() => setBusquedaAplicada(busqueda.trim()), 400);
+    return () => window.clearTimeout(id);
+  }, [busqueda]);
   const [showRawSnapshot, setShowRawSnapshot] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -1032,7 +1039,8 @@ export function EmisionRevisionPanel() {
     setError('');
     try {
       const q = filter === 'pending' ? '&estado=pending' : '';
-      const url = `${NEXUS_URL}/api/funeral-submissions?empresaId=${EMPRESA_ID}${q}&limit=200`;
+      const buscar = busquedaAplicada.length >= 2 ? `&q=${encodeURIComponent(busquedaAplicada)}` : '';
+      const url = `${NEXUS_URL}/api/funeral-submissions?empresaId=${EMPRESA_ID}${q}${buscar}&limit=${buscar ? 500 : 200}`;
       let res = await fetch(url, { headers: authHeaders() });
       let data = await res.json().catch(() => ({}));
       if (res.status === 403 && (await refreshRevisionToken())) {
@@ -1050,7 +1058,7 @@ export function EmisionRevisionPanel() {
     } finally {
       setLoading(false);
     }
-  }, [filter, applyRows]);
+  }, [filter, busquedaAplicada, applyRows]);
 
   useEffect(() => {
     void (async () => {
@@ -1136,8 +1144,9 @@ export function EmisionRevisionPanel() {
   const polNum = selected ? policyNumber(selected) : undefined;
   const recNum = selected ? receiptNumber(selected) : undefined;
   const emittedWhen = selected?.emittedAt ?? emission?.emittedAt;
-  const emptyMessage =
-    filter === 'pending'
+  const emptyMessage = busquedaAplicada.length >= 2
+    ? `No hay solicitudes que coincidan con «${busquedaAplicada}» en esta pestaña.`
+    : filter === 'pending'
       ? 'No hay solicitudes pendientes de revisión.'
       : filter === 'history'
         ? 'No hay registros en el histórico (aprobadas, rechazadas o pagadas).'
@@ -1258,6 +1267,18 @@ export function EmisionRevisionPanel() {
               <RefreshCw size={12} />
               Actualizar
             </button>
+          </div>
+          <div className="mx-3 mt-2 shrink-0 relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" aria-hidden />
+            <input
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar por nombre, cédula o póliza"
+              aria-label="Buscar solicitudes por nombre, cédula o póliza"
+              maxLength={80}
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
+            />
           </div>
           {error && (
             <div className="mx-3 mt-2 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 flex items-start gap-2">
