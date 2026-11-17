@@ -10,6 +10,8 @@ import PatrimonialPlansApp from './apps/PatrimonialPlansApp';
 import ExelixiCatalogPlansApp from './apps/ExelixiCatalogPlansApp';
 import ProveedorPlansApp from './apps/ProveedorPlansApp';
 import { DevFlowSwitcher } from './components/DevFlowSwitcher';
+import RcvCotizacionApp from './apps/RcvCotizacionApp';
+import { isRcvCotizacionFlow } from './lib/rcv-cotizacion-api';
 
 type FlowType = 'proveedor' | 'funerario' | 'rcv' | 'exelixi';
 
@@ -67,6 +69,8 @@ function DevApp() {
  */
 export default function App() {
   useSessionTokenDelegation();
+  // Emitir RCV desde cotización de SysIP: solo si el token trae cotizacionID; sin él, todo sigue igual.
+  if (isRcvCotizacionFlow()) return <RcvCotizacionApp />;
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('devflow')) return <DevApp />;
   if (isExelixiCatalogFlow()) return <ExelixiCatalogPlansApp />;
   if (isProveedorFlow()) return <ProveedorPlansApp />;

@@ -24,6 +24,7 @@ const funeralHealthRoutes = require('./routes/funeralHealth');
 const funeralSubmissionRoutes = require('./routes/funeralSubmission');
 const patrimonialRoutes = require('./routes/patrimonial');
 const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
+const rcvCotizacionRoutes = require('./routes/rcvCotizacion');
 const nexusAuth      = require('./middleware/nexusAuth');
 
 const app = express();
@@ -68,8 +69,11 @@ app.use('/api/patrimonial', nexusAuth, patrimonialRoutes);
 app.use('/api/patrimonial', nexusAuth, patrimonialSubmissionRoutes);
 // Emisión genérica Exélixi (product-builder → nest-api product-emission)
 app.use('/api/exelixi', nexusAuth, exelixiRoutes);
-// Cotizaciones y emisiones La Mundial
-app.use('/api', nexusAuth, emisionRoutes);
+// Emitir RCV desde cotización de SysIP (cotizacionID en la metadata del token).
+app.use('/api/rcv-cotizacion', nexusAuth, rcvCotizacionRoutes);
+// Cotizaciones y emisiones La Mundial. emitGuard solo toma POST /policies/emit del flujo de cotización;
+// sin cotizacionID en el token ni comprobante en el state hace next() y sigue la emisión RCV de siempre.
+app.use('/api', nexusAuth, rcvCotizacionRoutes.emitGuard, emisionRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error('[modulo-emision] error:', err);
