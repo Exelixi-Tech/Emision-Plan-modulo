@@ -19,6 +19,7 @@ import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
 import { frecuenciasPersonas, getCuotasByFrecuencia } from '../../lib/frecuencia';
+import { proveedorHealthPatch } from '../../lib/personas-health';
 
 /** Convierte un PlanPer de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanPer): Plan {
@@ -39,7 +40,11 @@ function apiPlanToWizardPlan(p: PlanPer): Plan {
   };
 }
 
-export function ProveedorStep() {
+/**
+ * `hidePrice`: el producto tiene cuestionario de salud; como en personas no se muestra ningún
+ * monto aquí y el cliente ve la prima al pagar.
+ */
+export function ProveedorStep({ hidePrice = false }: { hidePrice?: boolean } = {}) {
   const {
     funeral,
     selectedPlan,
@@ -317,16 +322,11 @@ export function ProveedorStep() {
                 if (found) setCategory(found.name);
                 setSelectedPlan(found ?? null);
                 if (found) {
-                  // Plan Proveedor no tiene cuestionario de salud (Sis2000 sin preguntas para el producto),
-                  // así que el cuestionario se da por resuelto. Los términos NO se marcan aquí: el cliente
-                  // los acepta explícitamente con la casilla del proveedor (al cambiar de plan se vuelven a pedir).
-                  setFuneral({
-                    healthQuestionnaireDone: true,
-                    healthAnswers: {},
-                    diagnosticoEnfermedad: false,
-                    descripcionEnfermedad: '',
-                    aceptaTerminos: false,
-                  });
+                  // El cuestionario queda pendiente hasta saber si el producto tiene preguntas en el panel:
+                  // sin preguntas ProveedorPlansApp lo da por resuelto (como siempre); con preguntas se
+                  // responden al confirmar. Los términos NO se marcan aquí: el cliente los acepta
+                  // explícitamente con la casilla del proveedor (al cambiar de plan se vuelven a pedir).
+                  setFuneral({ ...proveedorHealthPatch(true), aceptaTerminos: false });
                 }
               }}
               disabled={plansLoading || apiPlans.length === 0}
@@ -386,7 +386,7 @@ export function ProveedorStep() {
           </div>
           {cuotasFrecuencia > 1 && (
             <p className="mt-1.5 text-xs text-slate-600">
-              {annualUsd > 0
+              {annualUsd > 0 && !hidePrice
                 ? `${cuotasFrecuencia} cuotas de $${(annualUsd / cuotasFrecuencia).toFixed(2)}. `
                 : `${cuotasFrecuencia} cuotas. `}
               Hoy pagas la 1ª cuota y las siguientes se cobran por domiciliación bancaria.
@@ -504,6 +504,14 @@ export function ProveedorStep() {
                 )}
               </div>
 
+              {hidePrice ? (
+                <div className="w-full sm:w-auto sm:max-w-[15rem] sm:shrink-0 text-left sm:text-right">
+                  <p className="text-[0.62rem] font-black text-indigo-700 uppercase tracking-widest">Prima</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600 leading-relaxed">
+                    Verás el monto al pagar.
+                  </p>
+                </div>
+              ) : (
               <div className="w-full sm:w-auto sm:shrink-0 text-left sm:text-right">
                 <div className="flex items-end gap-1 sm:justify-end">
                   <span className="text-base sm:text-[1.2rem] font-display font-black text-slate-500 leading-none pb-1 sm:pb-2">$</span>
@@ -525,6 +533,7 @@ export function ProveedorStep() {
                   </p>
                 )}
               </div>
+              )}
             </div>
 
             <div className="divider-soft mb-5" />

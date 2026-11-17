@@ -11,9 +11,10 @@ import {
   saveFuneralHealthAnswers,
   submitFuneralPolicyReview,
   validateFuneralEmission,
-  PolicyEmitError,
   type HealthQuestion,
 } from '../lib/api';
+import { FREC_LABELS, getSessionId, insuredKey, insuredLabel, mapHealthToFuneral } from '../lib/personas-health';
+import { toastPersonasBlocked } from '../features/plans/personasBlockedToast';
 import { EmissionPlanShell } from './EmissionPlanShell';
 import { isFuneralInsuredComplete } from '../features/plans/FuneralInsuredsEditor';
 import { syncTitularFromTomador } from '../lib/funeral-sync';
@@ -22,14 +23,6 @@ import {
   TarjetaPersonasDeclaraciones,
   type TarjetaPersonasDeclaracionesResult,
 } from '../features/plans/TarjetaPersonasDeclaraciones';
-
-const FREC_LABELS: Record<string, string> = {
-  M: 'Pago mensual',
-  T: 'Pago trimestral',
-  C: 'Pago cuatrimestral',
-  S: 'Pago semestral',
-  A: 'Pago anual',
-};
 
 function questionnaireForPlan(
   planCramo: number | undefined,
@@ -50,45 +43,6 @@ function questionnaireForPlan(
   return { cramo, cproducto };
 }
 
-
-function getSessionId(): string {
-  try {
-    return new URLSearchParams(window.location.search).get('sid') || 'standalone';
-  } catch {
-    return 'standalone';
-  }
-}
-
-function insuredKey(person: { tipoDoc?: string; identificacion?: string }, idx: number) {
-  const id = String(person.identificacion ?? '').replace(/\D/g, '');
-  if (id) return `${String(person.tipoDoc || 'V').trim()}-${id}`;
-  return `aseg-${idx}`;
-}
-
-function insuredLabel(person: { nombre?: string; apellido?: string; identificacion?: string }, idx: number) {
-  const name = [person.nombre, person.apellido].filter(Boolean).join(' ').trim();
-  return name || String(person.identificacion || '').trim() || `Asegurado ${idx + 1}`;
-}
-
-/**
- * Como SysIP: los términos solo se exigen si el cuestionario del producto los pregunta.
- * Producto sin pregunta `aceptaTerminos` (ej. Salud Individual) no bloquea en Pagos.
- */
-function mapHealthToFuneral(
-  byInsured: Record<string, Record<string, unknown>>,
-  questions: HealthQuestion[],
-) {
-  const first = Object.values(byInsured)[0] ?? {};
-  const pideTerminos = questions.some((q) => q.id === 'aceptaTerminos');
-  return {
-    diagnosticoEnfermedad: first.diagnosticoEnfermedad === true,
-    descripcionEnfermedad: String(first.descripcionEnfermedad ?? ''),
-    aceptaTerminos: pideTerminos ? first.aceptaTerminos === true : true,
-    healthAnswers: first,
-    healthAnswersByInsured: byInsured,
-    healthQuestionnaireDone: true,
-  };
-}
 
 /**
  * Paso 4 — Funerario únicamente.
@@ -209,31 +163,6 @@ export default function FuneralPlansApp() {
       key: insuredKey(a, idx),
       label: insuredLabel(a, idx),
     }));
-
-  function toastPersonasBlocked(err: unknown) {
-    const code = err instanceof PolicyEmitError ? err.code : '';
-    const msg =
-      err instanceof Error
-        ? err.message
-        : 'Ya existe una póliza activa para este asegurado.';
-    if (code === 'PERSONAS_DUPLICATE' || /póliza vigente|mismo asegurado/i.test(msg)) {
-      toast.warning(
-        'Póliza vigente',
-        'Este asegurado ya tiene una póliza activa. No se envía al técnico ni se continúa al pago.',
-        8000,
-      );
-      return;
-    }
-    if (code === 'HEALTH_BLOCKED') {
-      toast.warning(
-        'Cuestionario de salud',
-        msg || 'Según tus respuestas, la solicitud no puede continuar en línea.',
-        9000,
-      );
-      return;
-    }
-    toast.error('No se puede continuar', msg);
-  }
 
   async function handleContinuar() {
     if (pendingSubmission || (funeralSubmission && funeralSubmission.verdict !== 'emit')) {
