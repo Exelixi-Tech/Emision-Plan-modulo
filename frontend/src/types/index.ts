@@ -157,6 +157,11 @@ export interface Plan {
   maxAsegurados?: number;
   /** Días de vigencia (Viajero / maplanes_frec.ndias). */
   ndias?: number | null;
+  /** Viajero: los días vienen de la configuración del plan (días exactos), no solo del nombre. */
+  ndiasFijo?: boolean;
+  /** Viajero: rango de días del viaje que admite el plan (nest-api). */
+  ndiasMin?: number | null;
+  ndiasMax?: number | null;
 }
 
 export type PaymentMethod = 'card' | 'transfer' | 'mobile' | 'otp';

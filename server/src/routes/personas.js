@@ -94,7 +94,10 @@ function personasIfrecuenciaCotiza(ifrecuencia) {
   return FRECUENCIAS_FRACCIONADAS.has(ifrecuencia) ? 'A' : ifrecuencia;
 }
 
-/** Viajero: fechas del viaje elegidas en el plan (salida/regreso, tope 15 días). */
+/**
+ * Viajero: fechas del viaje elegidas en el plan (salida/regreso). Los días que admite cada plan los
+ * valida el wizard (configuración del plan) y nest-api al cotizar; aquí solo se descarta más de un año.
+ */
 function viajeroVigenciaDesdeFechas(funeral) {
   const fdesde = String(funeral?.viajeFdesde ?? '').trim();
   const fhasta = String(funeral?.viajeFhasta ?? '').trim();
@@ -102,7 +105,7 @@ function viajeroVigenciaDesdeFechas(funeral) {
   const ndias = Math.round(
     (new Date(`${fhasta}T00:00:00Z`).getTime() - new Date(`${fdesde}T00:00:00Z`).getTime()) / 86400000,
   ) + 1;
-  if (!Number.isFinite(ndias) || ndias < 1 || ndias > 15) return null;
+  if (!Number.isFinite(ndias) || ndias < 1 || ndias > 366) return null;
   return { ndias, fdesde, fhasta };
 }
 

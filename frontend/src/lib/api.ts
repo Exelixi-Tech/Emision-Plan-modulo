@@ -843,6 +843,9 @@ export interface PlanPer {
   parentescos?: PlanParentescoPer[];
   /** Días de vigencia (Viajero / maplanes_frec). */
   ndias?: number | null;
+  /** Viajero: rango de días del viaje que admite el plan. */
+  ndiasMin?: number | null;
+  ndiasMax?: number | null;
 }
 
 /** Asegurado que se envía a la cotización de personas (formato amigable). */
