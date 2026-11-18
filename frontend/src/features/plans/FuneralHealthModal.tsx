@@ -6,7 +6,6 @@ import {
 import type { Plan, PolicyQuote } from '../../types';
 import type { HealthQuestion } from '../../lib/api';
 import { Textarea, Select } from '../../components/ui/FormField';
-import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { Button } from '../../components/ui/Button';
 
 export type HealthInsuredTab = { key: string; label: string };
@@ -39,26 +38,6 @@ function isVisible(q: HealthQuestion, answers: Record<string, unknown>): boolean
   return String(actual ?? '') === String(expected);
 }
 
-function withBooleanDefaults(
-  questions: HealthQuestion[],
-  answers: Record<string, unknown>,
-): Record<string, unknown> {
-  const next = { ...answers };
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const q of questions) {
-      if (q.type !== 'boolean') continue;
-      if (!isVisible(q, next)) continue;
-      if (typeof next[q.id] !== 'boolean') {
-        next[q.id] = false;
-        changed = true;
-      }
-    }
-  }
-  return next;
-}
-
 function requiresYes(q: HealthQuestion): boolean {
   if (q.type !== 'boolean') return false;
   if (q.blockIfFalse === true) return true;
@@ -73,13 +52,17 @@ function validateAnswers(
   for (const q of questions) {
     if (!isVisible(q, answers)) continue;
     const val = answers[q.id];
+    // Todas las preguntas visibles son obligatorias (pedido 18-nov-2026): sin respuestas por defecto.
     if (q.type === 'boolean') {
-      if (requiresYes(q) && val !== true) {
+      if (typeof val !== 'boolean') {
+        errors[q.id] = 'Responde Sí o No.';
+      } else if (requiresYes(q) && val !== true) {
         errors[q.id] = q.blockReason || 'Debes responder Sí para continuar.';
       }
       continue;
     }
-    if (!q.required) continue;
+    // Lista sin opciones configuradas: no se puede responder, así que no bloquea al cliente.
+    if ((q.type === 'select' || q.type === 'multi_select') && !(q.options ?? []).length) continue;
     if (q.type === 'text') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {
@@ -117,8 +100,7 @@ function isInsuredReady(
   questions: HealthQuestion[],
   answers: Record<string, unknown>,
 ): boolean {
-  const filled = withBooleanDefaults(questions, answers);
-  return Object.keys(validateAnswers(questions, filled)).length === 0;
+  return Object.keys(validateAnswers(questions, answers)).length === 0;
 }
 
 function questionCardClass(hasError: boolean, filled: boolean): string {
@@ -162,7 +144,7 @@ export function FuneralHealthModal({
 
   const answers = byInsured[activeKey] ?? {};
   const liveErrors = useMemo(
-    () => validateAnswers(questions, withBooleanDefaults(questions, answers)),
+    () => validateAnswers(questions, answers),
     [questions, answers],
   );
 
@@ -207,7 +189,7 @@ export function FuneralHealthModal({
   const handleSubmit = () => {
     const filled: Record<string, Record<string, unknown>> = {};
     for (const t of tabs) {
-      filled[t.key] = withBooleanDefaults(questions, byInsured[t.key] ?? {});
+      filled[t.key] = { ...(byInsured[t.key] ?? {}) };
       const nextErrors = validateAnswers(questions, filled[t.key]);
       const pending = !visited[t.key] || Object.keys(nextErrors).length > 0;
       if (pending) {
@@ -350,7 +332,7 @@ export function FuneralHealthModal({
           ) : (
             visibleQuestions.map((q, idx) => {
               const nested = Boolean(q.showIf?.field);
-              const err = errors[q.id] || liveErrors[q.id];
+              const err = errors[q.id] || (answers[q.id] !== undefined ? liveErrors[q.id] : undefined);
               const label = (q.label || '').trim() || 'Pregunta';
               return (
               <div
@@ -359,30 +341,38 @@ export function FuneralHealthModal({
                 style={{ animationDelay: `${idx * 40}ms` }}
               >
                 {q.type === 'boolean' ? (
-                  <div className={err ? 'rounded-2xl ring-1 ring-rose-300' : ''}>
-                    <ToggleSwitch
-                      checked={answers[q.id] === true}
-                      onChange={(v) => setAnswer(q.id, v)}
-                      label={label}
-                      description={q.description}
-                    />
-                    <p className="mt-1.5 ml-1 text-[0.72rem] leading-relaxed text-slate-500">
-                      {answers[q.id] === true ? (
-                        <span className="font-semibold text-indigo-700">Respuesta: Sí.</span>
-                      ) : (
-                        <span className="font-semibold text-slate-600">Respuesta: No.</span>
-                      )}
-                      {' '}
-                      Encienda el interruptor solo si la respuesta es sí. Si lo deja apagado, se guarda como no.
-                    </p>
-                    {err && (
-                      <p className="text-xs text-rose-500 font-medium mt-1.5 ml-1">{err}</p>
+                  <div className={questionCardClass(Boolean(err), typeof answers[q.id] === 'boolean')}>
+                    <p className="font-bold text-sm text-slate-700 leading-snug">{label} *</p>
+                    {q.description && (
+                      <p className="mt-1 text-[0.78rem] leading-relaxed text-slate-500">{q.description}</p>
                     )}
+                    <div className="mt-3 grid grid-cols-2 gap-2" role="radiogroup" aria-label={label}>
+                      {([true, false] as const).map((v) => {
+                        const picked = answers[q.id] === v;
+                        return (
+                          <button
+                            key={String(v)}
+                            type="button"
+                            role="radio"
+                            aria-checked={picked}
+                            onClick={() => setAnswer(q.id, v)}
+                            className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                              picked
+                                ? 'border-indigo-500 bg-indigo-600 text-white'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200'
+                            }`}
+                          >
+                            {v ? 'Sí' : 'No'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {err && <p className="text-xs text-rose-500 font-medium mt-1.5">{err}</p>}
                   </div>
                 ) : q.type === 'text' ? (
                   <div className={questionCardClass(Boolean(err), Boolean(String(answers[q.id] ?? '').trim()))}>
                     <p className="font-bold text-sm text-slate-700 leading-snug">
-                      {label}{q.required ? ' *' : ''}
+                      {label} *
                     </p>
                     {q.description && (
                       <p className="mt-1 text-[0.78rem] leading-relaxed text-slate-500">{q.description}</p>
@@ -398,7 +388,7 @@ export function FuneralHealthModal({
                 ) : q.type === 'multi_select' ? (
                   <div className={questionCardClass(Boolean(err), (Array.isArray(answers[q.id]) ? answers[q.id] as unknown[] : []).length > 0)}>
                     <p className="font-bold text-sm text-slate-700 leading-snug">
-                      {label}{q.required ? ' *' : ''}
+                      {label} *
                     </p>
                     {q.description && (
                       <p className="mt-1 text-[0.78rem] leading-relaxed text-slate-500">{q.description}</p>
@@ -434,7 +424,7 @@ export function FuneralHealthModal({
                 ) : (
                   <div className={questionCardClass(Boolean(err), Boolean(String(answers[q.id] ?? '').trim()))}>
                     <p className="font-bold text-sm text-slate-700 leading-snug">
-                      {label}{q.required ? ' *' : ''}
+                      {label} *
                     </p>
                     {q.description && (
                       <p className="mt-1 text-[0.78rem] leading-relaxed text-slate-500">{q.description}</p>
