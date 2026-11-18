@@ -328,7 +328,10 @@ export function EmisionConfigPanel() {
         enabled: q.enabled !== false,
       };
       if (!next.showIf?.field) delete next.showIf;
-      if (next.type === 'select') {
+      if (next.type === 'multi_select') {
+        // Selección múltiple: conservar sus opciones (antes se borraban al guardar y el cliente veía «Indique» vacío).
+        if (!Array.isArray(next.options) || next.options.length === 0) delete next.options;
+      } else if (next.type === 'select') {
         next.options =
           Array.isArray(next.options) && next.options.length > 0
             ? next.options
