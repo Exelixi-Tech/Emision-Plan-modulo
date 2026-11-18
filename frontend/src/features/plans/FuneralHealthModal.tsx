@@ -61,6 +61,8 @@ function validateAnswers(
       }
       continue;
     }
+    // Lista sin opciones configuradas: no se puede responder, así que no bloquea al cliente.
+    if ((q.type === 'select' || q.type === 'multi_select') && !(q.options ?? []).length) continue;
     if (q.type === 'text') {
       if (!String(val ?? '').trim()) errors[q.id] = 'Este campo es obligatorio';
     } else if (q.type === 'select') {

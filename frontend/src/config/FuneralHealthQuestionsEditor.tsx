@@ -150,7 +150,7 @@ function scoreSummary(q: HealthQuestionDraft): string {
     if (q.scoreIfFalse) bits.push(`No ${formatHealthScoreSigned(q.scoreIfFalse, '%')}`);
   } else if (q.type === 'text' && q.scoreIfFilled) {
     bits.push(`texto ${formatHealthScoreSigned(q.scoreIfFilled, '%')}`);
-  } else if (q.type === 'select' && q.optionScores) {
+  } else if ((q.type === 'select' || q.type === 'multi_select') && q.optionScores) {
     const scored = Object.entries(q.optionScores).filter(
       ([, n]) => Number.isFinite(Number(n)) && Number(n) !== 0,
     );
@@ -295,7 +295,7 @@ export function FuneralHealthQuestionsEditor({
     }
     const id = `detalle_${parent.id}_${Date.now().toString(36).slice(-4)}`;
     const equals =
-      parent.type === 'select' && parent.options?.[0]
+      (parent.type === 'select' || parent.type === 'multi_select') && parent.options?.[0]
         ? parent.options[0].value
         : true;
     const child: HealthQuestionDraft = {
@@ -351,7 +351,7 @@ export function FuneralHealthQuestionsEditor({
 
   const equalsChoices = (parentId: string | undefined) => {
     const parent = questions.find((q) => q.id === parentId);
-    if (parent?.type === 'select' && parent.options?.length) {
+    if ((parent?.type === 'select' || parent?.type === 'multi_select') && parent.options?.length) {
       return parent.options.map((o) => ({ value: o.value, label: o.label }));
     }
     return [
@@ -623,13 +623,13 @@ export function FuneralHealthQuestionsEditor({
                         onChange={(e) => {
                           const type = e.target.value as HealthQuestionType;
                           const patch: Partial<HealthQuestionDraft> = { type };
-                          if (type === 'select' && !q.options?.length) {
+                          if ((type === 'select' || type === 'multi_select') && !q.options?.length) {
                             patch.options = [
                               { value: 'si', label: 'Sí' },
                               { value: 'no', label: 'No' },
                             ];
                           }
-                          if (type !== 'select') {
+                          if (type !== 'select' && type !== 'multi_select') {
                             patch.options = undefined;
                             patch.optionScores = undefined;
                           }
@@ -639,6 +639,7 @@ export function FuneralHealthQuestionsEditor({
                         <option value="boolean">Sí / No</option>
                         <option value="text">Texto libre</option>
                         <option value="select">Lista de opciones</option>
+                        <option value="multi_select">Varias opciones</option>
                       </select>
                     </div>
                     <div className="sm:col-span-8 flex items-end gap-3 pb-0.5">
@@ -753,7 +754,7 @@ export function FuneralHealthQuestionsEditor({
                             }
                             const parent = questions.find((p) => p.id === field);
                             const equals =
-                              parent?.type === 'select' && parent.options?.[0]
+                              (parent?.type === 'select' || parent?.type === 'multi_select') && parent.options?.[0]
                                 ? parent.options[0].value
                                 : true;
                             update(idx, { showIf: { field, equals } });
@@ -888,7 +889,7 @@ export function FuneralHealthQuestionsEditor({
                         </div>
                       </div>
                     )}
-                    {q.type === 'select' && (
+                    {(q.type === 'select' || q.type === 'multi_select') && (
                       <div className="space-y-2">
                         <p className="text-[11px] text-slate-500">Valor interno · texto que ve el cliente · % del técnico.</p>
                         {(q.options ?? []).map((opt, oi) => (
