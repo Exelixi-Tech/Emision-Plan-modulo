@@ -242,6 +242,8 @@ export interface RcvPlanData {
   sumaAsegAd?: number;
   cproductor?: number | string | null;
   xproductor?: string | null;
+  /** Observaciones de la póliza (máx. 255, opcional). Se guardan en adpoliza.xobserva al emitir. */
+  observaciones?: string;
 }
 
 /** Datos del producto Funerario (personas). Se usa cuando product = 'funerario'. */

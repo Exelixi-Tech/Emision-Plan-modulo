@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PlansStep } from '../features/plans/PlansStep';
+import { RcvObservacionesField } from '../features/plans/RcvObservacionesField';
 import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
@@ -92,6 +93,13 @@ export default function RcvPlansApp() {
         onAutoReady={handleTarjetaAutoReady}
         onAutoFallback={handleTarjetaAutoFallback}
       />
+      {/* Observaciones de la póliza: solo cuando se va a emitir (el cotizador no emite;
+          con tarjeta el paso se salta solo). */}
+      {!cotizador && !tarjetaAuto && selectedPlan && (
+        <div className="mt-6">
+          <RcvObservacionesField />
+        </div>
+      )}
     </EmissionPlanShell>
   );
 }
