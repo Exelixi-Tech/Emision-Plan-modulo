@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { PlansStep } from '../features/plans/PlansStep';
+import { RcvObservacionesField } from '../features/plans/RcvObservacionesField';
 import { useWizardStore } from '../store/wizardStore';
 import { toast } from '../store/toastStore';
 import { validatePlanReady } from '../lib/planContinue';
@@ -73,6 +74,12 @@ export default function RcvPlansApp() {
       continuarLabel={cotizador ? 'Ver cotización' : undefined}
     >
       <PlansStep />
+      {/* Observaciones de la póliza: solo cuando se va a emitir (el cotizador no emite). */}
+      {!cotizador && selectedPlan && (
+        <div className="mt-6">
+          <RcvObservacionesField />
+        </div>
+      )}
     </EmissionPlanShell>
   );
 }

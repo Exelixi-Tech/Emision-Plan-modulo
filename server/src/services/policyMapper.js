@@ -20,6 +20,7 @@ const {
 } = require('./catalogs');
 const { resolveCusuarioCoberturas } = require('./planesClient');
 const { renovacionDeState } = require('../lib/renovacion');
+const { normalizarObservaciones } = require('../lib/observaciones');
 const {
   ocrRifDe,
   nombresPJ,
@@ -490,6 +491,8 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
   const rcv = state.rcv || {};
   const selectedCoberturas = resolveSelectedCoberturas(rcv, overrides);
   const coberAdicional = resolvePrimaryCoberAdicional(selectedCoberturas);
+  // Observaciones de la póliza (paso Plan de Emisión); Pagos las reenvía dentro de state.rcv.
+  const observaciones = normalizarObservaciones(rcv.observaciones);
 
   const tipo_cedula_tomador = normalizeTipoCedula(tomador.tipoDoc);
   const tipo_cedula_titular = sameInsured
@@ -540,6 +543,7 @@ function buildEmissionRequest(state, cotizacion, overrides = {}) {
     msumaaseg,
     iplaca,
     ...(renovacion ? { cnpoliza_rel: renovacion.cnpoliza_rel, itipoEmi: renovacion.itipoEmi } : {}),
+    ...(observaciones ? { observaciones } : {}),
 
     productor: productor != null ? String(productor) : undefined,
     cusuario,
@@ -802,6 +806,9 @@ function toLaMundialEmissionPayload(p, _cotizacion) {
     if (p.cocupacion_titular != null) body.cocupacion_titular = p.cocupacion_titular;
   }
   if (Array.isArray(p.expediente) && p.expediente.length > 0) body.expediente = p.expediente;
+  // nest-api guarda adpoliza.xobserva tras emitir; vacío no se envía.
+  const observaciones = normalizarObservaciones(p.observaciones);
+  if (observaciones) body.observaciones = observaciones;
 
   return body;
 }
