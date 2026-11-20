@@ -289,7 +289,8 @@ async function createEmissionAutoViaNestApi(payload) {
       message: result.message,
       fanopol: result.fanopol,
       fmespol: result.fmespol,
-      cpoliza: result.cpoliza != null ? Number(result.cpoliza) : undefined,
+      // Texto: NUMERIC(19), con Number() se redondea (ver cpolizaTexto en tarjetaActivateAfterEmit).
+      cpoliza: result.cpoliza != null ? String(result.cpoliza).trim() : undefined,
       casegurado: result.casegurado != null ? Number(result.casegurado) : undefined,
       _raw: body,
     };

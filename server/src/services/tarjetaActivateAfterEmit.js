@@ -69,9 +69,22 @@ function formatFactivacion(femision) {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
 }
 
+/**
+ * cpoliza como texto de dígitos. Es NUMERIC(19) en Sis2000 y la mayoría de las pólizas pasan de 2^53:
+ * con Number() se redondea (1800000000000234032 → 1800000000000234000) y la tarjeta queda en otra póliza.
+ * Un number ya inseguro se descarta (no se puede recuperar). '' si no hay un valor válido.
+ */
+function cpolizaTexto(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? String(value) : '';
+  const text = String(value).trim().replace(/\.0+$/, '');
+  if (!/^\d{1,19}$/.test(text)) return '';
+  return text.replace(/^0+/, '');
+}
+
 function resolvePolicyKeys(emission, meta) {
   const raw = emission?._raw?.result ?? emission?._raw ?? {};
-  const cpoliza = Number(emission?.cpoliza ?? raw.cpoliza ?? meta.cpoliza);
+  const cpoliza = cpolizaTexto(emission?.cpoliza ?? raw.cpoliza ?? meta.cpoliza);
   const casegurado = Number(emission?.casegurado ?? raw.casegurado ?? meta.casegurado);
   return { cpoliza, casegurado };
 }
@@ -97,7 +110,7 @@ function buildTarjetaActivatePayload(state, emission, opts = {}) {
   if (!cnpoliza || !Number.isFinite(fanopol) || !Number.isFinite(fmespol)) {
     return { _skip: 'datos_poliza_incompletos' };
   }
-  if (!Number.isFinite(cpoliza) || cpoliza <= 0) {
+  if (!cpoliza) {
     return { _skip: 'cpoliza_no_disponible' };
   }
   if (!Number.isFinite(casegurado) || casegurado <= 0) {
@@ -184,5 +197,6 @@ async function activateTarjetaAfterEmit(state, emission, metadata = {}, opts = {
 module.exports = {
   activateTarjetaAfterEmit,
   buildTarjetaActivatePayload,
+  cpolizaTexto,
   isRcvTarjetaFlow,
 };
