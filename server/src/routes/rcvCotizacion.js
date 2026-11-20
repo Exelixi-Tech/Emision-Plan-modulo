@@ -64,8 +64,8 @@ router.post('/checkout', async (req, res) => {
   const cproces = requireCotizacionId(req, res);
   if (!cproces) return undefined;
   try {
-    const { opcion, frecuencia, vehicle } = req.body || {};
-    const out = await service.prepararPago(cproces, { opcion, frecuencia, vehicle });
+    const { opcion, frecuencia, vehicle, tomador } = req.body || {};
+    const out = await service.prepararPago(cproces, { opcion, frecuencia, vehicle, tomador });
     return res.json({ success: true, ...out });
   } catch (err) {
     return send(res, err, 'checkout');

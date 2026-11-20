@@ -79,6 +79,7 @@ function clientState(extra = {}) {
       direccion: 'Av. Principal, Chacao', cestado: 13, estado: 'MIRANDA', cciudad: 101, ciudad: 'CHACAO',
       telefono: '(0414) 123-4567', email: 'ana@example.test',
       personaPoliticamenteExpuesta: false, aceptaTerminos: true, declaraVeracidad: true,
+      cprofesion: 12, cocupacion: 34, ocupacionSeparada: true,
     },
     sameInsured: true,
     hasDriver: false,
@@ -375,8 +376,18 @@ test('flujo completo: vista → checkout (1er recibo) → emisión post-pago con
     const badFreq = await call('POST', '/api/rcv-cotizacion/checkout', { opcion: 1, frecuencia: 'T' });
     assert.equal(badFreq.status, 400);
 
+    // Sin profesión no se cobra: el SP la exige (99013) y el pago quedaría sin póliza.
+    const sinProfesion = await call('POST', '/api/rcv-cotizacion/checkout', {
+      opcion: 1, frecuencia: 'M', vehicle: { placa: 'ab-123-cd', serial: '9BRBL3HE0L0123456' },
+      tomador: { cprofesion: 12 },
+    });
+    assert.equal(sinProfesion.status, 400);
+    assert.equal(sinProfesion.body.code, 'PROFESION_REQUERIDA');
+    assert.equal(sinProfesion.body.ticket, undefined);
+
     const checkout = await call('POST', '/api/rcv-cotizacion/checkout', {
       opcion: 1, frecuencia: 'M', vehicle: { placa: 'ab-123-cd', serial: '9BRBL3HE0L0123456' },
+      tomador: { cprofesion: 12, cocupacion: 34 },
     });
     assert.equal(checkout.status, 200);
     assert.equal(checkout.body.montos.primerUsd, 43.94);
@@ -424,6 +435,9 @@ test('flujo completo: vista → checkout (1er recibo) → emisión post-pago con
     assert.equal(body.mprima_esperada, 120.5);
     assert.equal(body.itipoEmi, 'NU');
     assert.equal(body.cplan, 'RCVBAS');
+    // Profesión del navegador llega al SP (debida diligencia simplificada).
+    assert.equal(body.cprofesion_tomador, 12);
+    assert.equal(body.cocupacion_tomador, 34);
     assert.equal(body.cmarca, '021');
     assert.equal(body.xrif_tomador, 12345678);
     assert.equal(body.ptasa, 250.1234);

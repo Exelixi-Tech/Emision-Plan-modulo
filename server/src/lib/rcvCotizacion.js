@@ -207,8 +207,21 @@ function verifyTicket(ticket) {
   }
 }
 
+/** J, G o C: persona jurídica (el mapper manda diligencia completa y el SP no exige profesión). */
+function tomadorEsJuridico(tipoDoc) {
+  return ['J', 'G', 'C'].includes(String(tipoDoc ?? '').trim().toUpperCase().charAt(0));
+}
+
+/** Regla de Emisión (profesion-ocupacion.ts): profesión y además ocupación o actividad, por código. */
+function tieneProfesionOcupacion(p) {
+  const has = (v) => String(v ?? '').trim() !== '';
+  return Boolean(p) && has(p.cprofesion) && (has(p.cocupacion) || has(p.cactividad));
+}
+
 module.exports = {
   readCotizacionId,
+  tomadorEsJuridico,
+  tieneProfesionOcupacion,
   round2,
   normalizeFrecuencia,
   cuotasPorFrecuencia,

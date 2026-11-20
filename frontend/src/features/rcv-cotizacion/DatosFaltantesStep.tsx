@@ -13,6 +13,8 @@ import type { CatalogItem } from '../../lib/api';
 import { Field, Input, Select } from '../../components/ui/FormField';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { PersonLocationFields } from '../../components/PersonLocationFields';
+import { ProfesionOcupacionFields } from '../../components/ProfesionOcupacionFields';
+import { usePersonCatalogs } from '../../hooks/usePersonCatalogs';
 import { SectionTitle, fmtFecha } from './parts';
 
 interface Props {
@@ -77,6 +79,7 @@ export function DatosFaltantesStep({ vista, form, onChange, errors }: Props) {
   const cats = useCatalogs();
   const ciudades = useCiudades(form.cestado ?? null);
   const juridico = esPersonaJuridica(c.tomador?.tipoDoc);
+  const personCatalogs = usePersonCatalogs();
 
   return (
     <div className="animate-fade-in space-y-7">
@@ -140,6 +143,11 @@ export function DatosFaltantesStep({ vista, form, onChange, errors }: Props) {
                 {cats.estadosCivil.map((s) => <option key={String(s.code)} value={String(s.code)}>{s.label}</option>)}
               </Select>
             </Field>
+            {/* Debida diligencia simplificada: el SP rechaza la emisión sin profesión u actividad (99013). */}
+            <ProfesionOcupacionFields person={form} onChange={onChange} catalogs={personCatalogs} />
+            {errors.profesion && (
+              <p className="sm:col-span-2 text-[0.72rem] text-rose-500 font-semibold">{errors.profesion}</p>
+            )}
           </div>
         </section>
       )}

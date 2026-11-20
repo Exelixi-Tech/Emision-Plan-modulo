@@ -8,6 +8,8 @@
  */
 import { isValidPhonePrefix } from './phone.ts';
 import { validateVehicleSerialMessage, VEHICLE_SERIAL_MAX_LEN } from './vehicle-serial.ts';
+import { hasProfesionOcupacion } from './profesion-ocupacion.ts';
+import type { ProfesionOcupacionFields } from '../types';
 
 export function round2(n: number): number {
   const v = Number(n);
@@ -72,7 +74,8 @@ export interface PersonaExtra {
   sexo: string;
 }
 
-export interface DatosFaltantes {
+/** Incluye profesión/ocupación/actividad del tomador: el SP la exige (debida diligencia simplificada, 99013). */
+export interface DatosFaltantes extends ProfesionOcupacionFields {
   placa: string;
   serial: string;
   serialMotor: string;
@@ -150,6 +153,9 @@ export function validarDatosFaltantes(
     if (!f.fechaNac) errors.fechaNac = 'Fecha de nacimiento del tomador requerida';
     else if (edad(f.fechaNac, hoy) < 18) errors.fechaNac = 'El tomador debe ser mayor de edad';
     if (!f.sexo) errors.sexo = 'Selecciona el sexo';
+    if (!hasProfesionOcupacion(f)) {
+      errors.profesion = 'Indica la profesión y además la ocupación o la actividad económica del tomador';
+    }
   }
   if (!f.cestado) errors.estado = 'Selecciona el estado';
   if (!f.cciudad) errors.ciudad = 'Selecciona la ciudad';

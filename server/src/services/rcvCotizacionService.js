@@ -113,7 +113,7 @@ function pickOpcion(cotizacion, opcion) {
  * Pantalla 3 → Pagos: valida de nuevo la cotización y la placa, toma la tasa del día, calcula el primer
  * recibo y firma el comprobante que Pagos devolverá al emitir.
  */
-async function prepararPago(cproces, { opcion, frecuencia, vehicle } = {}) {
+async function prepararPago(cproces, { opcion, frecuencia, vehicle, tomador } = {}) {
   const cotizacion = await client.getCotizacionAuto(cproces);
   assertEmitible(cotizacion);
   const opt = pickOpcion(cotizacion, opcion);
@@ -122,6 +122,15 @@ async function prepararPago(cproces, { opcion, frecuencia, vehicle } = {}) {
   const frec = frecuencias.find((f) => f.code === freq);
   if (!frec) {
     throw new CotizacionFlowError('FRECUENCIA_INVALIDA', 'La frecuencia elegida no está disponible para el plan de la cotización.', 400);
+  }
+
+  // Antes de cobrar: el SP rechaza la emisión sin profesión u actividad (99013) y el pago quedaría sin póliza.
+  if (!lib.tomadorEsJuridico(cotizacion.tomador?.tipoDoc) && !lib.tieneProfesionOcupacion(tomador)) {
+    throw new CotizacionFlowError(
+      'PROFESION_REQUERIDA',
+      'Indica la profesión y además la ocupación o la actividad económica del tomador antes de pagar.',
+      400,
+    );
   }
 
   if (vehicle?.placa) {

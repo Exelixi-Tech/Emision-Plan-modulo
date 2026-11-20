@@ -92,6 +92,17 @@ function initialForm(): DatosFaltantes {
   };
 }
 
+function profesionDelForm(form: DatosFaltantes) {
+  return {
+    cprofesion: form.cprofesion,
+    xprofesion: form.xprofesion,
+    cocupacion: form.cocupacion,
+    xocupacion: form.xocupacion,
+    cactividad: form.cactividad,
+    xactividad: form.xactividad,
+  };
+}
+
 /** Deja el wizard como lo espera Pagos (mismo shape que el RCV de siempre) + comprobante de la cotización. */
 function aplicarAlWizard(vista: VistaCotizacion, form: DatosFaltantes, co: CheckoutCotizacion) {
   const s = useWizardStore.getState();
@@ -115,6 +126,9 @@ function aplicarAlWizard(vista: VistaCotizacion, form: DatosFaltantes, co: Check
     personaPoliticamenteExpuesta: form.personaPoliticamenteExpuesta,
     aceptaTerminos: form.aceptaTerminos,
     declaraVeracidad: form.aceptaTerminos,
+    // Profesión (maprofes) y ocupación (maocupac) por separado, como las captura Formulario.
+    ...profesionDelForm(form),
+    ocupacionSeparada: true,
   };
   const asegurado: PersonData = form.sameInsured
     ? s.asegurado
@@ -226,6 +240,7 @@ export default function RcvCotizacionApp() {
         opcion: opcionSel.opcion,
         frecuencia,
         vehicle: { placa: normalizePlacaInput(form.placa), serial: form.serial, serialMotor: form.serialMotor },
+        tomador: profesionDelForm(form),
       });
       aplicarAlWizard(vista, form, co);
       toast.success('Todo listo', `Primer recibo: ${formatQuoteUsdMoney(co.montos.primerUsd)}. Te llevamos al pago.`);

@@ -39,6 +39,7 @@ function form(extra: Partial<DatosFaltantes> = {}): DatosFaltantes {
     email: 'ana@example.test', telefono: '04141234567',
     sameInsured: true, asegurado: emptyPersona(), hasDriver: false, conductor: emptyPersona(),
     personaPoliticamenteExpuesta: false, aceptaTerminos: true,
+    cprofesion: 12, cocupacion: 34,
     ...extra,
   };
 }
@@ -59,8 +60,17 @@ test('datos que faltan: placa, serial, contacto, edad, términos, asegurado y co
   }
 });
 
-test('persona jurídica: no exige fecha de nacimiento ni sexo del tomador', () => {
-  const e = validarDatosFaltantes(form({ fechaNac: '', sexo: '' }), { tomadorTipoDoc: 'J', hoy: HOY });
+test('profesión: obligatoria y además ocupación o actividad (SP 99013, antes de cobrar)', () => {
+  const sin = validarDatosFaltantes(form({ cprofesion: undefined, cocupacion: undefined }), { tomadorTipoDoc: 'V', hoy: HOY });
+  assert.ok(sin.profesion);
+  const soloProfesion = validarDatosFaltantes(form({ cocupacion: undefined }), { tomadorTipoDoc: 'V', hoy: HOY });
+  assert.ok(soloProfesion.profesion);
+  const conActividad = validarDatosFaltantes(form({ cocupacion: undefined, cactividad: 7 }), { tomadorTipoDoc: 'V', hoy: HOY });
+  assert.equal(conActividad.profesion, undefined);
+});
+
+test('persona jurídica: no exige fecha de nacimiento, sexo ni profesión del tomador', () => {
+  const e = validarDatosFaltantes(form({ fechaNac: '', sexo: '', cprofesion: undefined, cocupacion: undefined }), { tomadorTipoDoc: 'J', hoy: HOY });
   assert.deepEqual(e, {});
 });
 
