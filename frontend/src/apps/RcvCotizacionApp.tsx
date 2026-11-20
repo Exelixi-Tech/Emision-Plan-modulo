@@ -6,6 +6,7 @@ import { toast } from '../store/toastStore';
 import { isFrecuenciaFraccionada } from '../lib/frecuencia';
 import { formatQuoteUsdMoney } from '../lib/money';
 import { formatTelefono } from '../lib/phone';
+import bridgeReady from '../lib/bridge';
 import {
   CotizacionApiError,
   fetchCotizacionActual,
@@ -33,6 +34,14 @@ import type { PersonData, Plan, TomadorData, VehicleData } from '../types';
  */
 
 type Paso = 1 | 2 | 3;
+
+const SIN_PAGO_TITULO = 'No se pudo conectar con el módulo de pagos';
+const SIN_PAGO_DETALLE = 'Por ahora no se puede pagar esta cotización desde aquí. Avisa a soporte para habilitar el pago.';
+
+/** Pagos solo se alcanza con la sesión encadenada de Nexus; sin ella el botón "Ir a pagar" no puede avanzar. */
+function hayPagoEncadenado(): boolean {
+  return typeof window.__bridgeAdvance === 'function';
+}
 
 const PASOS: Record<Paso, { eyebrow: string; title: string; subtitle: string; continuar: string }> = {
   1: {
@@ -165,6 +174,18 @@ export default function RcvCotizacionApp() {
   const [form, setForm] = useState<DatosFaltantes>(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // null mientras el bridge resuelve el auto-arranque con Nexus; después, si hay o no sesión hacia Pagos.
+  const [sinPago, setSinPago] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    bridgeReady
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) setSinPago(!hayPagoEncadenado());
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,8 +215,9 @@ export default function RcvCotizacionApp() {
 
   async function irAPagar() {
     if (!vista || !opcionSel) return;
-    if (!window.__bridgeAdvance) {
-      toast.error('Sesión sin pago encadenado', 'Vuelve a abrir la cotización desde SysIP para continuar al pago.', 8000);
+    if (!hayPagoEncadenado()) {
+      setSinPago(true);
+      toast.error(SIN_PAGO_TITULO, SIN_PAGO_DETALLE, 8000);
       return;
     }
     setBusy(true);
@@ -261,8 +283,13 @@ export default function RcvCotizacionApp() {
       onContinuar={handleContinuar}
       continuarLabel={cfg.continuar}
       continuarBusy={busy}
-      hideContinuar={!ready || (paso === 1 && !vista?.emitible)}
+      hideContinuar={!ready || sinPago !== false || (paso === 1 && !vista?.emitible)}
     >
+      {ready && sinPago === true && (
+        <div className="mb-4">
+          <AlertBox title={SIN_PAGO_TITULO} tone="amber">{SIN_PAGO_DETALLE}</AlertBox>
+        </div>
+      )}
       {!ready && !loadError && (
         <div className="flex items-center gap-2 text-sm text-slate-500 py-10 justify-center">
           <Loader2 size={18} className="animate-spin text-indigo-500" />
