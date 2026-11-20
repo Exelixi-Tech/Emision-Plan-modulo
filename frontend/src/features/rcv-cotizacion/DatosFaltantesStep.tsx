@@ -44,17 +44,23 @@ function PersonaFields({ prefix, persona, onChange, errors, sexos }: {
   return (
     <div className="grid gap-4 sm:grid-cols-2 mt-4">
       <Field label="Cédula *" error={errors[`${prefix}.identificacion`]}>
+        {/* cn no fusiona clases: el w-full de Select/Input gana a w-24, por eso el ancho va en contenedores. */}
         <div className="flex gap-2">
-          <Select className="w-24 shrink-0" value={persona.tipoDoc} onChange={(e) => set({ tipoDoc: e.target.value })}>
-            <option value="V">V</option>
-            <option value="E">E</option>
-          </Select>
-          <Input
-            inputMode="numeric"
-            value={persona.identificacion}
-            onChange={(e) => set({ identificacion: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-            placeholder="Ej. 18456329"
-          />
+          <div className="w-20 shrink-0">
+            <Select aria-label="Tipo de cédula" value={persona.tipoDoc} onChange={(e) => set({ tipoDoc: e.target.value })}>
+              <option value="V">V</option>
+              <option value="E">E</option>
+            </Select>
+          </div>
+          <div className="min-w-0 flex-1">
+            <Input
+              inputMode="numeric"
+              aria-label="Número de cédula"
+              value={persona.identificacion}
+              onChange={(e) => set({ identificacion: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+              placeholder="Ej. 18456329"
+            />
+          </div>
         </div>
       </Field>
       <Field label="Fecha de nacimiento *" error={errors[`${prefix}.fechaNac`]}>
