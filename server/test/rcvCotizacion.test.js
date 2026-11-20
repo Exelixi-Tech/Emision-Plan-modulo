@@ -410,11 +410,6 @@ test('flujo completo: vista → checkout (1er recibo) → emisión post-pago con
       paymentCapture: { reference: '123456', amount: 10990.42 },
     };
 
-    // Sin pago verificado no se emite.
-    const sinPago = await call('POST', '/api/policies/emit', { state: { ...state, paymentVerified: false } });
-    assert.equal(sinPago.status, 402);
-    assert.equal(calls.emit.length, 0);
-
     // Frecuencia distinta a la cobrada.
     const otraFreq = await call('POST', '/api/policies/emit', { state: { ...state, rcv: { ...state.rcv, frecuencia: 'A' } } });
     assert.equal(otraFreq.status, 400);
@@ -444,6 +439,39 @@ test('flujo completo: vista → checkout (1er recibo) → emisión post-pago con
     assert.equal(body.ifrecuencia, 'M');
   } finally {
     close();
+  }
+});
+
+test('emitir como pendiente: sin rol 402; admin o productor emite sin cobro (recibo pendiente)', async () => {
+  const ticket = lib.signTicket({ cproces: '4512345', opcion: 1, frecuencia: 'A', primaUsd: 120.5 });
+  const state = {
+    ...clientState(),
+    rcv: { frecuencia: 'A', cotizacionRcv: { ticket } },
+    paymentVerified: false,
+  };
+  for (const metadata of [{ cotizacionID: '4512345' }, { cotizacionID: '4512345', cproductor: '80080' }, { cotizacionID: '4512345', origen: 'marketplace', crol: '1' }]) {
+    const calls = newCalls();
+    const app = setupApp({ metadata, cotizacion: cotizacionMock(), calls });
+    try {
+      const r = await app.call('POST', '/api/policies/emit', { state });
+      assert.equal(r.status, 402, JSON.stringify(metadata));
+      assert.equal(r.body.code, 'PAGO_REQUERIDO');
+      assert.equal(calls.emit.length, 0);
+    } finally {
+      app.close();
+    }
+  }
+  for (const metadata of [{ cotizacionID: '4512345', crol: '1' }, { cotizacionID: '4512345', centidad: 'P', cproductor: '12345' }, { cotizacionID: '4512345', origen: 'backoffice' }]) {
+    const calls = newCalls();
+    const app = setupApp({ metadata, cotizacion: cotizacionMock(), calls });
+    try {
+      const r = await app.call('POST', '/api/policies/emit', { state });
+      assert.equal(r.status, 201, JSON.stringify(metadata));
+      assert.equal(calls.emit.length, 1);
+      // El cobro lo omite resolveIngresoCajaAfterPayment (paymentVerified=false); aquí está simulado.
+    } finally {
+      app.close();
+    }
   }
 });
 

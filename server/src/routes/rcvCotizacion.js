@@ -94,7 +94,7 @@ emitGuard.post('/policies/emit', async (req, res, next) => {
       });
     }
     const mergedState = withNexusMetadata(state, req.nexusMetadata);
-    const result = await service.emitirDesdeCotizacion({ tokenCproces, state: mergedState });
+    const result = await service.emitirDesdeCotizacion({ tokenCproces, state: mergedState, tokenMetadata: req.nexusMetadata });
 
     const expediente = await archiveExpedienteAfterEmit({
       state: mergedState,

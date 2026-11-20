@@ -19,6 +19,7 @@ import {
   normalizePlacaInput,
   validarDatosFaltantes,
   type DatosFaltantes,
+  type PersonaExtra,
 } from '../lib/rcv-cotizacion-calc';
 import { CotizacionResumenStep } from '../features/rcv-cotizacion/CotizacionResumenStep';
 import { DatosFaltantesStep } from '../features/rcv-cotizacion/DatosFaltantesStep';
@@ -30,7 +31,9 @@ import type { PersonData, Plan, TomadorData, VehicleData } from '../types';
 /**
  * Emitir RCV desde cotización de SysIP. Solo se abre si el nexus_token trae `cotizacionID` (App.tsx);
  * sin ese dato Emisión sigue exactamente igual. Aislado de RcvPlansApp/PlansStep: no los usa.
- *   1. Cotización  2. Datos que faltan  3. Frecuencia y resumen  → Pagos (1er recibo) → emisión post-pago.
+ * Flujo como el RCV: OCR → Formulario → Emisión → Pagos. Aquí:
+ *   1. Cotización  [2. Datos que faltan]  3. Frecuencia y resumen  → Pagos → emisión (pagada o pendiente).
+ * El paso 2 solo aparece si Formulario no dejó completo lo que la emisión necesita.
  */
 
 type Paso = 1 | 2 | 3;
@@ -43,26 +46,46 @@ function hayPagoEncadenado(): boolean {
   return typeof window.__bridgeAdvance === 'function';
 }
 
-const PASOS: Record<Paso, { eyebrow: string; title: string; subtitle: string; continuar: string }> = {
+const PASOS: Record<Paso, { etiqueta: string; title: string; subtitle: string; continuar: string }> = {
   1: {
-    eyebrow: 'Paso 1 de 3 · Cotización',
+    etiqueta: 'Cotización',
     title: 'Tu cotización RCV',
     subtitle: 'Revisa la cotización. El plan, el vehículo, el tomador y la vigencia vienen de la cotización.',
     continuar: 'Continuar',
   },
   2: {
-    eyebrow: 'Paso 2 de 3 · Datos',
+    etiqueta: 'Datos',
     title: 'Completa los datos',
-    subtitle: 'Solo te pedimos lo que la cotización no trae.',
+    subtitle: 'Solo te pedimos lo que falta para emitir.',
     continuar: 'Continuar',
   },
   3: {
-    eyebrow: 'Paso 3 de 3 · Pago',
+    etiqueta: 'Pago',
     title: 'Frecuencia y resumen',
     subtitle: 'Elige cómo pagar. Hoy pagas el primer recibo y la póliza se emite al confirmar el pago.',
     continuar: 'Ir a pagar',
   },
 };
+
+/** "Paso n de m": sin el paso de datos, la cotización y el pago son 1 de 2 y 2 de 2. */
+function eyebrowDe(paso: Paso, conDatos: boolean): string {
+  const total = conDatos ? 3 : 2;
+  const n = conDatos || paso === 1 ? paso : 2;
+  return `Paso ${n} de ${total} · ${PASOS[paso].etiqueta}`;
+}
+
+function personaDelStore(p: PersonData | undefined): PersonaExtra {
+  const base = emptyPersona();
+  if (!p) return base;
+  return {
+    tipoDoc: p.tipoDoc || base.tipoDoc,
+    identificacion: String(p.identificacion ?? '').replace(/\D/g, ''),
+    nombre: p.nombre ?? '',
+    apellido: p.apellido ?? '',
+    fechaNac: p.fechaNac ?? '',
+    sexo: p.sexo ?? '',
+  };
+}
 
 function initialForm(): DatosFaltantes {
   const s = useWizardStore.getState();
@@ -84,11 +107,19 @@ function initialForm(): DatosFaltantes {
     email: t?.email ?? '',
     telefono: t?.telefono ? formatTelefono(t.telefono) : '',
     sameInsured: s.sameInsured !== false,
-    asegurado: emptyPersona(),
-    hasDriver: false,
-    conductor: emptyPersona(),
+    asegurado: s.sameInsured === false ? personaDelStore(s.asegurado) : emptyPersona(),
+    hasDriver: Boolean(s.hasDriver),
+    conductor: s.hasDriver ? personaDelStore(s.conductor) : emptyPersona(),
     personaPoliticamenteExpuesta: Boolean(t?.personaPoliticamenteExpuesta),
-    aceptaTerminos: false,
+    // Formulario ya los pide; si vienen aceptados no se vuelven a pedir.
+    aceptaTerminos: Boolean((t as { aceptaTerminos?: boolean } | undefined)?.aceptaTerminos),
+    // Profesión/ocupación que capturó Formulario (separadas: maprofes / maocupac).
+    cprofesion: t?.cprofesion,
+    xprofesion: t?.xprofesion,
+    cocupacion: t?.cocupacion,
+    xocupacion: t?.xocupacion,
+    cactividad: t?.cactividad,
+    xactividad: t?.xactividad,
   };
 }
 
@@ -190,6 +221,8 @@ export default function RcvCotizacionApp() {
   const [busy, setBusy] = useState(false);
   // null mientras el bridge resuelve el auto-arranque con Nexus; después, si hay o no sesión hacia Pagos.
   const [sinPago, setSinPago] = useState<boolean | null>(null);
+  // true: se muestra "Datos faltantes" (Formulario no dejó todo lo que la emisión necesita).
+  const [conDatos, setConDatos] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +240,8 @@ export default function RcvCotizacionApp() {
       .then((v) => {
         if (cancelled) return;
         setVista(v);
+        const faltan = validarDatosFaltantes(initialForm(), { tomadorTipoDoc: v.cotizacion.tomador?.tipoDoc });
+        setConDatos(Object.keys(faltan).length > 0);
         if (v.opciones.length === 1) setOpcion(v.opciones[0].opcion);
         const stored = useWizardStore.getState().rcv?.frecuencia;
         const codes = v.frecuencias.map((f) => f.code);
@@ -249,6 +284,7 @@ export default function RcvCotizacionApp() {
       const e = err as CotizacionApiError;
       if (e.code === 'LAMUNDIAL_PLATE_ALREADY_INSURED' || e.code === 'INVALID_PLACA_FORMAT' || e.code === 'INVALID_SERIAL_FORMAT') {
         setErrors({ [e.code === 'INVALID_SERIAL_FORMAT' ? 'serial' : 'placa']: e.message });
+        setConDatos(true);
         setPaso(2);
         toast.warning('Revisa el vehículo', e.message, 9000);
       } else {
@@ -270,7 +306,7 @@ export default function RcvCotizacionApp() {
         toast.warning('Elige una opción', 'Selecciona la opción de la cotización que quieres emitir.');
         return;
       }
-      setPaso(2);
+      setPaso(conDatos ? 2 : 3);
       return;
     }
     if (paso === 2) {
@@ -291,7 +327,7 @@ export default function RcvCotizacionApp() {
 
   return (
     <EmissionPlanShell
-      eyebrow={cfg.eyebrow}
+      eyebrow={eyebrowDe(paso, conDatos)}
       title={cfg.title}
       subtitle={cfg.subtitle}
       helpSubject="Emisión RCV desde cotización - Soporte"
@@ -317,7 +353,7 @@ export default function RcvCotizacionApp() {
       {vista && (
         <>
           {paso > 1 && (
-            <Button variant="ghost" size="sm" className="mb-4 -ml-2" onClick={() => setPaso((p) => (p - 1) as Paso)} disabled={busy}>
+            <Button variant="ghost" size="sm" className="mb-4 -ml-2" onClick={() => setPaso((p) => (p === 3 && !conDatos ? 1 : p - 1) as Paso)} disabled={busy}>
               <ArrowLeft size={14} /> Volver
             </Button>
           )}
