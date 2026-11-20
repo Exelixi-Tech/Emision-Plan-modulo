@@ -218,8 +218,30 @@ function tieneProfesionOcupacion(p) {
   return Boolean(p) && has(p.cprofesion) && (has(p.cocupacion) || has(p.cactividad));
 }
 
+/**
+ * Quién puede emitir con recibo pendiente (sin pago verificado): misma regla de actor que Pagos
+ * (allowsEmitPending en canal-visibility.ts): backoffice, administradores y productores; marketplace solo
+ * con allowPendingEmission. Recibe la metadata VERIFICADA del token (req.nexusMetadata), nunca la del body.
+ */
+function puedeEmitirPendiente(meta) {
+  if (!meta || typeof meta !== 'object') return false;
+  const txt = (v) => String(v ?? '').trim();
+  const origen = txt(meta.origen ?? meta.source).toLowerCase();
+  const allowPending = txt(meta.allowPendingEmission).toLowerCase() === 'true';
+  if (allowPending) return true;
+  if (origen === 'marketplace') return false;
+  const crol = txt(meta.crol);
+  const centidad = txt(meta.centidad).toUpperCase();
+  const cusuario = txt(meta.cusuario);
+  const cproductor = txt(meta.cproductor);
+  const isAdmin = crol === '1' || cusuario === '1' || centidad === 'A';
+  const isProductor = crol === '5' || crol === '8' || centidad === 'P' || (cproductor !== '' && cproductor !== '80080');
+  return origen === 'backoffice' || isAdmin || isProductor;
+}
+
 module.exports = {
   readCotizacionId,
+  puedeEmitirPendiente,
   tomadorEsJuridico,
   tieneProfesionOcupacion,
   round2,

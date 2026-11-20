@@ -234,12 +234,14 @@ function publicUrl(url) {
  * Emisión post-pago. `state` = el que Pagos manda a /policies/emit (con metadataCanal ya fusionada).
  * @returns resultado con la misma forma que policyService.quoteAndEmit (para la misma respuesta HTTP).
  */
-async function emitirDesdeCotizacion({ tokenCproces, state }) {
+async function emitirDesdeCotizacion({ tokenCproces, state, tokenMetadata }) {
   const marker = state?.rcv?.cotizacionRcv;
   const ticket = resolveCotizacionParaEmitir(tokenCproces, marker);
 
-  // Nunca emitir sin pago: este flujo no tiene "emitir como pendiente".
-  if (state?.paymentVerified !== true) {
+  // Sin pago verificado solo emite quien puede "emitir como pendiente" (misma regla que el RCV, con la
+  // metadata del token). El cobro se omite y el recibo queda pendiente en Sis2000.
+  const pendiente = state?.paymentVerified !== true;
+  if (pendiente && !lib.puedeEmitirPendiente(tokenMetadata)) {
     throw new CotizacionFlowError('PAGO_REQUERIDO', 'El pago no está verificado; la póliza se emite solo después de confirmar el pago.', 402);
   }
 
