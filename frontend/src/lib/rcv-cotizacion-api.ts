@@ -170,6 +170,8 @@ export async function prepararCheckoutCotizacion(body: {
   opcion: number;
   frecuencia: string;
   vehicle: { placa: string; serial: string; serialMotor?: string };
+  /** Profesión/ocupación/actividad: el server no prepara el cobro sin ellas (persona natural). */
+  tomador?: { cprofesion?: number | string; cocupacion?: number | string; cactividad?: number | string };
 }): Promise<CheckoutCotizacion> {
   try {
     const { data } = await api.post<CheckoutCotizacion & { success: boolean }>('/rcv-cotizacion/checkout', body);
