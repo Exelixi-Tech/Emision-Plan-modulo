@@ -42,6 +42,18 @@
         } catch (e) {}
       })();
     </script>
+      <!-- Marca neutra (?marca=neutra): título neutro antes de cargar JS. El resto lo hace src/lib/marca.ts. -->
+    <script>
+      (function () {
+        try {
+          var m = (new URLSearchParams(location.search).get('marca') || '').trim().toLowerCase();
+          if (m === 'neutra' || (m !== 'lm' && sessionStorage.getItem('exelixi_marca') === 'neutra')) {
+            document.title = 'Exélixi · Emisión';
+            document.documentElement.setAttribute('data-marca', 'neutra');
+          }
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
