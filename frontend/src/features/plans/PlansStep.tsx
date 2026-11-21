@@ -119,7 +119,9 @@ export function PlansStep() {
     ...getEffectiveSsoMetadata(),
     ...(metadataCanal || {}),
   };
-  const showProductorSelector = shouldShowProductorSelector(effectiveMeta);
+  // Marca neutra: planes de prueba; no se lista ni se elige productor de la aseguradora.
+  const marcaNeutra = esMarcaNeutra();
+  const showProductorSelector = !marcaNeutra && shouldShowProductorSelector(effectiveMeta);
   const isUserProductor = isProductorRole(effectiveMeta);
 
   const [brokers, setBrokers] = useState<CatalogItem[]>([]);
@@ -232,8 +234,10 @@ export function PlansStep() {
 
   // Carga planes cuando el vehículo está cargado. Patrón de cancelación estándar:
   // evita double-fetch en React StrictMode y descarta respuestas obsoletas.
+  // Códigos INMA del vehículo (Sis2000): los planes reales los necesitan; los de prueba (marca neutra) no.
+  const vehicleCodesReady = Boolean(vehicle.cmarca && vehicle.cmodelo && vehicle.cversion);
   useEffect(() => {
-    if (!vehicle.cmarca || !vehicle.cmodelo || !vehicle.cversion) return;
+    if (!vehicleCodesReady && !marcaNeutra) return;
     if (showProductorSelector && !selectedProductorId) {
       setApiPlans([]);
       setPlansLoading(false);
@@ -784,7 +788,11 @@ export function PlansStep() {
               ? 'Cargando planes disponibles para tu vehículo...'
               : apiPlans.length > 0
                 ? 'Elige un plan en el selector para ver la cotización.'
-                : 'Selecciona primero el vehículo para ver los planes disponibles.'}
+                : vehicleCodesReady || marcaNeutra
+                  ? (plansError
+                    ? 'No pudimos cargar los planes. Intenta de nuevo en unos minutos.'
+                    : 'No hay planes disponibles para este vehículo.')
+                  : 'Selecciona primero el vehículo para ver los planes disponibles.'}
           </p>
         </div>
       )}

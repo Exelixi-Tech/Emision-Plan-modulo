@@ -5,6 +5,7 @@ import { moduleApiBase } from './app-base';
 import { attachNexusTokenAxios, decodeNexusTokenMetadata, getNexusToken } from './nexus-token-client';
 import { useWizardStore } from '../store/wizardStore';
 import { readTarjetaMetadataCanal, shouldUseTarjetaPublicApi } from './rcv-tarjeta-flow';
+import { esMarcaNeutra } from './marca';
 import {
   composeGestorCsubitem,
   normalizeCentidad,
@@ -16,6 +17,13 @@ const api = axios.create({ baseURL: moduleApiBase() });
 
 const NEXUS_TOKEN_KEY = 'nexus_access_token_emision';
 attachNexusTokenAxios(api, NEXUS_TOKEN_KEY);
+
+// Marca neutra: el server de Emisión responde planes, cotización y póliza de PRUEBA
+// (no consulta ni emite en Sis2000/nest-api) si su .env lo permite; si no, rechaza la emisión.
+api.interceptors.request.use((config) => {
+  if (esMarcaNeutra()) config.headers.set('X-Exelixi-Marca', 'neutra');
+  return config;
+});
 
 function scrubActorMetaForExclusion(meta: Record<string, unknown>): Record<string, unknown> {
   const out = { ...meta };

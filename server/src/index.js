@@ -26,6 +26,7 @@ const patrimonialRoutes = require('./routes/patrimonial');
 const patrimonialSubmissionRoutes = require('./routes/patrimonialSubmission');
 const revisionPanelRoutes = require('./routes/revisionPanel');
 const postEmisionRoutes = require('./routes/postEmision');
+const { crearRouterSimulacionMarcaNeutra } = require('./routes/simulacionMarcaNeutra');
 const nexusAuth      = require('./middleware/nexusAuth');
 const { reportExpressError } = require('./services/monitorReporter');
 
@@ -62,6 +63,11 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/revision', revisionPanelRoutes);
 // Operadores: pendientes post-emisión (solo lectura, token POST_EMISION_TOKEN; sin nexus_token).
 app.use('/api/internal/post-emision', postEmisionRoutes);
+
+// Marca neutra (MarketPlace de prueba): con X-Exelixi-Marca: neutra y EMISION_SIMULADA_MARCA_NEUTRA=1
+// (solo 120, nunca producción) responde planes/cotización/póliza de PRUEBA sin nest-api ni Sis2000.
+// Sin el header no hace nada. Pedida y no permitida: la emisión responde 403 SIMULACION_NO_PERMITIDA.
+app.use('/api', crearRouterSimulacionMarcaNeutra());
 
 // Multi-tenant: todas las rutas /api requieren nexus_token
 // Catálogos (valrep + INMA) consultados directamente desde Sis2000.

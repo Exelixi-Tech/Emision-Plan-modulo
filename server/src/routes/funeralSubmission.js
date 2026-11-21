@@ -17,6 +17,7 @@ const personasClient = require('../services/personasClient');
 const personasMapper = require('../services/personasMapper');
 const { resolveCanalKey } = require('../lib/canalKey');
 const { buildFuneralCheckoutPatch } = require('../lib/funeralCheckoutPatch');
+const { cotizacionPersonasPrueba } = require('../lib/datosPruebaMarcaNeutra');
 
 const router = express.Router();
 
@@ -107,9 +108,12 @@ router.post('/submissions', async (req, res) => {
   const tomadorNombre = pickTomadorNombre(tomador) || body.tomadorNombre;
   const tomadorEmail = String(tomador.email ?? body.tomadorEmail ?? '').trim() || null;
 
+  // Marca neutra permitida (MarketPlace de prueba): sin gate Sis2000 y cotización de prueba.
+  const simulacionNeutra = req.simulacionMarcaNeutra?.permitido === true;
+
   try {
     // Gate Sis2000: si ya hay póliza vigente, no crear solicitud ni avisar al técnico.
-    await assertPersonasCanEmit(
+    if (!simulacionNeutra) await assertPersonasCanEmit(
       {
         tomador,
         funeral: body.funeral,
@@ -206,7 +210,9 @@ router.post('/submissions', async (req, res) => {
       }),
       byInsured: Object.fromEntries(insureds.map((i) => [i.key, i.answers])),
       quoteOne: (aseg) =>
-        personasClient.getCotizacionPer({ cramo: quoteCramo, cplan, asegurados: [aseg], ifrecuencia: 'A' }),
+        simulacionNeutra
+          ? Promise.resolve(cotizacionPersonasPrueba(1))
+          : personasClient.getCotizacionPer({ cramo: quoteCramo, cplan, asegurados: [aseg], ifrecuencia: 'A' }),
     });
     const quoteFinal = premiumAdjust
       ? { ...(body.quote || {}), ...premiumAdjust.quote, ptasa: premiumAdjust.quote.ptasa || body.quote?.ptasa }
