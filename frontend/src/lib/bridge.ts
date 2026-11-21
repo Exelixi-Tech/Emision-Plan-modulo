@@ -35,6 +35,7 @@ import {
 } from './sso-metadata';
 import { readFlowHandoff, persistFlowHandoff } from './flow-handoff';
 import { shouldUseTarjetaPublicApi, withTarjetaFlowQuery } from './rcv-tarjeta-flow';
+import { esMarcaNeutra, withMarcaQuery } from './marca';
 
 // ── Configuración por puerto (dev local) o hostname (HTTPS sslip.io) ───────
 const PORT_TO_ORDER: Record<string, number> = {
@@ -381,6 +382,7 @@ function makeBridge(): BridgeAPI {
         if (shouldUseTarjetaPublicApi()) {
           target = withTarjetaFlowQuery(target);
         }
+        target = withMarcaQuery(target);
         // Pequeño delay para mostrar el toast de éxito antes de saltar
         setTimeout(() => { window.location.href = target; }, 900);
       }
@@ -417,6 +419,7 @@ function makeBridge(): BridgeAPI {
           params.set('flow', 'cotizador');
         }
         params.set('wizardStep', '5');
+        if (esMarcaNeutra()) params.set('marca', 'neutra');
         window.location.href = `${pagosBase}/?${params.toString()}`;
       }
       return { finished: true };
@@ -467,7 +470,7 @@ function makeBridge(): BridgeAPI {
       if (r?.data?.url) {
         const url = new URL(r.data.url);
         url.searchParams.set('wizardStep', String(targetStep));
-        window.location.href = url.toString();
+        window.location.href = withMarcaQuery(url.toString());
         return true;
       }
     } catch (e) {

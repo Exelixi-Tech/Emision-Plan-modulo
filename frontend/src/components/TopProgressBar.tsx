@@ -3,6 +3,7 @@ import { useWizardStore } from '../store/wizardStore';
 import { getProductConfig } from '../lib/product';
 import { isCotizadorFlow } from '../lib/cotizador-flow';
 import { publicAsset } from '../lib/app-base';
+import { esMarcaNeutra, MARCA_NEUTRA_WORDMARK } from '../lib/marca';
 
 export function TopProgressBar() {
   const step = useWizardStore((s) => s.step);
@@ -55,6 +56,10 @@ export function TopProgressBar() {
                 className="h-7 max-w-[140px] object-contain object-left"
                 draggable={false}
               />
+            ) : esMarcaNeutra() ? (
+              <p className="font-display font-black text-indigo-700 text-[1.05rem] leading-none tracking-tight truncate">
+                {MARCA_NEUTRA_WORDMARK}
+              </p>
             ) : (
               <>
                 <div className="relative w-7 h-7 rounded-lg bg-white grid place-items-center shadow-[0_4px_12px_rgba(15,26,90,0.32)] ring-1 ring-slate-200 flex-shrink-0 overflow-hidden">

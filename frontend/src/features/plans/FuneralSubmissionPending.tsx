@@ -1,4 +1,5 @@
 import { CheckCircle2, ShieldCheck, Mail } from 'lucide-react';
+import { textoSinMarca } from '../../lib/marca';
 
 type Props = {
   tomadorEmail?: string;
@@ -22,7 +23,7 @@ export function FuneralSubmissionPending({ tomadorEmail, planName, verdict, mess
             ¡Solicitud registrada!
           </h2>
           <p className="text-sm text-slate-600 mt-3 leading-relaxed max-w-md mx-auto">
-            {message || (
+            {textoSinMarca(message) || (
               referred
                 ? <>Un técnico revisará tu caso de <strong className="text-slate-800">{planLabel}</strong> antes del pago.</>
                 : <>Tu cuestionario de <strong className="text-slate-800">{planLabel}</strong> permite continuar. Te enviaremos el enlace de pago.</>

@@ -1,5 +1,6 @@
 import { useWizardStore } from '../store/wizardStore';
 import { persistFlowHandoff, readFlowHandoff } from './flow-handoff';
+import { esMarcaNeutra } from './marca';
 
 export const TARJETA_FLOW_HEADER = 'X-Rcv-Tarjeta-Flow';
 
@@ -109,6 +110,7 @@ export function getPagosContinueUrlForTarjeta(): string {
   const configured = import.meta.env.VITE_PAGOS_CONTINUE_BASE as string | undefined;
   const base = (configured?.replace(/\/$/, '') || '/pagos').replace(/\/$/, '');
   const params = new URLSearchParams({ product: 'rcv', flujo: 'tarjeta', wizardStep: '5' });
+  if (esMarcaNeutra()) params.set('marca', 'neutra');
   return `${base}/?${params.toString()}`;
 }
 

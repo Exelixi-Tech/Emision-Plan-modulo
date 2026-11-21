@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { applyMarcaNeutra } from './lib/marca'
 import App from './App.tsx'
 import './lib/bridge'
 import { NexusGuard } from './nexus/NexusGuard'
@@ -9,6 +10,9 @@ import { hydrateTarjetaHandoff, hydrateTarjetaMetadataCanal, isTarjetaRcvFlow, m
 
 import { EmisionConfigPanel } from './config/EmisionConfigPanel'
 import { EmisionRevisionPanel } from './config/EmisionRevisionPanel'
+
+// Modo marca neutra (?marca=neutra): data-marca, título y favicon antes del primer render.
+applyMarcaNeutra();
 
 // Identidad Exélixi (colores + favicon) solo si el flujo activo es el catálogo.
 applyExelixiBranding('Emisión');

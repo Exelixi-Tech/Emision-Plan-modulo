@@ -39,6 +39,7 @@ import {
   type OpcionPlanViaje,
   type RangoDiasViaje,
 } from '../../lib/viajeroPlanes';
+import { etiquetaTarifa, textoSinMarca } from '../../lib/marca';
 
 function emptyTitular(): FuneralPerson {
   return {
@@ -118,7 +119,7 @@ function apiPlanToWizardPlan(p: PlanPer, productName: string = 'Funerario'): Pla
   return {
     cplan: p.cplan,
     name: (p.xplan ?? '').trim() || p.cplan,
-    price: 'Tarifa La Mundial',
+    price: etiquetaTarifa(),
     priceNum: 0,
     tag: ndias ? `Viajero · ${ndias} días` : productName,
     desc: ndias
@@ -936,7 +937,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                       {aseguradosListos.length ? 'Calculando…' : 'Completa los datos del titular.'}
                     </p>
                   ) : cot.estado === 'error' ? (
-                    <p className="text-xs font-semibold text-rose-700 leading-relaxed">{cot.message}</p>
+                    <p className="text-xs font-semibold text-rose-700 leading-relaxed">{textoSinMarca(cot.message)}</p>
                   ) : (
                     <p className="text-xl font-display font-black gradient-text-indigo tabular-nums">
                       $ {montoUsd(cot.quote.mprimaext)}
@@ -990,7 +991,7 @@ export function FuneralPlansStep({ hidePrice = false }: { hidePrice?: boolean } 
                 {quoteState === 'error' && (
                   <p className="mt-3 text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-2 rounded-md border border-rose-200 leading-relaxed normal-case">
                     <AlertTriangle size={12} strokeWidth={2.4} className="inline mr-1 -mt-0.5" />
-                    {quoteError || PLAN_UNAVAILABLE_MESSAGE}
+                    {textoSinMarca(quoteError) || PLAN_UNAVAILABLE_MESSAGE}
                   </p>
                 )}
               </div>

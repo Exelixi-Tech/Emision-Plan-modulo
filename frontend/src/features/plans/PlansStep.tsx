@@ -28,6 +28,7 @@ import {
   tarjetaQuoteShowsVes,
   type TarjetaPlanCurrencyKind,
 } from '../../lib/rcv-tarjeta-flow';
+import { esMarcaNeutra, etiquetaTarifa } from '../../lib/marca';
 
 
 /** Beneficios estándar RCV conforme a la Ley — aplica a todos los planes */
@@ -42,7 +43,7 @@ function apiPlanToWizardPlan(p: PlanRcv, categoryLabel: string): Plan {
   return {
     cplan:     p.cplan,
     name:      ((p.xplan ?? '').trim() || (p.xplan_c ?? '').trim() || p.cplan),
-    price:     'Tarifa La Mundial',
+    price:     etiquetaTarifa(),
     priceNum:  0,
     tag:       categoryLabel,
     desc:      ((p.xplan ?? '').trim() || 'Cobertura de Responsabilidad Civil Vehicular conforme a la Ley.'),
@@ -63,7 +64,7 @@ function buildLockedTarjetaPlan(
   return {
     cplan,
     name,
-    price: 'Tarifa La Mundial',
+    price: etiquetaTarifa(),
     priceNum: 0,
     tag: categoryLabel,
     desc: 'Plan asociado a tu tarjeta de activación.',
@@ -849,7 +850,7 @@ function PlanDetailCard({
               {hasRealQuote && !vehicleFallback && (
                 <span className="inline-flex items-center gap-1 text-[0.6rem] font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wider">
                   <Check size={11} strokeWidth={2.4} />
-                  Tarifa La Mundial
+                  {etiquetaTarifa()}
                 </span>
               )}
               {hasRealQuote && vehicleFallback && (
@@ -1066,7 +1067,9 @@ function PrimaCard({
           <span className="text-[0.62rem] font-black text-white/70 uppercase tracking-widest">Prima oficial</span>
         </div>
         <p className="text-white/50 text-xs leading-relaxed">
-          Completa los datos del vehículo para obtener la tarifa real de La Mundial.
+          {esMarcaNeutra()
+            ? 'Completa los datos del vehículo para obtener la tarifa real.'
+            : 'Completa los datos del vehículo para obtener la tarifa real de La Mundial.'}
         </p>
       </div>
     );
@@ -1087,7 +1090,7 @@ function PrimaCard({
               <span className="w-7 h-7 rounded-lg bg-white/15 grid place-items-center ring-1 ring-white/25">
                 <ShieldCheck size={14} className="text-white" strokeWidth={2.5} />
               </span>
-              Prima La Mundial
+              {esMarcaNeutra() ? 'Prima oficial' : 'Prima La Mundial'}
             </span>
             <span className="text-[0.65rem] font-black text-emerald-200 bg-emerald-500/25 px-2.5 py-1 rounded-md ring-1 ring-emerald-300/40 tracking-wider">
               OFICIAL

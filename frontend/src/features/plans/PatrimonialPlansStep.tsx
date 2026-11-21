@@ -22,6 +22,7 @@ import {
 import { getProductConfig } from '../../lib/product';
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter';
 import { toast } from '../../store/toastStore';
+import { esMarcaNeutra, etiquetaTarifa, textoSinMarca } from '../../lib/marca';
 
 /** Convierte un PlanRcv de la API al tipo Plan del wizard. */
 function apiPlanToWizardPlan(p: PlanRcv): Plan {
@@ -31,14 +32,15 @@ function apiPlanToWizardPlan(p: PlanRcv): Plan {
     cplan: p.cplan,
     cramo: cramoPlan,
     name: label,
-    price: 'Tarifa La Mundial',
+    price: etiquetaTarifa(),
     priceNum: 0,
     tag: 'Patrimonial',
-    desc: (p.xplan ?? '').trim() || 'Cobertura patrimonial La Mundial de Seguros.',
+    desc: (p.xplan ?? '').trim()
+      || (esMarcaNeutra() ? 'Cobertura patrimonial.' : 'Cobertura patrimonial La Mundial de Seguros.'),
     benefits: [
       'Protección integral contra riesgos generales',
       'Cobertura patrimonial y de responsabilidad civil',
-      'Asistencia y respaldo La Mundial de Seguros',
+      esMarcaNeutra() ? 'Asistencia y respaldo de tu aseguradora' : 'Asistencia y respaldo La Mundial de Seguros',
     ],
     sumaAsegurada: 0,
     cproducto: p.cproducto,
@@ -393,7 +395,7 @@ export function PatrimonialPlansStep() {
                 {quoteState === 'error' && (
                   <p className="mt-3 text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-2 rounded-md border border-rose-200 leading-relaxed normal-case">
                     <AlertTriangle size={12} strokeWidth={2.4} className="inline mr-1 -mt-0.5" />
-                    {quoteError || 'No se pudo obtener la cotización del plan seleccionado.'}
+                    {textoSinMarca(quoteError) || 'No se pudo obtener la cotización del plan seleccionado.'}
                   </p>
                 )}
               </div>

@@ -8,6 +8,7 @@ import {
 import { readConfigPanelContext, canalDisplayLabel } from './configPanelContext';
 import { resolveNexusApiUrl } from '../nexus/nexus-core';
 import { publicAsset } from '../lib/app-base';
+import { esMarcaNeutra, MARCA_NEUTRA_WORDMARK } from '../lib/marca';
 import { formatHealthScoreNumber, formatHealthScoreSigned } from '../lib/formatHealthScore';
 import { parseFuneralScoringRules } from './FuneralScoringRulesEditor';
 
@@ -503,7 +504,7 @@ function ReviewerEmailsBox({ onClose }: { onClose: () => void }) {
             className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 min-h-[7rem] outline-none focus:border-indigo-400 bg-slate-50/50"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="autorizador@lamundialdeseguros.com"
+            placeholder={esMarcaNeutra() ? 'autorizador@empresa.com' : 'autorizador@lamundialdeseguros.com'}
           />
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button
@@ -603,6 +604,13 @@ function BrandBar({ className = '' }: { className?: string }) {
 
 function MundialLogo({ compact = false }: { compact?: boolean }) {
   const [imgError, setImgError] = useState(false);
+  if (esMarcaNeutra()) {
+    return (
+      <p className={`font-display font-black tracking-tight text-indigo-700 leading-tight shrink-0 ${compact ? 'text-base' : 'text-xl'}`}>
+        {MARCA_NEUTRA_WORDMARK}
+      </p>
+    );
+  }
   if (imgError) {
     return (
       <div className="leading-tight shrink-0">
