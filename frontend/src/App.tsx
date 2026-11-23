@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSessionTokenDelegation } from './hooks/useSessionTokenDelegation';
 import { isFunerarioLike, isPatrimoniales } from './lib/product';
 import { getProductId, isCombinadoFamiliar } from './lib/product';
@@ -69,8 +69,28 @@ function DevApp() {
  * El flujo La Mundial no importa lógica del catálogo Exélixi.
  * Productos personas (wizard FuneralPlansApp): funerario (57), vida (76), ap (78), ap79 (79).
  */
+/**
+ * En flujo encadenado (sid) el producto (rcv | funerario | ...) lo fija el bridge al hidratar la sesión.
+ * Antes de eso sessionStorage puede traer el producto de una emisión anterior en la misma pestaña
+ * (p. ej. Funerario y luego RCV en Sis2000): se espera la hidratación para no abrir la app equivocada.
+ */
+function useProductoListo(): boolean {
+  const [listo, setListo] = useState(() => !window.__bridge?.active);
+  useEffect(() => {
+    if (listo) return;
+    let vigente = true;
+    const marcar = () => { if (vigente) setListo(true); };
+    const respaldo = window.setTimeout(marcar, 8000);
+    Promise.resolve(window.__bridge?.ready).then(marcar, marcar);
+    return () => { vigente = false; window.clearTimeout(respaldo); };
+  }, [listo]);
+  return listo;
+}
+
 export default function App() {
   useSessionTokenDelegation();
+  const productoListo = useProductoListo();
+  if (!productoListo) return null;
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('devflow')) return <DevApp />;
   if (isExelixiCatalogFlow()) return <ExelixiCatalogPlansApp />;
   if (isProveedorFlow()) return <ProveedorPlansApp />;
