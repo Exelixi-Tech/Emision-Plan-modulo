@@ -40,8 +40,21 @@ const PARENTESCOS_PRUEBA = [
   { cparen: 3, xparentesco: 'HIJO(A)', min_edad: 0, max_edad: 25 },
 ];
 
-/** Solo anual: sin cuotas fraccionadas que domiciliar. */
-const FRECUENCIAS_PRUEBA = [{ code: 'A', label: 'Anual', ndias: 365 }];
+/** Anual y fraccionadas: Pagos cobra la 1.ª cuota (simulada) y domicilia el resto (simulado). */
+const FRECUENCIAS_PRUEBA = [
+  { code: 'A', label: 'Anual', ndias: 365 },
+  { code: 'S', label: 'Semestral', ndias: 180 },
+  { code: 'T', label: 'Trimestral', ndias: 90 },
+  { code: 'M', label: 'Mensual', ndias: 30 },
+];
+
+const CUOTAS_POR_FRECUENCIA = { A: 1, S: 2, T: 4, M: 12 };
+
+/** Código de frecuencia válido de la simulación (por defecto A). */
+function frecuenciaPrueba(code) {
+  const c = String(code ?? 'A').trim().toUpperCase().charAt(0);
+  return CUOTAS_POR_FRECUENCIA[c] ? c : 'A';
+}
 
 /** Vigencias de placa extranjera (mismo formato que mavigencias_PR). */
 const VIGENCIAS_PRUEBA = [
@@ -165,15 +178,18 @@ function sufijoUnico(now) {
  * Póliza de prueba con la forma de `policy` de /policies/emit y /personas/emision.
  * @param {'RCV'|'FUN'} producto
  */
-function polizaPrueba(producto, quote, now = new Date()) {
+function polizaPrueba(producto, quote, now = new Date(), frecuencia = 'A') {
   const sufijo = sufijoUnico(now);
   const cnpoliza = `PRUEBA-${producto}-${sufijo}`;
+  const ifrecuencia = frecuenciaPrueba(frecuencia);
   return {
     number: cnpoliza,
     cnpoliza,
     cnrecibo: `PRUEBA-REC-${sufijo}`,
     urlpoliza: '',
     ncuota: 1,
+    ifrecuencia,
+    ncuotas: CUOTAS_POR_FRECUENCIA[ifrecuencia],
     internalPolicyId: `PRUEBA-${now.getTime()}`,
     emittedAt: now.toISOString(),
     quote: { mprima: quote.mprima, mprimaext: quote.mprimaext, ptasa: quote.ptasa },
@@ -184,6 +200,7 @@ function polizaPrueba(producto, quote, now = new Date()) {
 module.exports = {
   TASA_PRUEBA,
   FRECUENCIAS_PRUEBA,
+  frecuenciaPrueba,
   VIGENCIAS_PRUEBA,
   planesRcvPrueba,
   cotizacionRcvPrueba,

@@ -95,6 +95,12 @@ test('datos: cotización funeraria por asegurados y póliza PRUEBA- sin PDF', ()
   assert.equal(p.urlpoliza, '');
   assert.equal(p.number, p.cnpoliza);
   assert.equal(p.metadata.simulacion, true);
+  assert.equal(p.ifrecuencia, 'A');
+  assert.equal(p.ncuotas, 1);
+  const m = datos.polizaPrueba('FUN', { mprima: 6000, mprimaext: 60, ptasa: 100 }, new Date(), 'M');
+  assert.equal(m.ifrecuencia, 'M');
+  assert.equal(m.ncuotas, 12);
+  assert.equal(datos.frecuenciaPrueba('X'), 'A');
 });
 
 test('datos: la emisión conserva la prima ya cobrada del wizard', () => {
@@ -169,7 +175,7 @@ test('rutas RCV permitidas: planes, frecuencia, cotización y póliza PRUEBA-', 
     assert.equal(planes.headers.get('x-exelixi-simulacion'), 'marca-neutra');
 
     const frec = await srv.call('POST', '/valrep/frecuencia', { headers: H_NEUTRA, body: { cplan: 'PRUEBA-RCV-BAS', cramo: 18 } });
-    assert.deepEqual(frec.body.items, [{ code: 'A', label: 'Anual', ndias: 365 }]);
+    assert.deepEqual(frec.body.items.map((i) => i.code), ['A', 'S', 'T', 'M']);
 
     const quote = await srv.call('POST', '/policies/quote', { headers: H_NEUTRA, body: { state: STATE_RCV, plan: 'PRUEBA-RCV-PLUS' } });
     assert.equal(quote.body.success, true);
@@ -179,8 +185,10 @@ test('rutas RCV permitidas: planes, frecuencia, cotización y póliza PRUEBA-', 
     assert.equal(quote.body.coberturas.length, 2);
     assert.equal(quote.body.metadata.vehicleLabel, 'TOYOTA / COROLLA');
 
-    const emit = await srv.call('POST', '/policies/emit', { headers: H_NEUTRA, body: { state: STATE_RCV, plan: 'PRUEBA-RCV-PLUS' } });
+    const emit = await srv.call('POST', '/policies/emit', { headers: H_NEUTRA, body: { state: { ...STATE_RCV, rcv: { frecuencia: 'T' } }, plan: 'PRUEBA-RCV-PLUS' } });
     assert.equal(emit.status, 201);
+    assert.equal(emit.body.policy.ifrecuencia, 'T');
+    assert.equal(emit.body.policy.ncuotas, 4);
     assert.match(emit.body.policy.cnpoliza, /^PRUEBA-RCV-\d{8}-\d{6}$/);
     assert.equal(emit.body.policy.number, emit.body.policy.cnpoliza);
     assert.equal(emit.body.policy.urlpoliza, '');

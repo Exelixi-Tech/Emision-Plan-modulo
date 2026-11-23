@@ -145,7 +145,7 @@ function crearRouterSimulacionMarcaNeutra({ auth, env = process.env } = {}) {
       return res.status(400).json({ success: false, code: 'MISSING_STATE', message: 'Datos incompletos. Envia { state }.' });
     }
     const cotizada = datos.cotizacionRcvPrueba(state, plan);
-    const policy = datos.polizaPrueba('RCV', datos.quoteDesdeState(state, cotizada));
+    const policy = datos.polizaPrueba('RCV', datos.quoteDesdeState(state, cotizada), new Date(), state.rcv?.frecuencia);
     policy.metadata = { ...cotizada.metadata, ...policy.metadata };
     log(req, `cnpoliza=${policy.cnpoliza}`);
     marcar(res);
@@ -213,7 +213,7 @@ function crearRouterSimulacionMarcaNeutra({ auth, env = process.env } = {}) {
     const n = Array.isArray(state.funeral?.asegurados) && state.funeral.asegurados.length
       ? state.funeral.asegurados.length
       : 1;
-    const policy = datos.polizaPrueba('FUN', datos.quoteDesdeState(state, datos.cotizacionPersonasPrueba(n)));
+    const policy = datos.polizaPrueba('FUN', datos.quoteDesdeState(state, datos.cotizacionPersonasPrueba(n)), new Date(), state.funeral?.frecuencia);
     log(req, `cnpoliza=${policy.cnpoliza}`);
     marcar(res);
     return res.status(201).json({
