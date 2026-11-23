@@ -20,11 +20,14 @@ function onlyDigits(v) {
 
 /**
  * Cédula del titular: RCV (asegurado si es distinto) o funerario (1er asegurado).
+ * Con producto 'rcv' no se mira `state.funeral` (puede quedar de un funerario anterior en la
+ * misma pestaña); sin producto, igual que antes.
  * @param {object} state
+ * @param {string} [producto]
  * @returns {string}
  */
-function resolveTitularCedula(state) {
-  const funeral = state?.funeral || {};
+function resolveTitularCedula(state, producto) {
+  const funeral = producto === 'rcv' ? {} : state?.funeral || {};
   const aseg0 = Array.isArray(funeral.asegurados) ? funeral.asegurados[0] : null;
   if (aseg0?.identificacion) return onlyDigits(aseg0.identificacion);
   if (state?.sameInsured === false && state?.asegurado?.identificacion) {
@@ -81,11 +84,12 @@ function filesFromDocuments(documents) {
  *   emission: object,
  *   empresaNombre?: string,
  *   authToken?: string,
+ *   producto?: 'rcv'|'personas'|'patrimonial',
  * }} args
  */
 async function archiveExpedienteAfterEmit(args) {
   const ocrBase = String(process.env.OCR_API_URL || 'http://127.0.0.1:4001').replace(/\/$/, '');
-  const cedula = resolveTitularCedula(args.state);
+  const cedula = resolveTitularCedula(args.state, args.producto);
   const nomenclatura = buildNomenclatura(args.emission);
   const files = filesFromDocuments(args.state?.documents);
   const empresaNombre = String(args.empresaNombre || '').trim();

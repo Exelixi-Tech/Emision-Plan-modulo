@@ -314,6 +314,7 @@ router.post('/policies/emit', async (req, res) => {
       emission: result,
       empresaNombre: req.empresa?.nombre,
       authToken: req.nexusToken,
+      producto: 'rcv',
     });
     try {
       await registerIssuedPolicy({
