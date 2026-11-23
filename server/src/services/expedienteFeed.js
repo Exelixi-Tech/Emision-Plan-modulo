@@ -99,9 +99,13 @@ function resolveCorreos(tomador, titular) {
   return out;
 }
 
-/** Titular: personas = 1er asegurado; RCV = asegurado si es distinto del tomador. */
+/**
+ * Titular: personas = 1er asegurado; RCV = asegurado si es distinto del tomador.
+ * En RCV `state.funeral` no cuenta: puede quedar de un funerario anterior en la misma pestaña
+ * (falsa alarma 18-1-0000144583: el monitor mostraba al asegurado de ese funerario).
+ */
 function resolveTitular(state, producto) {
-  const funeral = state?.funeral || {};
+  const funeral = producto === 'rcv' ? {} : state?.funeral || {};
   const aseg0 = Array.isArray(funeral.asegurados) ? funeral.asegurados[0] : null;
   if (producto === 'personas' && aseg0?.identificacion) return aseg0;
   if (state?.sameInsured === false && state?.asegurado?.identificacion) return state.asegurado;
@@ -165,8 +169,8 @@ function resolveActor(state, nexusMetadata) {
 }
 
 /** Carpeta relativa del expediente en el servidor OCR: {empresa}/{cédula}/{recibo-aa-mes-póliza}. */
-function resolveCarpetaExpediente(state, emission, empresaId, empresaNombre) {
-  const cedula = String(resolveTitularCedula(state) || '').slice(0, 12);
+function resolveCarpetaExpediente(state, emission, empresaId, empresaNombre, producto) {
+  const cedula = String(resolveTitularCedula(state, producto) || '').slice(0, 12);
   if (!cedula) return null;
   const id = str(empresaId);
   const empresa = sanitizeFolderName(
@@ -184,6 +188,28 @@ function pickOcr(ocr, ...keys) {
     if (v != null && !/^(null|n\/a|na|none|undefined)$/i.test(v)) return v;
   }
   return null;
+}
+
+/**
+ * Palabras de los campos «Sexo» y «Estado civil» de la cédula. Con la foto girada el OCR a veces
+ * deja una de ellas como nombre (18-1-0000139376: nombre «Masculino»): no es un nombre leído.
+ */
+const SEXO_ESTADO_CIVIL = new Set([
+  'M', 'F', 'MASC', 'FEM', 'MASCULINO', 'FEMENINO', 'SEXO',
+  'SOLTERO', 'SOLTERA', 'CASADO', 'CASADA', 'DIVORCIADO', 'DIVORCIADA', 'VIUDO', 'VIUDA',
+  'CONCUBINO', 'CONCUBINA', 'EDO', 'ESTADO', 'CIVIL',
+]);
+
+/** Nombre o apellido que es solo sexo / estado civil («Masculino», «F», «Soltera») → null. */
+function nombreReal(v) {
+  if (v == null) return null;
+  const palabras = String(v)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z]+/)
+    .filter(Boolean);
+  return palabras.length && palabras.every((p) => SEXO_ESTADO_CIVIL.has(p)) ? null : v;
 }
 
 /** Placa / serial: mayúsculas, sin espacios, puntos ni guiones (viajan completos). */
@@ -224,8 +250,8 @@ function resolveOcrLeido(ocr, slot) {
     const campos = {
       tipoDoc: documento ? tipoDoc : null,
       documento,
-      nombre: pickOcr(ocr, 'nombre', ...(slot === 'rif' ? ['razonSocial'] : [])),
-      apellido: pickOcr(ocr, 'apellido'),
+      nombre: nombreReal(pickOcr(ocr, 'nombre', ...(slot === 'rif' ? ['razonSocial'] : []))),
+      apellido: nombreReal(pickOcr(ocr, 'apellido')),
       placa: cleanCodigo(pickOcr(ocr, 'placa')),
       serial: cleanCodigo(pickOcr(ocr, 'serial', 'serialCarroceria', 'vin')),
       serialMotor: cleanCodigo(pickOcr(ocr, 'serialMotor', 'numeroMotor')),
@@ -341,7 +367,9 @@ function buildExpedienteFeed(ctx) {
       telefono: str(titular.telefono) || str(tomador.telefono),
     };
 
-    const carpetaExpediente = resolveCarpetaExpediente(state, emission, ctx?.empresaId, ctx?.empresaNombre);
+    const carpetaExpediente = resolveCarpetaExpediente(
+      state, emission, ctx?.empresaId, ctx?.empresaNombre, producto,
+    );
     const quote = emission.quote || {};
     const plan = state.selectedPlan || {};
 

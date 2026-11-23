@@ -276,6 +276,65 @@ test('ocrLeido: una lectura rara no rompe el campo expediente', withEnabled(() =
   assert.ok(!('ocrLeido' in exp.documentos.certificado));
 }));
 
+test('ocrLeido: nombre/apellido que es solo sexo o estado civil no cuenta como leído (foto girada)', withEnabled(() => {
+  const state = rcvState();
+  // Caso 18-1-0000139376: el OCR dejó «Masculino» (campo Sexo) como nombre.
+  state.documents.cedula.ocr = { tipoDoc: 'V', identificacion: '12345678', nombre: 'Masculino', apellido: 'Pérez' };
+  state.documents.licencia.ocr = { identificacion: '12345678', nombre: 'Ana', apellido: 'Soltera' };
+  const exp = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION });
+  assert.deepEqual(exp.documentos.cedula.ocrLeido, { tipoDoc: 'V', documento: '12345678', apellido: 'Pérez' });
+  assert.deepEqual(exp.documentos.licencia.ocrLeido, { documento: '12345678', nombre: 'Ana' });
+  // Un nombre real que además trae una de esas palabras sigue igual.
+  state.documents.cedula.ocr = { identificacion: '12345678', nombre: 'María F', apellido: 'Viuda de Pérez' };
+  const otro = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION });
+  assert.equal(otro.documentos.cedula.ocrLeido.nombre, 'María F');
+  assert.equal(otro.documentos.cedula.ocrLeido.apellido, 'Viuda de Pérez');
+}));
+
+// ── RCV no toma datos de un funerario anterior (misma pestaña) ────────────────
+
+test('RCV: un state.funeral que quedó de un funerario anterior no cambia el titular ni la carpeta', withEnabled(() => {
+  // Caso 18-1-0000144583: póliza RCV del tomador, pero el state traía el funerario anterior.
+  const state = rcvState({
+    funeral: { asegurados: [{ tipoDoc: 'V', identificacion: '33333333', nombre: 'Greida', apellido: 'Porras' }] },
+  });
+  const exp = buildExpedienteFeed({ producto: 'rcv', state, emission: EMISION, empresaNombre: EMPRESA });
+  assert.equal(exp.asegurado.documento, '12345678');
+  assert.equal(exp.asegurado.nombre, 'Ana');
+  assert.equal(exp.snapshot.asegurado.documento, '12345678');
+  assert.deepEqual(exp.correos, ['ana@example.test']);
+  assert.equal(exp.carpetaExpediente, 'La Mundial de Seguros/12345678/2321234-26-11-1100015737');
+  // RCV con asegurado distinto: sigue siendo el asegurado, no el del funerario.
+  const otro = buildExpedienteFeed({
+    producto: 'rcv',
+    state: { ...state, sameInsured: false, asegurado: { tipoDoc: 'V', identificacion: '44444444', nombre: 'Beto' } },
+    emission: EMISION,
+  });
+  assert.equal(otro.asegurado.documento, '44444444');
+}));
+
+test('personas: el titular sigue siendo el 1er asegurado del funerario', withEnabled(() => {
+  const state = {
+    tomador: { tipoDoc: 'V', identificacion: '11111111', nombre: 'Tom' },
+    funeral: { asegurados: [{ tipoDoc: 'V', identificacion: '22222222', nombre: 'Titu' }] },
+  };
+  const exp = buildExpedienteFeed({ producto: 'personas', state, emission: EMISION, empresaNombre: EMPRESA });
+  assert.equal(exp.asegurado.documento, '22222222');
+  assert.equal(exp.carpetaExpediente, 'La Mundial de Seguros/22222222/2321234-26-11-1100015737');
+}));
+
+test('archivo OCR: resolveTitularCedula ignora funeral solo en RCV', () => {
+  const { resolveTitularCedula } = require('../src/services/expedienteArchive');
+  const state = {
+    tomador: { identificacion: 'V-12.345.678' },
+    funeral: { asegurados: [{ identificacion: '33.333.333' }] },
+  };
+  assert.equal(resolveTitularCedula(state, 'rcv'), '12345678');
+  assert.equal(resolveTitularCedula(state, 'personas'), '33333333');
+  // Sin producto (llamadas viejas): igual que antes.
+  assert.equal(resolveTitularCedula(state), '33333333');
+});
+
 // ── registerIssuedPolicy ──────────────────────────────────────────────────────
 
 function mockFetch(impl) {
