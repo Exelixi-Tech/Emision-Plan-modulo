@@ -70,11 +70,15 @@ function cleanDocumento(tipoDoc, identificacion) {
 function persona(p) {
   if (!p || typeof p !== 'object') return null;
   const tipoDoc = str(p.tipoDoc)?.toUpperCase() ?? null;
+  // Persona natural: un nombre o apellido que es solo sexo / estado civil («Masculino», precargado
+  // por el OCR con la foto girada: 18-1-0000139376) no es un dato y no se manda al monitor.
+  // En J/G/C el nombre es la razón social y no se toca.
+  const limpio = ['J', 'G', 'C'].includes(tipoDoc) ? (v) => v : nombreReal;
   return {
     tipoDoc,
     documento: cleanDocumento(tipoDoc, p.identificacion),
-    nombre: str(p.nombre ?? p.razonSocial),
-    apellido: str(p.apellido),
+    nombre: limpio(str(p.nombre ?? p.razonSocial)),
+    apellido: limpio(str(p.apellido)),
   };
 }
 
@@ -424,5 +428,7 @@ module.exports = {
     cleanDocumento,
     resolveOcrLeido,
     resolveCorreos,
+    persona,
+    nombreReal,
   },
 };

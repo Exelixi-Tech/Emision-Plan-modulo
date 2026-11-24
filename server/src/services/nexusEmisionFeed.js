@@ -2,7 +2,7 @@
  * Registra póliza emitida en Nexus (admin Tráfico).
  * No debe tumbar la emisión si Nexus falla.
  */
-const { buildExpedienteFeed } = require('./expedienteFeed');
+const { buildExpedienteFeed, _internal: expedienteInternal } = require('./expedienteFeed');
 
 function nexusBases() {
   const primary = (process.env.NEXUS_API_URL || 'http://127.0.0.1:3092').replace(/\/$/, '');
@@ -17,9 +17,16 @@ function getApiKey() {
   return process.env.NEXUS_API_KEY || process.env.NEXUS_SERVICE_API_KEY || '';
 }
 
+/**
+ * Nombre completo del tomador para el registro. En persona natural, un nombre o apellido que es
+ * solo sexo / estado civil no se registra (18-1-0000139376 quedó como «Masculino RODRIGUEZ PEÑA» y
+ * el monitor creó el expediente con ese nombre). En J/G/C es la razón social y no se toca.
+ */
 function tomadorNombre(state) {
   const t = state?.tomador || {};
-  return [t.nombre, t.apellido].filter(Boolean).join(' ').trim() || undefined;
+  const juridico = ['J', 'G', 'C'].includes(String(t.tipoDoc || '').trim().toUpperCase());
+  const limpio = juridico ? (v) => v : expedienteInternal.nombreReal;
+  return [limpio(t.nombre), limpio(t.apellido)].filter(Boolean).join(' ').trim() || undefined;
 }
 
 function tomadorIdentificacion(state) {
@@ -127,4 +134,4 @@ async function registerIssuedPolicy(opts) {
   return null;
 }
 
-module.exports = { registerIssuedPolicy };
+module.exports = { registerIssuedPolicy, _internal: { tomadorNombre } };
