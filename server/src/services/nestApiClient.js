@@ -15,6 +15,15 @@ function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 60_000;
 }
 
+/**
+ * Timeout SOLO de la llamada de emisión (createEmissionAuto): nest-api puede tardar ~2 min en responder
+ * (Sis2000 + gestor/canal + Club Arys). Cortar antes deja la póliza emitida sin que el flujo lo sepa.
+ */
+function getEmitTimeout() {
+  const n = parseInt(process.env.EMISSION_TIMEOUT_MS, 10);
+  return n > 0 ? n : 150_000;
+}
+
 /** @deprecated usar buildAuthHeaders() async */
 function getApiKey() {
   return getBootstrapApiKey();
@@ -273,7 +282,7 @@ async function createEmissionAutoViaNestApi(payload) {
 
   const response = trackResponse(await axios.post(url, payload, {
     headers: await buildAuthHeaders(),
-    timeout: getTimeout(),
+    timeout: getEmitTimeout(),
     validateStatus: () => true,
   }));
 
@@ -852,6 +861,7 @@ module.exports = {
   buildAuthHeaders,
   trackResponse,
   getTimeout,
+  getEmitTimeout,
   getTasaBcvForDateViaNestApi,
   getInmaAnios,
   getInmaMarcas,
