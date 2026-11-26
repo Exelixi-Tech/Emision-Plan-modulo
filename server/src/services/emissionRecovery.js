@@ -11,9 +11,8 @@
  *  - decide si una póliza encontrada en Sis2000 corresponde a ESTE intento (placa + serial + productor/canal
  *    + fecha de ingreso reciente) antes de adoptarla como emitida.
  *
- * La búsqueda de la póliza (lookup) es inyectable. Hoy nest-api NO expone un endpoint de solo lectura por
- * placa/serial; mientras no exista, el lookup por defecto devuelve null y solo actúan el candado y el
- * mensaje «verifique antes de reintentar».
+ * La búsqueda de la póliza (lookup) es inyectable; por defecto consulta GET /api/v1/canal/poliza-por-vehiculo
+ * de nest-api (scope polizas:vehiculo).
  */
 
 const MIN = 60 * 1000;
@@ -132,12 +131,37 @@ function matchesOwnRecentPolicy(candidate, ctx) {
   return true;
 }
 
+/** fingreso de Sis2000 viene en hora de Caracas (UTC-4, sin DST) y sin zona: se convierte a ISO con offset. */
+function fingresoToIso(f) {
+  const m = /^(d{4}-d{2}-d{2})[T ](d{2}:d{2}:d{2})(.d+)?/.exec(String(f ?? '').trim());
+  if (!m) return String(f ?? '');
+  return `${m[1]}T${m[2]}${m[3] || ''}-04:00`;
+}
+
+/** Fila de nest-api (xplaca/xsercar) → forma que espera matchesOwnRecentPolicy. */
+function mapNestRow(row) {
+  return {
+    ...row,
+    placa: row.xplaca,
+    serial: row.xsercar,
+    fingreso: fingresoToIso(row.fingreso),
+  };
+}
+
 /**
- * Lookup por defecto: no existe endpoint de solo lectura en nest-api (placa/serial → cnpoliza + fingreso).
- * Cuando exista, reemplazar aquí (o inyectar vía opts.lookup).
+ * Lookup por defecto: GET /api/v1/canal/poliza-por-vehiculo de nest-api (solo lectura; la key de Emisión
+ * necesita el scope polizas:vehiculo). Si falta el scope o la función, devuelve [] y solo actúan el candado
+ * y el mensaje «verifique antes de reintentar». EMISSION_RECOVERY_LOOKUP=false lo desactiva.
  */
-async function defaultLookup() {
-  return null;
+async function defaultLookup({ placa, serial, sinceMs }) {
+  if (String(process.env.EMISSION_RECOVERY_LOOKUP || '').toLowerCase() === 'false') return [];
+  const client = require('./nestApiClient');
+  if (typeof client.getPolizaPorVehiculoViaNestApi !== 'function') return [];
+  const base = Math.max(sinceMs ?? 0, Date.now() - getRecentWindowMs());
+  // 5 min extra hacia atrás por diferencia de relojes; matchesOwnRecentPolicy afina la ventana.
+  const desde = new Date(base - 5 * MIN).toISOString();
+  const rows = await client.getPolizaPorVehiculoViaNestApi({ placa: clean(placa), serial: clean(serial), desde });
+  return (Array.isArray(rows) ? rows : []).map(mapNestRow);
 }
 
 /**
@@ -148,7 +172,13 @@ async function recoverIssuedPolicy(ctx, opts = {}) {
   const lookup = opts.lookup || defaultLookup;
   let found;
   try {
-    found = await lookup({ placa: ctx.placa, serial: ctx.serial, cproductor: ctx.cproductor, ccanalalt: ctx.ccanalalt });
+    found = await lookup({
+      placa: ctx.placa,
+      serial: ctx.serial,
+      cproductor: ctx.cproductor,
+      ccanalalt: ctx.ccanalalt,
+      sinceMs: ctx.sinceMs,
+    });
   } catch (err) {
     console.warn(`[emissionRecovery] lookup falló placa=${ctx.placa}: ${err?.message || err}`);
     return null;
@@ -173,6 +203,8 @@ module.exports = {
   isPlateAlreadyInsured,
   matchesOwnRecentPolicy,
   recoverIssuedPolicy,
+  defaultLookup,
+  fingresoToIso,
   getRecentWindowMs,
   getUncertainCooldownMs,
   _resetForTests,

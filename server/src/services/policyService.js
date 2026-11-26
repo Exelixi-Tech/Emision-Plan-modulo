@@ -804,7 +804,7 @@ function uncertainError(metadata, postEmision, stage, cause) {
   );
 }
 
-/** Inyección del lookup de pólizas (hoy sin endpoint de solo lectura en nest-api; undefined = no recupera). */
+/** Inyección del lookup de pólizas (undefined = lookup por defecto contra nest-api poliza-por-vehiculo). */
 const testHooks = { lookup: undefined };
 
 /**
