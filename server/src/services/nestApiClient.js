@@ -15,6 +15,15 @@ function getTimeout() {
   return parseInt(process.env.LAMUNDIAL_TIMEOUT_MS, 10) || 60_000;
 }
 
+/**
+ * Timeout SOLO de la llamada de emisión (createEmissionAuto): nest-api puede tardar ~2 min en responder
+ * (Sis2000 + gestor/canal + Club Arys). Cortar antes deja la póliza emitida sin que el flujo lo sepa.
+ */
+function getEmitTimeout() {
+  const n = parseInt(process.env.EMISSION_TIMEOUT_MS, 10);
+  return n > 0 ? n : 150_000;
+}
+
 /** @deprecated usar buildAuthHeaders() async */
 function getApiKey() {
   return getBootstrapApiKey();
@@ -266,6 +275,26 @@ async function calculatePlanCoberturasViaNestApi(payload) {
  * Emite vía POST /api/v1/external/createEmissionAuto (SP sp_pre_emision_Automovil_RCV2).
  * @param {object} payload - payload de emisión (policyMapper)
  */
+/**
+ * GET /api/v1/canal/poliza-por-vehiculo (solo lectura, scope polizas:vehiculo): pólizas de automóvil de un
+ * vehículo ingresadas desde `desde` (ISO). Lo usa la recuperación de emisiones con timeout.
+ * @returns {Promise<object[]>} filas de nest-api (xplaca, xsercar, fingreso en hora de Caracas, ...)
+ */
+async function getPolizaPorVehiculoViaNestApi({ placa, serial, desde }) {
+  const url = `${getBaseUrl()}/api/v1/canal/poliza-por-vehiculo`;
+  const params = { desde };
+  if (placa) params.placa = placa;
+  if (serial) params.serial = serial;
+  const response = trackResponse(await axios.get(url, await axiosOpts({ params, validateStatus: () => true })));
+  if (response.status >= 200 && response.status < 300) {
+    const data = response.data?.data ?? response.data;
+    return Array.isArray(data) ? data : [];
+  }
+  const err = new Error(formatNestApiErrorMessage(response.data, `poliza-por-vehiculo HTTP ${response.status}`));
+  err.httpStatus = response.status;
+  throw err;
+}
+
 async function createEmissionAutoViaNestApi(payload) {
   const url = `${getBaseUrl()}/api/v1/external/createEmissionAuto`;
   const ts = new Date().toISOString();
@@ -273,7 +302,7 @@ async function createEmissionAutoViaNestApi(payload) {
 
   const response = trackResponse(await axios.post(url, payload, {
     headers: await buildAuthHeaders(),
-    timeout: getTimeout(),
+    timeout: getEmitTimeout(),
     validateStatus: () => true,
   }));
 
@@ -843,6 +872,7 @@ module.exports = {
   extractTasasFromMount,
   buildTasasPayloadForCober,
   createEmissionAutoViaNestApi,
+  getPolizaPorVehiculoViaNestApi,
   validateEmissionAutoViaNestApi,
   generateConductorHabitualViaNestApi,
   sendPolicyEmailViaNestApi,
@@ -852,6 +882,7 @@ module.exports = {
   buildAuthHeaders,
   trackResponse,
   getTimeout,
+  getEmitTimeout,
   getTasaBcvForDateViaNestApi,
   getInmaAnios,
   getInmaMarcas,

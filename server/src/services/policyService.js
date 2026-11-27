@@ -45,6 +45,7 @@ const {
 const { resolveCategoriaUsoFromVinma, resolveUsageCategory } = require('./catalogs');
 const { validateEmissionPayload } = require('./policyValidator');
 const { resolveCusuarioCoberturas } = require('./planesClient');
+const recovery = require('./emissionRecovery');
 
 /** URL del PDF conductor accesible desde el navegador del cliente (HTTPS público). */
 function isLocalNestDocumentUrl(url) {
@@ -416,7 +417,7 @@ async function quote(state, overrides = {}) {
  *   metadata: object
  * }>}
  */
-async function quoteAndEmit(state, overrides = {}) {
+async function quoteAndEmitInner(state, overrides = {}, guard = {}) {
   if (getMode() === 'mock') {
     const policyNumber = `LM-2026-${String(Math.floor(100000 + Math.random() * 899999))}`;
     return {
@@ -431,6 +432,7 @@ async function quoteAndEmit(state, overrides = {}) {
     };
   }
 
+  const attemptStartedAt = Date.now();
   // 1) Cotizar
   const emitOverrides = await resolveEmitOverrides(state, overrides);
   let quoteResult = await quote(state, emitOverrides);
@@ -450,6 +452,26 @@ async function quoteAndEmit(state, overrides = {}) {
     },
   );
 
+  // 2.1) Candado: una sola emisión a la vez por vehículo (doble clic / reintento concurrente).
+  const lockKey = recovery.vehicleKey(payload.placa, payload.serial_carroceria);
+  if (!recovery.acquireEmissionLock(lockKey)) {
+    throw new PolicyError(
+      'EMISSION_IN_PROGRESS',
+      'Ya hay una emisión en curso para este vehículo. Espere unos segundos y verifique antes de reintentar.',
+      409,
+      { stage: 'emit', internalPolicyId: metadata.internalPolicyId },
+    );
+  }
+  guard.key = lockKey; // solo se libera si este intento obtuvo el candado
+  const recoveryCtx = {
+    placa: payload.placa,
+    serial: payload.serial_carroceria,
+    cproductor: payload.cproductor ?? payload.productor,
+    ccanalalt: payload.ccanalalt,
+    sinceMs: attemptStartedAt,
+  };
+  let recoveredEmission = null;
+
   // 3) Validar placa/serial en Sis2000 (mismo plan que la emisión)
   const emitPlan =
     emitOverrides.plan ||
@@ -466,29 +488,36 @@ async function quoteAndEmit(state, overrides = {}) {
     });
   } catch (err) {
     if (err.code === 'PLATE_ALREADY_INSURED') {
-      // Pago ya verificado y la placa aparece asegurada: probable reintento tras
-      // timeout/emisión previa. Se deja constancia para conciliar (no se re-emite ni cobra).
-      // nest-api no expone lookup público por placa (lookupEmissionByPlaca es privado);
-      // TODO(fase 2): consultar cnpoliza existente cuando haya endpoint de solo lectura.
-      const postEmision = registrarPostEmisionSiPagado(state, {
-        step: 'validate_placa_409',
-        error: err.message,
-        internalPolicyId: metadata.internalPolicyId,
-      });
-      throw new PolicyError('LAMUNDIAL_PLATE_ALREADY_INSURED', err.message, 409, {
+      // Placa asegurada: puede ser un duplicado real o la póliza de un intento anterior de ESTE flujo
+      // (timeout previo). Solo se adopta si coincide placa + serial + productor/canal + hora reciente.
+      const recovered = await tryRecover(recoveryCtx, metadata);
+      if (recovered) {
+        recoveredEmission = recovered;
+      } else {
+        const postEmision = registrarPostEmisionSiPagado(state, {
+          step: 'validate_placa_409',
+          error: err.message,
+          internalPolicyId: metadata.internalPolicyId,
+        });
+        if (recovery.isUncertainActive(guard.key)) {
+          throw uncertainError(metadata, postEmision, 'validate');
+        }
+        throw new PolicyError('LAMUNDIAL_PLATE_ALREADY_INSURED', err.message, 409, {
+          stage: 'validate',
+          internalPolicyId: metadata.internalPolicyId,
+          ...(postEmision ? { postEmision } : {}),
+        });
+      }
+    } else {
+      throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
         stage: 'validate',
         internalPolicyId: metadata.internalPolicyId,
-        ...(postEmision ? { postEmision } : {}),
       });
     }
-    throw new PolicyError(err.code || 'VALIDATE_EMISSION_ERROR', err.message, 502, {
-      stage: 'validate',
-      internalPolicyId: metadata.internalPolicyId,
-    });
   }
 
   // 4) Validar localmente antes de quemar cupo
-  const errors = validateEmissionPayload(payload);
+  const errors = recoveredEmission ? [] : validateEmissionPayload(payload);
   if (errors.length > 0) {
     throw new PolicyError(
       'INVALID_PAYLOAD',
@@ -500,29 +529,45 @@ async function quoteAndEmit(state, overrides = {}) {
 
   // 5) Log antes de emitir (idempotencia manual; INT-* no se envía al SP)
   const ts = new Date().toISOString();
-  console.log(`[Policy][${ts}] EMITIENDO internalId=${metadata.internalPolicyId} placa=${payload.placa}`);
+  let emission = recoveredEmission;
+  if (!emission) {
+    console.log(`[Policy][${ts}] EMITIENDO internalId=${metadata.internalPolicyId} placa=${payload.placa}`);
 
-  // 6) Emitir via nest-api (inserta en eePoliza_Automovil_RCV2)
-  let emission;
-  try {
-    emission = await createEmissionAutoViaNestApi(payload, {
-      mprima:    quoteResult.mprima,
-      mprimaext: quoteResult.mprimaext,
-      ptasa:     quoteResult.ptasa,
-    });
-  } catch (err) {
-    // Con pago verificado: timeout/abort (el SP puede haber emitido igual) o 409 en el SP.
-    const postEmision = registrarPostEmisionSiPagado(state, {
-      step: isTimeoutError(err) ? 'emit_timeout' : 'emit_error',
-      error: err.message,
-      internalPolicyId: metadata.internalPolicyId,
-      extra: { code: err.code || null, httpStatus: err.httpStatus || null },
-    });
-    throw mapClientError(err, 'emit', {
-      internalPolicyId: metadata.internalPolicyId,
-      ...(postEmision ? { postEmision } : {}),
-    });
+    // 6) Emitir via nest-api (inserta en eePoliza_Automovil_RCV2)
+    try {
+      emission = await createEmissionAutoViaNestApi(payload, {
+        mprima:    quoteResult.mprima,
+        mprimaext: quoteResult.mprimaext,
+        ptasa:     quoteResult.ptasa,
+      });
+    } catch (err) {
+      // Timeout/5xx/409: el SP pudo emitir igual. Antes de mostrar error se busca la póliza de ESTE intento.
+      const ambiguous = recovery.isAmbiguousEmitError(err);
+      if (ambiguous || recovery.isPlateAlreadyInsured(err)) {
+        const recovered = await tryRecover(recoveryCtx, metadata);
+        if (recovered) {
+          emission = recovered;
+        } else if (ambiguous) {
+          recovery.markUncertain(guard.key);
+        }
+      }
+      if (!emission) {
+        // Con pago verificado: timeout/abort (el SP puede haber emitido igual) o 409 en el SP.
+        const postEmision = registrarPostEmisionSiPagado(state, {
+          step: isTimeoutError(err) ? 'emit_timeout' : 'emit_error',
+          error: err.message,
+          internalPolicyId: metadata.internalPolicyId,
+          extra: { code: err.code || null, httpStatus: err.httpStatus || null },
+        });
+        if (ambiguous) throw uncertainError(metadata, postEmision, 'emit', err);
+        throw mapClientError(err, 'emit', {
+          internalPolicyId: metadata.internalPolicyId,
+          ...(postEmision ? { postEmision } : {}),
+        });
+      }
+    }
   }
+  recovery.clearUncertain(guard.key);
 
   // 5.1) Activar recibo en Sis2000 solo tras pago verificado (ref. bancaria real, monto Bs)
   let url_ingreso_caja;
@@ -656,7 +701,8 @@ async function quoteAndEmit(state, overrides = {}) {
       url_conductor_habitual,
       url_club_arys,
       url_ingreso_caja,
-    }).then((mailRes) => {
+    }).then((rawMailRes) => {
+      const mailRes = unwrapMailResponse(rawMailRes);
       if (mailRes?.sent) {
         console.log(`[Policy] Correo enviado a ${emailTo} póliza ${emission.cnpoliza}`);
       } else {
@@ -695,11 +741,71 @@ async function quoteAndEmit(state, overrides = {}) {
   };
 }
 
-function isTimeoutError(err) {
-  const code = String(err?.code || '');
-  const msg = String(err?.message || '').toLowerCase();
-  return code === 'ECONNABORTED' || code === 'ETIMEDOUT' || msg.includes('timeout');
+const isTimeoutError = recovery.isTimeoutError;
+
+/**
+ * nest-api envuelve las respuestas: { status: true, data: { sent, mode, ... } } (ResponseInterceptor).
+ * Acepta también el formato plano { sent, mode, ... }.
+ */
+function unwrapMailResponse(res) {
+  if (!res || typeof res !== 'object') return {};
+  const inner = res.data && typeof res.data === 'object' ? res.data : {};
+  return { ...res, ...inner };
 }
+
+/**
+ * Cotiza y emite con candado por vehículo: nunca dos emisiones simultáneas del mismo intento.
+ */
+async function quoteAndEmit(state, overrides = {}) {
+  const guard = {};
+  try {
+    return await quoteAndEmitInner(state, overrides, guard);
+  } finally {
+    recovery.releaseEmissionLock(guard.key);
+  }
+}
+
+/** Intenta adoptar una póliza recién emitida que corresponda a este intento. Nunca lanza. */
+async function tryRecover(ctx, metadata) {
+  try {
+    const found = await recovery.recoverIssuedPolicy(ctx, { lookup: testHooks.lookup });
+    if (!found) return null;
+    console.warn(
+      `[Policy] RECUPERADA póliza ${found.cnpoliza} placa=${ctx.placa} internalId=${metadata.internalPolicyId} (emisión previa sin respuesta)`,
+    );
+    return {
+      cnpoliza: String(found.cnpoliza),
+      cnrecibo: String(found.cnrecibo ?? ''),
+      urlpoliza: found.urlpoliza || '',
+      url_club_arys: found.url_club_arys || '',
+      ncuota: found.ncuota || 1,
+      fanopol: found.fanopol,
+      fmespol: found.fmespol,
+      message: 'Póliza recuperada de un intento previo.',
+      recovered: true,
+      _raw: found,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function uncertainError(metadata, postEmision, stage, cause) {
+  return new PolicyError(
+    'EMISSION_UNCERTAIN',
+    'La póliza pudo haberse emitido; verifique en el monitor o con el equipo antes de reintentar.',
+    409,
+    {
+      stage,
+      internalPolicyId: metadata.internalPolicyId,
+      ...(cause?.raw ? { raw: cause.raw } : {}),
+      ...(postEmision ? { postEmision } : {}),
+    },
+  );
+}
+
+/** Inyección del lookup de pólizas (undefined = lookup por defecto contra nest-api poliza-por-vehiculo). */
+const testHooks = { lookup: undefined };
 
 /**
  * Registra pendiente post-emisión solo si el pago ya estaba verificado
@@ -769,4 +875,4 @@ function mapClientError(err, stage, extra = {}) {
   });
 }
 
-module.exports = { quote, quoteAndEmit, PolicyError, getMode };
+module.exports = { quote, quoteAndEmit, PolicyError, getMode, unwrapMailResponse, testHooks };
