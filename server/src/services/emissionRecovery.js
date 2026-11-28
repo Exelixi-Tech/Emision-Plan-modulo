@@ -58,13 +58,30 @@ function releaseEmissionLock(key) {
 
 // ── Intentos con resultado incierto ──────────────────────────────────────────
 const uncertain = new Map();
+/** Hora de inicio del primer intento sin resolver: desde ahí pudo crearse la póliza. */
+const firstAttempt = new Map();
 
-function markUncertain(key, now = Date.now()) {
-  if (key) uncertain.set(key, now);
+/** Desde cuándo buscar la póliza: el primer intento sin resolver (dentro de la ventana) o este mismo. */
+function attemptSince(key, startedAt, now = Date.now()) {
+  const first = key ? firstAttempt.get(key) : undefined;
+  if (first === undefined) return startedAt;
+  if (now - first >= getRecentWindowMs()) {
+    firstAttempt.delete(key);
+    return startedAt;
+  }
+  return Math.min(first, startedAt);
+}
+
+function markUncertain(key, now = Date.now(), startedAt = now) {
+  if (!key) return;
+  uncertain.set(key, now);
+  firstAttempt.set(key, attemptSince(key, startedAt, now));
 }
 
 function clearUncertain(key) {
-  if (key) uncertain.delete(key);
+  if (!key) return;
+  uncertain.delete(key);
+  firstAttempt.delete(key);
 }
 
 /** ¿Hay un intento reciente sin resolver para este vehículo? */
@@ -82,6 +99,7 @@ function isUncertainActive(key, now = Date.now()) {
 function _resetForTests() {
   inFlight.clear();
   uncertain.clear();
+  firstAttempt.clear();
 }
 
 // ── Clasificación de errores ─────────────────────────────────────────────────
@@ -133,7 +151,8 @@ function matchesOwnRecentPolicy(candidate, ctx) {
 
 /** fingreso de Sis2000 viene en hora de Caracas (UTC-4, sin DST) y sin zona: se convierte a ISO con offset. */
 function fingresoToIso(f) {
-  const m = /^(d{4}-d{2}-d{2})[T ](d{2}:d{2}:d{2})(.d+)?/.exec(String(f ?? '').trim());
+  // Solo cadenas sin zona: una que ya traiga Z u offset se respeta tal cual.
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(String(f ?? '').trim());
   if (!m) return String(f ?? '');
   return `${m[1]}T${m[2]}${m[3] || ''}-04:00`;
 }
@@ -196,6 +215,7 @@ module.exports = {
   acquireEmissionLock,
   releaseEmissionLock,
   markUncertain,
+  attemptSince,
   clearUncertain,
   isUncertainActive,
   isTimeoutError,

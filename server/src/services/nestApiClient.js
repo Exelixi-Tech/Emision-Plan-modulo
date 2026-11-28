@@ -285,7 +285,13 @@ async function getPolizaPorVehiculoViaNestApi({ placa, serial, desde }) {
   const params = { desde };
   if (placa) params.placa = placa;
   if (serial) params.serial = serial;
-  const response = trackResponse(await axios.get(url, await axiosOpts({ params, validateStatus: () => true })));
+  // Header apikey y no Bearer: el endpoint exige la clave registrada y la sesión por token no la conserva.
+  const response = trackResponse(await axios.get(url, {
+    headers: buildHeaders(getNestMonitorAppIdHeader()),
+    timeout: getTimeout(),
+    params,
+    validateStatus: () => true,
+  }));
   if (response.status >= 200 && response.status < 300) {
     const data = response.data?.data ?? response.data;
     return Array.isArray(data) ? data : [];
