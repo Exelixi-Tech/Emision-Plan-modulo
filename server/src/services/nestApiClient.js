@@ -278,7 +278,7 @@ async function calculatePlanCoberturasViaNestApi(payload) {
 /**
  * GET /api/v1/canal/poliza-por-vehiculo (solo lectura, scope polizas:vehiculo): pólizas de automóvil de un
  * vehículo ingresadas desde `desde` (ISO). Lo usa la recuperación de emisiones con timeout.
- * @returns {Promise<object[]>} filas de nest-api (xplaca, xsercar, fingreso en hora de Caracas, ...)
+ * @returns {Promise<object[]>} filas de nest-api (xplaca, xsercar, edadSegundos, cédulas, plan, fechas, ...)
  */
 async function getPolizaPorVehiculoViaNestApi({ placa, serial, desde }) {
   const url = `${getBaseUrl()}/api/v1/canal/poliza-por-vehiculo`;

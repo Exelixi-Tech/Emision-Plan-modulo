@@ -8,8 +8,8 @@
  * Este módulo:
  *  - evita emisiones concurrentes del mismo vehículo (candado en memoria);
  *  - recuerda los intentos con resultado incierto para no permitir un reintento inmediato;
- *  - decide si una póliza encontrada en Sis2000 corresponde a ESTE intento (placa + serial + productor/canal
- *    + fecha de ingreso reciente) antes de adoptarla como emitida.
+ *  - adopta una póliza de Sis2000 solo si coinciden todos los datos del intento (cédulas, vehículo, plan,
+ *    fechas, prima, productor y canal), está vigente, su recibo sigue pendiente y se creó después del intento.
  *
  * La búsqueda de la póliza (lookup) es inyectable; por defecto consulta GET /api/v1/canal/poliza-por-vehiculo
  * de nest-api (scope polizas:vehiculo).
@@ -121,50 +121,101 @@ function isPlateAlreadyInsured(err) {
 }
 
 // ── Coincidencia con ESTE intento ────────────────────────────────────────────
-/**
- * @param {object} candidate { cnpoliza, cnrecibo?, placa, serial, cproductor, ccanalalt, fingreso, ... }
- * @param {object} ctx { placa, serial, cproductor, ccanalalt, sinceMs (epoch), now? }
- * Todas las condiciones deben cumplirse; si el candidato no trae un dato exigido, NO coincide.
- */
-function matchesOwnRecentPolicy(candidate, ctx) {
-  if (!candidate || !candidate.cnpoliza) return false;
-  const now = ctx.now ?? Date.now();
+/** Diferencia admitida entre la antigüedad de la póliza y el tiempo transcurrido desde el intento. */
+const HOLGURA_SEG = 5;
+const HOLGURA_PRIMA = 0.05;
 
-  if (!clean(ctx.placa) || clean(candidate.placa) !== clean(ctx.placa)) return false;
-  if (!clean(ctx.serial) || clean(candidate.serial) !== clean(ctx.serial)) return false;
+const texto = (v) => String(v ?? '').trim().toUpperCase();
+const cedula = (v) => String(v ?? '').replace(/\D+/g, '').replace(/^0+/, '');
+const fecha = (v) => String(v ?? '').trim().slice(0, 10);
+const canal = (v) => (texto(v) === '0' ? '' : texto(v));
 
-  if (String(ctx.cproductor ?? '').trim() === '' || String(candidate.cproductor ?? '').trim() !== String(ctx.cproductor).trim()) {
-    return false;
-  }
-  // Canal alterno: si el intento lo traía, debe coincidir; si no traía, el candidato tampoco debe tener uno distinto.
-  const ctxCanal = String(ctx.ccanalalt ?? '').trim();
-  const candCanal = String(candidate.ccanalalt ?? '').trim();
-  if (ctxCanal !== '' && ctxCanal !== '0' && candCanal !== ctxCanal) return false;
+/** Datos que el intento y la póliza deben traer, ambos, e iguales: [campo del intento, norma, campo de la póliza]. */
+const OBLIGATORIOS = [
+  ['placa', clean],
+  ['serial', clean],
+  ['cedulaTomador', cedula, 'ctenedor'],
+  ['cedulaTitular', cedula, 'casegurado'],
+  ['plan', texto, 'cplan'],
+  ['frecuencia', texto, 'ifrecuencia'],
+  ['fdesde', fecha],
+  ['fhasta', fecha],
+  ['femision', fecha],
+  ['cproductor', texto],
+];
+/** Datos que se comparan cuando el intento los envió. */
+const OPCIONALES = [
+  ['serialMotor', clean, 'xsermot'],
+  ['ano', texto, 'cano'],
+  ['marca', texto, 'cmarca'],
+  ['modelo', texto, 'cmodelo'],
+  ['version', texto, 'cversion'],
+];
 
-  const at = Date.parse(candidate.fingreso);
-  if (!Number.isFinite(at)) return false;
-  const desde = Math.max(ctx.sinceMs ?? 0, now - getRecentWindowMs());
-  // 2 min de holgura por diferencia de relojes entre servidores.
-  if (at < desde - 2 * MIN || at > now + 2 * MIN) return false;
-  return true;
-}
-
-/** fingreso de Sis2000 viene en hora de Caracas (UTC-4, sin DST) y sin zona: se convierte a ISO con offset. */
-function fingresoToIso(f) {
-  // Solo cadenas sin zona: una que ya traiga Z u offset se respeta tal cual.
-  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(String(f ?? '').trim());
-  if (!m) return String(f ?? '');
-  return `${m[1]}T${m[2]}${m[3] || ''}-04:00`;
-}
-
-/** Fila de nest-api (xplaca/xsercar) → forma que espera matchesOwnRecentPolicy. */
-function mapNestRow(row) {
+/** Datos del intento de emisión contra los que se compara una póliza encontrada. */
+function attemptData(payload, cotizacion = {}) {
   return {
-    ...row,
-    placa: row.xplaca,
-    serial: row.xsercar,
-    fingreso: fingresoToIso(row.fingreso),
+    placa: payload.placa,
+    serial: payload.serial_carroceria,
+    serialMotor: payload.serial_motor,
+    cedulaTomador: payload.rif_tomador,
+    cedulaTitular: payload.rif_titular,
+    plan: payload.plan,
+    frecuencia: payload.frecuencia,
+    fdesde: payload.fdesde,
+    fhasta: payload.fhasta,
+    femision: payload.fecha_emision,
+    cproductor: payload.cproductor ?? payload.productor,
+    ccanalalt: payload.ccanalalt,
+    ano: payload.fano,
+    marca: payload.marca,
+    modelo: payload.modelo,
+    version: payload.version,
+    mprimaext: payload.mprimaext ?? cotizacion.mprimaext,
   };
+}
+
+/**
+ * Datos por los que una póliza NO corresponde a este intento. Lista vacía = es la de este intento.
+ * Si a la póliza le falta un dato exigido, cuenta como diferencia.
+ * @param {object} candidate fila de nest-api ya pasada por mapNestRow
+ * @param {object} ctx attemptData() + { sinceMs (epoch del primer intento), now? }
+ */
+function policyMismatches(candidate, ctx) {
+  if (!candidate || !candidate.cnpoliza) return ['cnpoliza'];
+  const out = [];
+  for (const [campo, norma, columna = campo] of OBLIGATORIOS) {
+    const esperado = norma(ctx[campo]);
+    if (!esperado || norma(candidate[columna]) !== esperado) out.push(campo);
+  }
+  for (const [campo, norma, columna] of OPCIONALES) {
+    const esperado = norma(ctx[campo]);
+    if (esperado && norma(candidate[columna]) !== esperado) out.push(campo);
+  }
+  if (canal(candidate.ccanalalt) !== canal(ctx.ccanalalt)) out.push('ccanalalt');
+
+  const prima = Number(ctx.mprimaext);
+  if (!(prima > 0) || !(Math.abs(Number(candidate.mprimaext) - prima) <= HOLGURA_PRIMA)) out.push('prima');
+
+  // Solo una póliza vigente con el recibo todavía por cobrar puede activarse con el pago de este intento.
+  if (texto(candidate.iestado) !== 'V') out.push('estadoPoliza');
+  if (!texto(candidate.cnrecibo) || texto(candidate.iestadorec) !== 'P') out.push('estadoRecibo');
+
+  // Creada después de empezar el intento. Se comparan dos duraciones, cada una con su propio reloj,
+  // así el desfase entre la base y este servidor no influye.
+  const now = ctx.now ?? Date.now();
+  const desde = Math.max(ctx.sinceMs ?? now, now - getRecentWindowMs());
+  const transcurrido = (now - desde) / 1000;
+  const edad = candidate.edadSegundos == null ? NaN : Number(candidate.edadSegundos);
+  if (!(edad >= -HOLGURA_SEG && edad <= transcurrido + HOLGURA_SEG)) out.push('fechaIngreso');
+  return out;
+}
+
+const matchesOwnRecentPolicy = (candidate, ctx) => policyMismatches(candidate, ctx).length === 0;
+
+/** Fila de nest-api (xplaca/xsercar) → forma que espera policyMismatches. */
+function mapNestRow(row) {
+  return { ...row, placa: row.xplaca, serial: row.xsercar };
 }
 
 /**
@@ -191,19 +242,18 @@ async function recoverIssuedPolicy(ctx, opts = {}) {
   const lookup = opts.lookup || defaultLookup;
   let found;
   try {
-    found = await lookup({
-      placa: ctx.placa,
-      serial: ctx.serial,
-      cproductor: ctx.cproductor,
-      ccanalalt: ctx.ccanalalt,
-      sinceMs: ctx.sinceMs,
-    });
+    found = await lookup(ctx);
   } catch (err) {
     console.warn(`[emissionRecovery] lookup falló placa=${ctx.placa}: ${err?.message || err}`);
     return null;
   }
   const list = Array.isArray(found) ? found : found ? [found] : [];
-  const matches = list.filter((c) => matchesOwnRecentPolicy(c, ctx));
+  const matches = [];
+  for (const c of list) {
+    const diferencias = policyMismatches(c, ctx);
+    if (diferencias.length === 0) matches.push(c);
+    else console.warn(`[emissionRecovery] póliza ${c?.cnpoliza} no adoptada placa=${ctx.placa}: difiere ${diferencias.join(', ')}`);
+  }
   // Más de una coincidencia distinta = ambiguo: no adoptar ninguna.
   const distinct = new Set(matches.map((m) => String(m.cnpoliza).trim()));
   if (distinct.size !== 1) return null;
@@ -221,10 +271,11 @@ module.exports = {
   isTimeoutError,
   isAmbiguousEmitError,
   isPlateAlreadyInsured,
+  attemptData,
+  policyMismatches,
   matchesOwnRecentPolicy,
   recoverIssuedPolicy,
   defaultLookup,
-  fingresoToIso,
   getRecentWindowMs,
   getUncertainCooldownMs,
   _resetForTests,
