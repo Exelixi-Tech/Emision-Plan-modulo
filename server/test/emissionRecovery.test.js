@@ -58,6 +58,13 @@ stub('policyMapper.js', {
       cproductor: '80080',
       ccanalalt: 27,
       correo_tomador: 'a@b.c',
+      rif_tomador: '12345678',
+      rif_titular: '12345678',
+      plan: 'RCVBAS',
+      frecuencia: 'A',
+      fdesde: '2026-11-27',
+      fhasta: '2027-11-27',
+      fecha_emision: '2026-11-27',
     },
     metadata: { internalPolicyId: 'INT-1' },
   }),
@@ -94,7 +101,17 @@ const own = (over = {}) => ({
   serial: 'SERIAL123',
   cproductor: '80080',
   ccanalalt: 27,
-  fingreso: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+  edadSegundos: 0,
+  ctenedor: '12345678',
+  casegurado: '12345678',
+  cplan: 'RCVBAS',
+  ifrecuencia: 'A',
+  fdesde: '2026-11-27',
+  fhasta: '2027-11-27',
+  femision: '2026-11-27',
+  mprimaext: 10,
+  iestado: 'V',
+  iestadorec: 'P',
   ...over,
 });
 
@@ -147,12 +164,19 @@ test('409 al emitir + póliza propia reciente -> recupera', async () => {
 });
 
 for (const [nombre, over] of [
-  ['póliza vieja (hace 2 días)', { fingreso: new Date(Date.now() - 2 * 86400000).toISOString() }],
+  ['creada 2 minutos antes del intento', { edadSegundos: 120 }],
+  ['anulada', { iestado: 'A' }],
+  ['recibo ya cobrado', { iestadorec: 'C' }],
+  ['otra cédula de tomador', { ctenedor: '999' }],
+  ['otra cédula de titular', { casegurado: '999' }],
+  ['otro plan', { cplan: 'OTRO' }],
+  ['otra prima', { mprimaext: 25 }],
+  ['otro inicio de vigencia', { fdesde: '2026-11-26' }],
   ['otro productor', { cproductor: '1234' }],
   ['otro canal', { ccanalalt: 99 }],
   ['otro serial', { serial: 'OTRO999' }],
   ['otra placa', { placa: 'ZZ999ZZ' }],
-  ['sin fecha de ingreso', { fingreso: undefined }],
+  ['sin antigüedad', { edadSegundos: undefined }],
 ]) {
   test(`409 con póliza ajena (${nombre}) -> error 409 de placa asegurada`, async () => {
     validateImpl = async () => { throw plateValidateErr(); };

@@ -464,10 +464,7 @@ async function quoteAndEmitInner(state, overrides = {}, guard = {}) {
   }
   guard.key = lockKey; // solo se libera si este intento obtuvo el candado
   const recoveryCtx = {
-    placa: payload.placa,
-    serial: payload.serial_carroceria,
-    cproductor: payload.cproductor ?? payload.productor,
-    ccanalalt: payload.ccanalalt,
+    ...recovery.attemptData(payload, quoteResult),
     sinceMs: recovery.attemptSince(lockKey, attemptStartedAt),
   };
   let recoveredEmission = null;
