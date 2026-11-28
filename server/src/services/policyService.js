@@ -468,7 +468,7 @@ async function quoteAndEmitInner(state, overrides = {}, guard = {}) {
     serial: payload.serial_carroceria,
     cproductor: payload.cproductor ?? payload.productor,
     ccanalalt: payload.ccanalalt,
-    sinceMs: attemptStartedAt,
+    sinceMs: recovery.attemptSince(lockKey, attemptStartedAt),
   };
   let recoveredEmission = null;
 
@@ -548,7 +548,7 @@ async function quoteAndEmitInner(state, overrides = {}, guard = {}) {
         if (recovered) {
           emission = recovered;
         } else if (ambiguous) {
-          recovery.markUncertain(guard.key);
+          recovery.markUncertain(guard.key, Date.now(), recoveryCtx.sinceMs);
         }
       }
       if (!emission) {
